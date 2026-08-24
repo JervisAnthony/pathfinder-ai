@@ -2,33 +2,12 @@
 Job Description Domain Model.
 """
 
-import re
 from dataclasses import dataclass
-from enum import StrEnum
 
-
-def _normalize_whitespace(text: str) -> str:
-    """Strip leading/trailing whitespace and collapse internal whitespace."""
-    return re.sub(r"\s+", " ", text).strip()
-
-
-def _clean_optional_string(text: str | None) -> str | None:
-    if text is None:
-        return None
-    normalized = _normalize_whitespace(text)
-    return normalized if normalized else None
-
-
-@dataclass(frozen=True, slots=True)
-class JobTitle:
-    title: str
-
-    def __post_init__(self) -> None:
-        if not self.title or not self.title.strip():
-            raise ValueError("JobTitle cannot be blank.")
-        normalized = _normalize_whitespace(self.title)
-        # Bypass frozen dataclass to set the normalized value
-        object.__setattr__(self, "title", normalized)
+from ._normalization import _clean_optional_string, _normalize_whitespace
+from .education import EducationLevel
+from .job_title import JobTitle
+from .skill import Skill
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,16 +39,6 @@ class Responsibility:
 
 
 @dataclass(frozen=True, slots=True)
-class Skill:
-    name: str
-
-    def __post_init__(self) -> None:
-        if not self.name or not self.name.strip():
-            raise ValueError("Skill cannot be blank.")
-        object.__setattr__(self, "name", _normalize_whitespace(self.name).lower())
-
-
-@dataclass(frozen=True, slots=True)
 class ExperienceRequirement:
     minimum_years: int | None = None
     maximum_years: int | None = None
@@ -89,15 +58,6 @@ class ExperienceRequirement:
         if self.minimum_years is not None and self.maximum_years is not None:
             if self.maximum_years < self.minimum_years:
                 raise ValueError("Maximum years cannot be less than minimum years.")
-
-
-class EducationLevel(StrEnum):
-    HIGH_SCHOOL = "high_school"
-    ASSOCIATE = "associate"
-    BACHELOR = "bachelor"
-    MASTER = "master"
-    DOCTORATE = "doctorate"
-    OTHER = "other"
 
 
 @dataclass(frozen=True, slots=True)
