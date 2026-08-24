@@ -2,8 +2,11 @@ import pathfinder_ai
 
 
 def test_version():
-    """Test that the package version is a string."""
-    assert isinstance(pathfinder_ai.__version__, str)
+    """Test that the package version matches the installed metadata."""
+    from importlib.metadata import version
+
+    # Assert version matches the installed package version.
+    assert pathfinder_ai.__version__ == version("pathfinder-ai")
 
 
 def test_import():
