@@ -2,8 +2,10 @@
 Candidate Profile Domain Models.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TypeVar
 
 from ._normalization import _clean_optional_string, _normalize_whitespace
 from .education import EducationLevel
@@ -89,6 +91,20 @@ class Project:
         object.__setattr__(self, "skills", tuple(unique_skills))
 
 
+T = TypeVar("T")
+
+
+def _deduplicate[T](items: Iterable[T]) -> tuple[T, ...]:
+    """Deterministically deduplicate preserving order."""
+    unique: list[T] = []
+    seen: set[T] = set()
+    for item in items:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return tuple(unique)
+
+
 @dataclass(frozen=True, slots=True)
 class Certification:
     name: str
@@ -119,35 +135,23 @@ class CandidatePreferences:
     acceptable_work_modes: tuple[WorkMode, ...] = ()
 
     def __post_init__(self) -> None:
-        # Deduplicate deterministically preserving order
-        def deduplicate(
-            items: tuple[JobTitle, ...] | list[str] | tuple[WorkMode, ...],
-        ) -> tuple[JobTitle, ...] | tuple[str, ...] | tuple[WorkMode, ...]:
-            unique = []
-            seen = set()
-            for item in items:
-                if item not in seen:
-                    unique.append(item)
-                    seen.add(item)
-            return tuple(unique)  # type: ignore
-
-        unique_titles = deduplicate(self.target_titles)
+        unique_titles = _deduplicate(self.target_titles)
         if len(unique_titles) != len(self.target_titles):
             raise ValueError("Duplicate target titles are not allowed.")
         object.__setattr__(self, "target_titles", unique_titles)
 
-        normalized_locations = []
+        normalized_locations: list[str] = []
         for loc in self.preferred_locations:
             clean = _clean_optional_string(loc)
             if clean:
                 normalized_locations.append(clean)
 
-        unique_locations = deduplicate(normalized_locations)
+        unique_locations = _deduplicate(normalized_locations)
         if len(unique_locations) != len(self.preferred_locations):
             raise ValueError("Duplicate or blank locations are not allowed.")
         object.__setattr__(self, "preferred_locations", unique_locations)
 
-        unique_modes = deduplicate(self.acceptable_work_modes)
+        unique_modes = _deduplicate(self.acceptable_work_modes)
         if len(unique_modes) != len(self.acceptable_work_modes):
             raise ValueError("Duplicate work modes are not allowed.")
         object.__setattr__(self, "acceptable_work_modes", unique_modes)

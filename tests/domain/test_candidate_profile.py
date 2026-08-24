@@ -224,11 +224,28 @@ def test_candidate_preferences_location_normalization() -> None:
 
 
 def test_candidate_preferences_immutability() -> None:
+    titles = [JobTitle("Dev")]
     locations = ["NYC"]
-    prefs = CandidatePreferences(preferred_locations=locations)  # type: ignore
+    modes = [WorkMode.REMOTE]
+
+    prefs = CandidatePreferences(
+        target_titles=titles,  # type: ignore[arg-type]
+        preferred_locations=locations,  # type: ignore[arg-type]
+        acceptable_work_modes=modes,  # type: ignore[arg-type]
+    )
+
+    titles.append(JobTitle("Manager"))
     locations.append("LA")
+    modes.append(WorkMode.HYBRID)
+
+    assert len(prefs.target_titles) == 1
+    assert isinstance(prefs.target_titles, tuple)
+
     assert len(prefs.preferred_locations) == 1
     assert isinstance(prefs.preferred_locations, tuple)
+
+    assert len(prefs.acceptable_work_modes) == 1
+    assert isinstance(prefs.acceptable_work_modes, tuple)
 
 
 # Candidate Profile Tests
@@ -284,10 +301,39 @@ def test_candidate_profile_duplicate_skill_rejection() -> None:
 
 def test_candidate_profile_immutability() -> None:
     skill_list = [Skill("Ruby")]
-    profile = CandidateProfile(skills=skill_list)  # type: ignore
+    exp_list = [WorkExperience(role_title=JobTitle("Dev"))]
+    edu_list = [EducationRecord(level=EducationLevel.BACHELOR)]
+    proj_list = [Project(name="App")]
+    cert_list = [Certification(name="Cert")]
+
+    profile = CandidateProfile(
+        skills=skill_list,  # type: ignore[arg-type]
+        experience=exp_list,  # type: ignore[arg-type]
+        education=edu_list,  # type: ignore[arg-type]
+        projects=proj_list,  # type: ignore[arg-type]
+        certifications=cert_list,  # type: ignore[arg-type]
+    )
+
     skill_list.append(Skill("Rails"))
+    exp_list.append(WorkExperience(role_title=JobTitle("Manager")))
+    edu_list.append(EducationRecord(level=EducationLevel.MASTER))
+    proj_list.append(Project(name="App2"))
+    cert_list.append(Certification(name="Cert2"))
+
     assert len(profile.skills) == 1
     assert isinstance(profile.skills, tuple)
+
+    assert len(profile.experience) == 1
+    assert isinstance(profile.experience, tuple)
+
+    assert len(profile.education) == 1
+    assert isinstance(profile.education, tuple)
+
+    assert len(profile.projects) == 1
+    assert isinstance(profile.projects, tuple)
+
+    assert len(profile.certifications) == 1
+    assert isinstance(profile.certifications, tuple)
 
     with pytest.raises(AttributeError):
         profile.experience = ()  # type: ignore
