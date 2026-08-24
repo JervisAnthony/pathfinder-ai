@@ -13,6 +13,13 @@ from .skill import Skill
 class MatchScore:
     value: float | None
 
+    def __post_init__(self) -> None:
+        if self.value is not None:
+            if self.value < 0.0 or self.value > 100.0:
+                raise ValueError(
+                    "MatchScore value must be between 0.0 and 100.0, or None."
+                )
+
 
 class DeterministicMatcher:
     """Deterministic matcher for comparing CandidateProfile to JobDescription."""
@@ -45,6 +52,7 @@ class DeterministicMatcher:
         if (
             job_description.experience_requirement
             and job_description.experience_requirement.minimum_years is not None
+            and job_description.experience_requirement.minimum_years > 0
         ):
             possible_points += 1.0
             min_months = job_description.experience_requirement.minimum_years * 12
@@ -54,11 +62,8 @@ class DeterministicMatcher:
                 if exp.duration_months is not None:
                     candidate_months += exp.duration_months
 
-            if min_months > 0:
-                exp_credit = min(1.0, candidate_months / min_months)
-                earned_points += exp_credit
-            else:
-                earned_points += 1.0
+            exp_credit = min(1.0, candidate_months / min_months)
+            earned_points += exp_credit
 
         # 3. Score Education
         if job_description.education_requirement and (
@@ -115,7 +120,7 @@ class DeterministicMatcher:
                 field_satisfied = True
             elif record.field_of_study is not None:
                 field_satisfied = (
-                    req.field_of_study.lower() == record.field_of_study.lower()
+                    req.field_of_study.casefold() == record.field_of_study.casefold()
                 )
 
             if level_satisfied and field_satisfied:

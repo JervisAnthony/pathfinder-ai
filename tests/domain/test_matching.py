@@ -2,6 +2,8 @@
 Tests for the Deterministic Matcher.
 """
 
+import pytest
+
 from pathfinder_ai.domain import (
     CandidatePreferences,
     CandidateProfile,
@@ -127,12 +129,21 @@ def test_experience_matching() -> None:
     )
     assert matcher.match(cand_exact, job_max_only).value is None
 
-    # Zero minimum years gets full credit immediately
+    # Zero minimum years is treated as non-scoreable
     job_zero_min = JobDescription(
         title=JobTitle("Junior"),
         experience_requirement=ExperienceRequirement(minimum_years=0),
     )
-    assert matcher.match(cand_unknown, job_zero_min).value == 100.0
+    assert matcher.match(cand_unknown, job_zero_min).value is None
+
+    # Zero minimum years doesn't inflate score when other requirements exist
+    job_zero_min_with_skill = JobDescription(
+        title=JobTitle("Junior"),
+        experience_requirement=ExperienceRequirement(minimum_years=0),
+        required_skills=(Skill("Python"),),
+    )
+    # The candidate has NO skills, so they should get 0/1 points, not 1/2 points
+    assert matcher.match(cand_unknown, job_zero_min_with_skill).value == 0.0
 
 
 def test_education_matching() -> None:
@@ -272,3 +283,104 @@ def test_total_score_and_invariants() -> None:
         preferences=CandidatePreferences(preferred_locations=("NYC",)),
     )
     assert matcher.match(cand_pref, job).value == 100.0
+
+
+def test_match_score_invariants() -> None:
+    """Test that MatchScore rejects invalid values."""
+    from pathfinder_ai.domain.matching import MatchScore
+
+    # Valid values
+    MatchScore(value=None)
+    MatchScore(value=0.0)
+    MatchScore(value=100.0)
+    MatchScore(value=50.0)
+
+    # Invalid values below 0
+    with pytest.raises(
+        ValueError, match=r"MatchScore value must be between 0.0 and 100.0, or None."
+    ):
+        MatchScore(value=-0.1)
+
+    with pytest.raises(
+        ValueError, match=r"MatchScore value must be between 0.0 and 100.0, or None."
+    ):
+        MatchScore(value=-50.0)
+
+    # Invalid values above 100
+    with pytest.raises(
+        ValueError, match=r"MatchScore value must be between 0.0 and 100.0, or None."
+    ):
+        MatchScore(value=100.1)
+
+    with pytest.raises(
+        ValueError, match=r"MatchScore value must be between 0.0 and 100.0, or None."
+    ):
+        MatchScore(value=150.0)
+
+
+def test_matcher_behavioral_regression() -> None:
+    """Test specific negative constraints and behavioral regression rules."""
+    job = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("machine learning"), Skill("postgresql")),
+    )
+
+    # Aliases and fuzzy matches are NOT inferred
+    candidate_fuzzy = CandidateProfile(
+        skills=(Skill("ml"), Skill("postgres")),
+    )
+    matcher = DeterministicMatcher()
+    assert matcher.match(candidate_fuzzy, job).value == 0.0
+
+    # Ensure candidate evidence ordering does not change the mathematical score
+    job_multi = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("Python"), Skill("SQL")),
+        preferred_skills=(Skill("AWS"),),
+    )
+    cand_order_1 = CandidateProfile(
+        skills=(Skill("Python"), Skill("SQL"), Skill("AWS")),
+    )
+    cand_order_2 = CandidateProfile(
+        skills=(Skill("AWS"), Skill("SQL"), Skill("Python")),
+    )
+    score_1 = matcher.match(cand_order_1, job_multi)
+    score_2 = matcher.match(cand_order_2, job_multi)
+    assert score_1.value == score_2.value == 100.0
+
+    # Ensure matching does not mutate inputs
+    job_before = JobDescription(
+        title=JobTitle("Dev"), required_skills=(Skill("Python"),)
+    )
+    cand_before = CandidateProfile(skills=(Skill("Python"),))
+
+    matcher.match(cand_before, job_before)
+
+    # Check that they remain identical
+    assert job_before.required_skills == (Skill("Python"),)
+    assert cand_before.skills == (Skill("Python"),)
+
+    # Test combined skill + experience + education point formula and rounding
+    job_full = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("Python"),),  # 1 point
+        preferred_skills=(Skill("Docker"),),  # 0.5 points
+        experience_requirement=ExperienceRequirement(minimum_years=2),  # 1 point
+        education_requirement=EducationRequirement(
+            level=EducationLevel.BACHELOR
+        ),  # 1 point
+    )  # Total possible: 3.5
+
+    cand_partial = CandidateProfile(
+        skills=(Skill("Python"),),  # 1 earned
+        # Misses Docker: 0 earned
+        experience=(
+            WorkExperience(role_title=JobTitle("Dev"), duration_months=12),
+        ),  # 12/24 = 0.5 earned
+        education=(
+            EducationRecord(level=EducationLevel.ASSOCIATE),
+        ),  # Misses Bachelor: 0 earned
+    )  # Total earned: 1.5
+
+    # 1.5 / 3.5 = 0.4285714... * 100 = 42.85714... -> round to 2 is 42.86
+    assert matcher.match(cand_partial, job_full).value == 42.86
