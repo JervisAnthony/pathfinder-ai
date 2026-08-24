@@ -136,14 +136,21 @@ class JobDescription:
     education_requirement: EducationRequirement | None = None
 
     def __post_init__(self) -> None:
+        # Normalize to immutable tuples
+        required_tuple = tuple(self.required_skills)
+        preferred_tuple = tuple(self.preferred_skills)
+
+        object.__setattr__(self, "required_skills", required_tuple)
+        object.__setattr__(self, "preferred_skills", preferred_tuple)
+
         # Check duplicate required skills
-        req_skills_set = set(self.required_skills)
-        if len(req_skills_set) != len(self.required_skills):
+        req_skills_set = set(required_tuple)
+        if len(req_skills_set) != len(required_tuple):
             raise ValueError("Duplicate skills in required_skills are not allowed.")
 
         # Check duplicate preferred skills
-        pref_skills_set = set(self.preferred_skills)
-        if len(pref_skills_set) != len(self.preferred_skills):
+        pref_skills_set = set(preferred_tuple)
+        if len(pref_skills_set) != len(preferred_tuple):
             raise ValueError("Duplicate skills in preferred_skills are not allowed.")
 
         # Check overlap

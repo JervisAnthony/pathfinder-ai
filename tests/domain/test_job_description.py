@@ -219,3 +219,57 @@ def test_job_description_immutability() -> None:
     jd = JobDescription(title=JobTitle("Engineer"))
     with pytest.raises(AttributeError):
         jd.title = JobTitle("New Engineer")  # type: ignore
+
+
+def test_job_description_required_skills_immutability() -> None:
+    skill_list = [Skill("Python"), Skill("Java")]
+    jd = JobDescription(
+        title=JobTitle("Engineer"),
+        required_skills=skill_list,  # type: ignore
+    )
+    # Mutate the original list
+    skill_list.append(Skill("C++"))
+
+    # The jd should remain unchanged
+    assert len(jd.required_skills) == 2
+    assert jd.required_skills[0].name == "python"
+    assert jd.required_skills[1].name == "java"
+    assert isinstance(jd.required_skills, tuple)
+
+
+def test_job_description_preferred_skills_immutability() -> None:
+    skill_list = [Skill("Go")]
+    jd = JobDescription(
+        title=JobTitle("Engineer"),
+        preferred_skills=skill_list,  # type: ignore
+    )
+    # Mutate the original list
+    skill_list.append(Skill("Rust"))
+
+    # The jd should remain unchanged
+    assert len(jd.preferred_skills) == 1
+    assert jd.preferred_skills[0].name == "go"
+    assert isinstance(jd.preferred_skills, tuple)
+
+
+def test_public_api_exports() -> None:
+    from pathfinder_ai.domain import (
+        CompanyInfo,
+        EducationLevel,
+        EducationRequirement,
+        ExperienceRequirement,
+        JobDescription,
+        JobTitle,
+        Responsibility,
+        Skill,
+    )
+
+    # Just verify they are imported and are the correct types
+    assert JobTitle is not None
+    assert CompanyInfo is not None
+    assert Responsibility is not None
+    assert Skill is not None
+    assert ExperienceRequirement is not None
+    assert EducationLevel is not None
+    assert EducationRequirement is not None
+    assert JobDescription is not None

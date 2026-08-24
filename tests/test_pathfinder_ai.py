@@ -1,7 +1,7 @@
 import pathfinder_ai
 
 
-def test_version():
+def test_version() -> None:
     """Test that the package version matches the installed metadata."""
     from importlib.metadata import version
 
@@ -9,6 +9,6 @@ def test_version():
     assert pathfinder_ai.__version__ == version("pathfinder-ai")
 
 
-def test_import():
+def test_import() -> None:
     """Test that the package imports successfully."""
     assert pathfinder_ai.__name__ == "pathfinder_ai"
