@@ -4,9 +4,10 @@ AI-powered job matching, application intelligence, and interview preparation wit
 
 ## Development Status
 
-Pathfinder AI is currently establishing its foundation. The current MVP-1 milestone aims to implement deterministic matching, application guidance, and optional AI enrichment.
+Pathfinder AI is currently establishing its foundation. The current MVP-1 milestone aims to implement deterministic matching, application guidance, and optional AI enrichment. The structured Job Description domain model has been introduced.
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
+- Candidate profile domain model
 - Candidate and job description matching logic
 - APIs (FastAPI)
 - Persistence and databases (SQLite)
