@@ -20,6 +20,7 @@ from .job_description import (
     Responsibility,
 )
 from .job_title import JobTitle
+from .matching import DeterministicMatcher, MatchScore
 from .skill import Skill
 
 __all__ = [
@@ -27,12 +28,14 @@ __all__ = [
     "CandidateProfile",
     "Certification",
     "CompanyInfo",
+    "DeterministicMatcher",
     "EducationLevel",
     "EducationRecord",
     "EducationRequirement",
     "ExperienceRequirement",
     "JobDescription",
     "JobTitle",
+    "MatchScore",
     "Project",
     "Responsibility",
     "Skill",
