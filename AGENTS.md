@@ -6,31 +6,142 @@ These rules apply to every coding agent working in this repository.
 
 1. `main` is the protected integration/release branch.
 2. Never work directly on `main`.
-3. Create one fresh feature branch per numbered project commit.
-4. Branch names use: `feature/<short-kebab-description>`.
+3. Create one fresh feature branch per roadmap task.
+4. Branch names use the semantic form `feature/<short-kebab-description>`.
 5. Open a pull request back into `main`.
 6. Never merge a pull request. The human maintainer performs merges after review.
 7. Never force-push or rewrite shared history.
-8. Keep each project commit atomic and scoped to its stated objective.
+8. Keep each roadmap task atomic and scoped to its stated objective.
+
+## Repository State Preflight
+
+Before planning or implementing any roadmap task, read:
+
+- `AGENTS.md`
+- `PROJECT_STATE.md`
+- `MVP1_ROADMAP.md`
+- `PROJECT_BRIEF.md`
+- the current implementation and tests relevant to the task
+
+`PROJECT_STATE.md` is the authoritative record of the repository's current roadmap position.
+
+Do not infer the active milestone from:
+
+- an earlier Jules task
+- cached or remembered context
+- an old pull request
+- a previous branch name
+- a task title from another session
+
+If the checked-out repository state conflicts with `PROJECT_STATE.md`, stop before implementation and report the inconsistency.
+
+Never replay or recreate a roadmap milestone already marked complete.
+
+Examples:
+
+- if Repository Foundation is complete, do not recreate package scaffolding, CI, or `pyproject.toml`
+- if Candidate Profile is complete, do not rebuild that domain
+- if Deterministic Matching is complete, extend it rather than replacing it
 
 ## GitHub Naming
 
 - MVP roadmap commit numbers are internal planning references only.
 - Do not include roadmap commit numbers in GitHub branch names or pull request titles.
-- Use the exact feature branch name specified by the task.
-- Never append agent task IDs, session IDs, timestamps, UUIDs, random numbers, or generated suffixes to branch names.
-- Pull request titles should be concise, professional engineering actions such as:
-  - Add deterministic candidate-job matching
-  - Add match explanations and gap analysis
-  - Add AI provider abstraction
+- Use the task-specified semantic branch stem, for example:
+  - `feature/deterministic-matching-engine`
+  - `feature/match-explanation-gap-analysis`
+- Pull request titles must use concise professional engineering language, for example:
+  - `Add deterministic candidate-job matching`
+  - `Add match explanations and gap analysis`
+  - `Add AI provider abstraction`
 - Do not prefix PR titles with:
-  - Commit N:
-  - MVP-N:
-  - Jules:
-  - Agent:
+  - `Commit N:`
+  - `MVP-N:`
+  - `Jules:`
+  - `Agent:`
 - Roadmap references may appear inside the PR description for traceability.
-- If an agent platform cannot publish the exact required branch name, the agent must stop before publishing and report the limitation rather than silently creating a differently named branch.
+- Do not manually add timestamps, UUIDs, random identifiers, task IDs, or agent names to a branch.
+- If the Jules platform automatically appends its own task/session identifier to the correct semantic branch stem, that platform-generated suffix is tolerated.
+- A platform-generated suffix must not change the semantic meaning of the branch.
 - Never merge a pull request. Human review and merge remain mandatory.
+
+## Agent Responsibility
+
+Jules is the primary implementation agent for Pathfinder AI unless a task explicitly assigns another agent.
+
+For a normal roadmap task, Jules is expected to own the implementation lifecycle:
+
+1. inspect current `main`
+2. verify `PROJECT_STATE.md`
+3. restate the scoped implementation plan
+4. implement only the requested milestone
+5. add or update tests
+6. run the full validation suite
+7. review the final diff
+8. publish the feature branch
+9. open the pull request
+10. respond to maintainer review feedback
+11. push corrections to the existing PR
+12. report the actual resulting commit SHA
+
+The human maintainer retains:
+
+- scope approval
+- architectural review
+- code review
+- approval/rejection authority
+- merge authority
+
+Jules must never merge.
+
+## Pull Request Lifecycle
+
+Unless the task explicitly says otherwise, the expected lifecycle is:
+
+implementation
+→ validation
+→ branch publication
+→ pull request
+→ human review
+→ Jules correction if requested
+→ re-validation
+→ human approval
+→ human merge
+
+Review corrections should update the existing PR.
+
+Do not open replacement PRs for review feedback unless the human maintainer explicitly requests one.
+
+## Review Feedback
+
+When the maintainer addresses feedback to `@jules`:
+
+- read the complete requested correction
+- preserve already-approved behavior
+- change only the requested scope
+- rerun the complete validation suite
+- push to the existing PR
+- report the actual new Git commit SHA
+- never merge
+
+Do not report a commit SHA until it exists on the remote PR branch.
+
+## Scope Discipline
+
+Every roadmap task has one primary product objective.
+
+Do not:
+
+- restart earlier milestones
+- rebuild repository tooling
+- replace working architecture without a task requirement
+- implement future-roadmap functionality early
+- perform unrelated cleanup or refactoring
+- modify dependencies unless required
+- modify unrelated documentation or configuration
+- silently expand scope because another defect was noticed
+
+If an unrelated issue is discovered, report it separately.
 
 ## Engineering Standards
 
@@ -57,6 +168,7 @@ These rules apply to every coding agent working in this repository.
 ## Code Quality
 
 Before completion, run the repository's canonical:
+
 - tests
 - Ruff lint
 - Ruff format check
@@ -75,11 +187,14 @@ Do not suppress type/lint errors merely to obtain a green build unless the suppr
 ## Task Discipline
 
 For every task:
+
 1. inspect the current repository and latest `main`
-2. restate the scoped implementation plan
-3. implement only the requested scope
-4. add/update tests
-5. run validation
-6. summarize changed files, decisions, and validation results
-7. publish a branch / PR only when explicitly instructed or when the task workflow specifies it
-8. never merge
+2. verify `PROJECT_STATE.md`
+3. restate the scoped implementation plan
+4. implement only the requested scope
+5. add/update tests
+6. run validation
+7. review the final diff against `main`
+8. summarize changed files, decisions, and validation results
+9. publish the branch / PR unless the task explicitly says not to
+10. never merge
