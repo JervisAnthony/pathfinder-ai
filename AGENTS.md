@@ -13,6 +13,25 @@ These rules apply to every coding agent working in this repository.
 7. Never force-push or rewrite shared history.
 8. Keep each project commit atomic and scoped to its stated objective.
 
+## GitHub Naming
+
+- MVP roadmap commit numbers are internal planning references only.
+- Do not include roadmap commit numbers in GitHub branch names or pull request titles.
+- Use the exact feature branch name specified by the task.
+- Never append agent task IDs, session IDs, timestamps, UUIDs, random numbers, or generated suffixes to branch names.
+- Pull request titles should be concise, professional engineering actions such as:
+  - Add deterministic candidate-job matching
+  - Add match explanations and gap analysis
+  - Add AI provider abstraction
+- Do not prefix PR titles with:
+  - Commit N:
+  - MVP-N:
+  - Jules:
+  - Agent:
+- Roadmap references may appear inside the PR description for traceability.
+- If an agent platform cannot publish the exact required branch name, the agent must stop before publishing and report the limitation rather than silently creating a differently named branch.
+- Never merge a pull request. Human review and merge remain mandatory.
+
 ## Engineering Standards
 
 - Use Python 3.13+.
