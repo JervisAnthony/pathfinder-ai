@@ -156,7 +156,9 @@ class DeterministicMatcher:
 
         kw_percentage = None
         if total_keywords > 0:
-            kw_percentage = (len(matched_keywords_list) / total_keywords) * 100
+            kw_percentage = round(
+                (len(matched_keywords_list) / total_keywords) * 100, 2
+            )
 
         keyword_coverage = SkillKeywordCoverage(
             matched_keywords=tuple(matched_keywords_list),

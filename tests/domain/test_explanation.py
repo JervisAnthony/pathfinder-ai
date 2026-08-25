@@ -12,10 +12,13 @@ from pathfinder_ai.domain import (
     WorkExperience,
 )
 from pathfinder_ai.domain.explanation import (
+    EducationEvidence,
     EvidenceSourceKind,
     ExperienceGap,
+    GapAnalysis,
     ScoreComponent,
     ScoreComponentKind,
+    SkillKeywordCoverage,
 )
 from pathfinder_ai.domain.matching import DeterministicMatcher, MatchScore
 
@@ -270,6 +273,47 @@ def test_unscoreable_job() -> None:
     assert explanation.keyword_coverage.percentage is None
 
 
+def test_skill_keyword_coverage_consistency() -> None:
+    # 0 total keywords
+    with pytest.raises(
+        ValueError, match=r"percentage must be None when there are no keywords\."
+    ):
+        SkillKeywordCoverage(matched_keywords=(), missing_keywords=(), percentage=0.0)
+
+    # Missing keywords, percentage None
+    with pytest.raises(
+        ValueError, match=r"percentage cannot be None when keywords are present\."
+    ):
+        SkillKeywordCoverage(
+            matched_keywords=(Skill("A"),), missing_keywords=(), percentage=None
+        )
+
+    # Valid out of bounds percentage
+    with pytest.raises(ValueError, match=r"percentage must be between 0.0 and 100.0\."):
+        SkillKeywordCoverage(
+            matched_keywords=(Skill("A"),), missing_keywords=(), percentage=101.0
+        )
+    with pytest.raises(ValueError, match=r"percentage must be between 0.0 and 100.0\."):
+        SkillKeywordCoverage(
+            matched_keywords=(Skill("A"),), missing_keywords=(), percentage=-1.0
+        )
+
+    # Invalid calculated percentage
+    with pytest.raises(
+        ValueError, match=r"percentage 50.0 does not match expected 100.0\."
+    ):
+        SkillKeywordCoverage(
+            matched_keywords=(Skill("A"),), missing_keywords=(), percentage=50.0
+        )
+
+    # Check 1 of 3 valid (33.33)
+    SkillKeywordCoverage(
+        matched_keywords=(Skill("A"),),
+        missing_keywords=(Skill("B"), Skill("C")),
+        percentage=33.33,
+    )
+
+
 def test_experience_gap_validation() -> None:
     with pytest.raises(
         ValueError, match=r"missing_months must equal required - known\."
@@ -297,3 +341,179 @@ def test_score_component_validation() -> None:
         ScoreComponent(
             kind=ScoreComponentKind.REQUIRED_SKILLS, earned_points=2, possible_points=1
         )
+
+
+def test_education_evidence_consistency() -> None:
+    req = EducationRequirement(level=EducationLevel.BACHELOR)
+    rec = EducationRecord(level=EducationLevel.BACHELOR)
+
+    with pytest.raises(
+        ValueError, match=r"satisfied cannot be True if matched_record is None\."
+    ):
+        EducationEvidence(requirement=req, matched_record=None, satisfied=True)
+
+    with pytest.raises(
+        ValueError, match=r"satisfied cannot be False if matched_record is not None\."
+    ):
+        EducationEvidence(requirement=req, matched_record=rec, satisfied=False)
+
+
+def test_intended_public_api() -> None:
+    from pathfinder_ai.domain import (
+        DeterministicMatcher,
+        EducationEvidence,
+        EvidenceSource,
+        EvidenceSourceKind,
+        ExperienceEvidence,
+        ExperienceGap,
+        GapAnalysis,
+        MatchedSkillEvidence,
+        MatchExplanation,
+        MatchScore,
+        ScoreComponent,
+        ScoreComponentKind,
+        SkillKeywordCoverage,
+    )
+
+    assert DeterministicMatcher is not None
+    assert MatchScore is not None
+    assert MatchExplanation is not None
+    assert ScoreComponent is not None
+    assert ScoreComponentKind is not None
+    assert GapAnalysis is not None
+    assert ExperienceEvidence is not None
+    assert ExperienceGap is not None
+    assert EducationEvidence is not None
+    assert SkillKeywordCoverage is not None
+    assert MatchedSkillEvidence is not None
+    assert EvidenceSource is not None
+    assert EvidenceSourceKind is not None
+
+
+def test_experience_behavior_regressions() -> None:
+    # minimum_years=0
+    job_0 = JobDescription(
+        title=JobTitle("Dev"),
+        experience_requirement=ExperienceRequirement(minimum_years=0),
+    )
+    candidate = CandidateProfile(
+        experience=(WorkExperience(role_title=JobTitle("Dev"), duration_months=12),)
+    )
+    explanation_0 = DeterministicMatcher().explain(candidate, job_0)
+    assert not any(
+        c.kind == ScoreComponentKind.EXPERIENCE for c in explanation_0.components
+    )
+    assert explanation_0.experience is None
+    assert explanation_0.gaps.experience_gap is None
+
+    # maximum-only experience
+    job_max = JobDescription(
+        title=JobTitle("Dev"),
+        experience_requirement=ExperienceRequirement(maximum_years=5),
+    )
+    explanation_max = DeterministicMatcher().explain(candidate, job_max)
+    assert not any(
+        c.kind == ScoreComponentKind.EXPERIENCE for c in explanation_max.components
+    )
+    assert explanation_max.experience is None
+    assert explanation_max.gaps.experience_gap is None
+
+
+def test_education_behavior_regressions() -> None:
+    # description-only education
+    job_desc = JobDescription(
+        title=JobTitle("Dev"),
+        education_requirement=EducationRequirement(description="A good school"),
+    )
+    candidate = CandidateProfile(
+        education=(EducationRecord(level=EducationLevel.BACHELOR),)
+    )
+    explanation_desc = DeterministicMatcher().explain(candidate, job_desc)
+    assert not any(
+        c.kind == ScoreComponentKind.EDUCATION for c in explanation_desc.components
+    )
+    assert explanation_desc.education is None
+    assert explanation_desc.gaps.education_gap is None
+
+    # multiple candidate EducationRecords satisfy the same requirement
+    # the first record in deterministic candidate order is exposed
+    job_mult = JobDescription(
+        title=JobTitle("Dev"),
+        education_requirement=EducationRequirement(level=EducationLevel.BACHELOR),
+    )
+    rec1 = EducationRecord(level=EducationLevel.BACHELOR, field_of_study="Math")
+    rec2 = EducationRecord(level=EducationLevel.BACHELOR, field_of_study="CS")
+    candidate_mult = CandidateProfile(education=(rec1, rec2))
+
+    explanation_mult = DeterministicMatcher().explain(candidate_mult, job_mult)
+    assert explanation_mult.education is not None
+    assert explanation_mult.education.matched_record == rec1
+
+
+def test_keyword_coverage_behavior_regressions() -> None:
+    # 100% coverage
+    job_100 = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("Python"),),
+        preferred_skills=(Skill("Docker"),),
+    )
+    candidate_100 = CandidateProfile(skills=(Skill("Python"), Skill("Docker")))
+    exp_100 = DeterministicMatcher().explain(candidate_100, job_100)
+    assert exp_100.keyword_coverage.percentage == 100.0
+
+    # 0% coverage
+    job_0 = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("Python"),),
+    )
+    candidate_0 = CandidateProfile(skills=(Skill("Java"),))
+    exp_0 = DeterministicMatcher().explain(candidate_0, job_0)
+    assert exp_0.keyword_coverage.percentage == 0.0
+
+    # 1 out of 3 -> 33.33
+    job_33 = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("A"), Skill("B")),
+        preferred_skills=(Skill("C"),),
+    )
+    candidate_33 = CandidateProfile(skills=(Skill("A"),))
+    exp_33 = DeterministicMatcher().explain(candidate_33, job_33)
+    assert exp_33.keyword_coverage.percentage == 33.33
+
+    # coverage remains unweighted and can therefore differ from weighted MatchScore
+    assert exp_33.score.value is not None
+    assert exp_33.score.value != 33.33  # (1.0 / 2.5) * 100 = 40.0
+
+    # aliases do not match
+    job_alias = JobDescription(
+        title=JobTitle("Dev"),
+        required_skills=(Skill("machine learning"), Skill("postgresql")),
+    )
+    candidate_alias = CandidateProfile(skills=(Skill("ml"), Skill("postgres")))
+    exp_alias = DeterministicMatcher().explain(candidate_alias, job_alias)
+    assert exp_alias.keyword_coverage.percentage == 0.0
+
+
+def test_immutability_behavior_regressions() -> None:
+    from dataclasses import FrozenInstanceError
+
+    score_comp = ScoreComponent(
+        kind=ScoreComponentKind.REQUIRED_SKILLS, earned_points=1.0, possible_points=1.0
+    )
+    with pytest.raises(FrozenInstanceError):
+        score_comp.earned_points = 2.0  # type: ignore[misc]
+
+    gap_analysis = GapAnalysis(
+        missing_required_skills=(Skill("A"),),
+        missing_preferred_skills=(),
+        experience_gap=None,
+        education_gap=None,
+    )
+    with pytest.raises(FrozenInstanceError):
+        gap_analysis.missing_required_skills = ()  # type: ignore[misc]
+
+    kw_cov = SkillKeywordCoverage(
+        matched_keywords=(Skill("A"),), missing_keywords=(Skill("B"),), percentage=50.0
+    )
+    with pytest.raises(FrozenInstanceError):
+        kw_cov.percentage = 100.0  # type: ignore[misc]

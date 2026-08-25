@@ -86,6 +86,12 @@ class EducationEvidence:
     matched_record: EducationRecord | None
     satisfied: bool
 
+    def __post_init__(self) -> None:
+        if self.satisfied is True and self.matched_record is None:
+            raise ValueError("satisfied cannot be True if matched_record is None.")
+        if self.satisfied is False and self.matched_record is not None:
+            raise ValueError("satisfied cannot be False if matched_record is not None.")
+
 
 @dataclass(frozen=True, slots=True)
 class GapAnalysis:
@@ -112,6 +118,24 @@ class SkillKeywordCoverage:
     def __post_init__(self) -> None:
         object.__setattr__(self, "matched_keywords", tuple(self.matched_keywords))
         object.__setattr__(self, "missing_keywords", tuple(self.missing_keywords))
+
+        total_keywords = len(self.matched_keywords) + len(self.missing_keywords)
+
+        if total_keywords == 0:
+            if self.percentage is not None:
+                raise ValueError("percentage must be None when there are no keywords.")
+        else:
+            if self.percentage is None:
+                raise ValueError("percentage cannot be None when keywords are present.")
+
+            if self.percentage < 0.0 or self.percentage > 100.0:
+                raise ValueError("percentage must be between 0.0 and 100.0.")
+
+            expected = round((len(self.matched_keywords) / total_keywords) * 100, 2)
+            if self.percentage != expected:
+                raise ValueError(
+                    f"percentage {self.percentage} does not match expected {expected}."
+                )
 
 
 @dataclass(frozen=True, slots=True)
