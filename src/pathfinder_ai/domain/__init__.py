@@ -12,6 +12,19 @@ from .candidate_profile import (
     WorkMode,
 )
 from .education import EducationLevel
+from .explanation import (
+    EducationEvidence,
+    EvidenceSource,
+    EvidenceSourceKind,
+    ExperienceEvidence,
+    ExperienceGap,
+    GapAnalysis,
+    MatchedSkillEvidence,
+    MatchExplanation,
+    ScoreComponent,
+    ScoreComponentKind,
+    SkillKeywordCoverage,
+)
 from .job_description import (
     CompanyInfo,
     EducationRequirement,
@@ -27,18 +40,34 @@ __all__ = [
     "CandidatePreferences",
     "CandidateProfile",
     "Certification",
+    # Job Description
     "CompanyInfo",
     "DeterministicMatcher",
+    "EducationEvidence",
     "EducationLevel",
+    # Candidate Profile
     "EducationRecord",
     "EducationRequirement",
+    "EvidenceSource",
+    "EvidenceSourceKind",
+    "ExperienceEvidence",
+    "ExperienceGap",
     "ExperienceRequirement",
+    "GapAnalysis",
     "JobDescription",
     "JobTitle",
+    "MatchExplanation",
+    # Matching Engine
     "MatchScore",
+    "MatchedSkillEvidence",
     "Project",
     "Responsibility",
+    "ScoreComponent",
+    # Explanation Engine
+    "ScoreComponentKind",
+    # Primitives
     "Skill",
+    "SkillKeywordCoverage",
     "WorkExperience",
     "WorkMode",
 ]

@@ -2,7 +2,7 @@
 
 import pytest
 
-from pathfinder_ai.domain.job_description import (
+from pathfinder_ai.domain import (
     CompanyInfo,
     EducationLevel,
     EducationRequirement,
