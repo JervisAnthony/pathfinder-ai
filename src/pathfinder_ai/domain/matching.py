@@ -4,7 +4,20 @@ Matching Domain Models and Engine.
 
 from dataclasses import dataclass
 
-from .candidate_profile import CandidateProfile
+from .candidate_profile import CandidateProfile, EducationRecord
+from .explanation import (
+    EducationEvidence,
+    EvidenceSource,
+    EvidenceSourceKind,
+    ExperienceEvidence,
+    ExperienceGap,
+    GapAnalysis,
+    MatchedSkillEvidence,
+    MatchExplanation,
+    ScoreComponent,
+    ScoreComponentKind,
+    SkillKeywordCoverage,
+)
 from .job_description import EducationRequirement, JobDescription
 from .skill import Skill
 
@@ -31,64 +44,233 @@ class DeterministicMatcher:
         Evaluate structured compatibility between candidate evidence and job
         requirements.
         """
-        possible_points: float = 0.0
-        earned_points: float = 0.0
+        return self.explain(candidate_profile, job_description).score
 
-        # We need a unified skill set that ignores duplicated evidence
-        candidate_skills = self._extract_unique_skills(candidate_profile)
+    def explain(
+        self, candidate_profile: CandidateProfile, job_description: JobDescription
+    ) -> MatchExplanation:
+        components: list[ScoreComponent] = []
+        matched_skills: list[MatchedSkillEvidence] = []
+        missing_req_skills: list[Skill] = []
+        missing_pref_skills: list[Skill] = []
+
+        # Skill source mapping
+        skill_sources: dict[Skill, list[EvidenceSource]] = {}
+
+        def add_source(skill: Skill, source: EvidenceSource) -> None:
+            if skill not in skill_sources:
+                skill_sources[skill] = []
+            skill_sources[skill].append(source)
+
+        for skill in candidate_profile.skills:
+            add_source(
+                skill, EvidenceSource(kind=EvidenceSourceKind.PROFILE, label=None)
+            )
+
+        for exp in candidate_profile.experience:
+            for skill in exp.skills:
+                add_source(
+                    skill,
+                    EvidenceSource(
+                        kind=EvidenceSourceKind.WORK_EXPERIENCE,
+                        label=exp.role_title.title,
+                    ),
+                )
+
+        for proj in candidate_profile.projects:
+            for skill in proj.skills:
+                add_source(
+                    skill,
+                    EvidenceSource(kind=EvidenceSourceKind.PROJECT, label=proj.name),
+                )
 
         # 1. Score Skills
+        req_possible = 0.0
+        req_earned = 0.0
         for req_skill in job_description.required_skills:
-            possible_points += 1.0
-            if req_skill in candidate_skills:
-                earned_points += 1.0
+            req_possible += 1.0
+            if req_skill in skill_sources:
+                req_earned += 1.0
+                matched_skills.append(
+                    MatchedSkillEvidence(
+                        skill=req_skill,
+                        is_required=True,
+                        evidence_sources=tuple(skill_sources[req_skill]),
+                    )
+                )
+            else:
+                missing_req_skills.append(req_skill)
+
+        if req_possible > 0:
+            components.append(
+                ScoreComponent(
+                    kind=ScoreComponentKind.REQUIRED_SKILLS,
+                    earned_points=req_earned,
+                    possible_points=req_possible,
+                )
+            )
+
+        pref_possible = 0.0
+        pref_earned = 0.0
+        for pref_skill in job_description.preferred_skills:
+            pref_possible += 0.5
+            if pref_skill in skill_sources:
+                pref_earned += 0.5
+                matched_skills.append(
+                    MatchedSkillEvidence(
+                        skill=pref_skill,
+                        is_required=False,
+                        evidence_sources=tuple(skill_sources[pref_skill]),
+                    )
+                )
+            else:
+                missing_pref_skills.append(pref_skill)
+
+        if pref_possible > 0:
+            components.append(
+                ScoreComponent(
+                    kind=ScoreComponentKind.PREFERRED_SKILLS,
+                    earned_points=pref_earned,
+                    possible_points=pref_possible,
+                )
+            )
+
+        # Keyword Coverage
+        total_keywords = len(job_description.required_skills) + len(
+            job_description.preferred_skills
+        )
+        matched_keywords_list = []
+        missing_keywords_list = []
+
+        for req_skill in job_description.required_skills:
+            if req_skill in skill_sources:
+                matched_keywords_list.append(req_skill)
+            else:
+                missing_keywords_list.append(req_skill)
 
         for pref_skill in job_description.preferred_skills:
-            possible_points += 0.5
-            if pref_skill in candidate_skills:
-                earned_points += 0.5
+            if pref_skill in skill_sources:
+                matched_keywords_list.append(pref_skill)
+            else:
+                missing_keywords_list.append(pref_skill)
+
+        kw_percentage = None
+        if total_keywords > 0:
+            kw_percentage = round(
+                (len(matched_keywords_list) / total_keywords) * 100, 2
+            )
+
+        keyword_coverage = SkillKeywordCoverage(
+            matched_keywords=tuple(matched_keywords_list),
+            missing_keywords=tuple(missing_keywords_list),
+            percentage=kw_percentage,
+        )
 
         # 2. Score Experience
+        exp_evidence = None
+        exp_gap = None
+
         if (
             job_description.experience_requirement
             and job_description.experience_requirement.minimum_years is not None
             and job_description.experience_requirement.minimum_years > 0
         ):
-            possible_points += 1.0
             min_months = job_description.experience_requirement.minimum_years * 12
-
-            candidate_months = 0
-            for exp in candidate_profile.experience:
-                if exp.duration_months is not None:
-                    candidate_months += exp.duration_months
+            candidate_months = sum(
+                exp.duration_months
+                for exp in candidate_profile.experience
+                if exp.duration_months is not None
+            )
 
             exp_credit = min(1.0, candidate_months / min_months)
-            earned_points += exp_credit
+
+            exp_evidence = ExperienceEvidence(
+                required_months=min_months,
+                known_candidate_months=candidate_months,
+                earned_points=exp_credit,
+                possible_points=1.0,
+            )
+
+            components.append(
+                ScoreComponent(
+                    kind=ScoreComponentKind.EXPERIENCE,
+                    earned_points=exp_credit,
+                    possible_points=1.0,
+                )
+            )
+
+            if candidate_months < min_months:
+                exp_gap = ExperienceGap(
+                    required_months=min_months,
+                    known_candidate_months=candidate_months,
+                    missing_months=min_months - candidate_months,
+                )
 
         # 3. Score Education
+        edu_evidence = None
+        edu_gap = None
+
         if job_description.education_requirement and (
             job_description.education_requirement.level is not None
             or job_description.education_requirement.field_of_study is not None
         ):
-            possible_points += 1.0
-            if self._satisfies_education(
+            matched_record = self._satisfies_education_record(
                 candidate_profile, job_description.education_requirement
-            ):
-                earned_points += 1.0
+            )
+
+            satisfied = matched_record is not None
+            earned = 1.0 if satisfied else 0.0
+
+            edu_evidence = EducationEvidence(
+                requirement=job_description.education_requirement,
+                matched_record=matched_record,
+                satisfied=satisfied,
+            )
+
+            components.append(
+                ScoreComponent(
+                    kind=ScoreComponentKind.EDUCATION,
+                    earned_points=earned,
+                    possible_points=1.0,
+                )
+            )
+
+            if not satisfied:
+                edu_gap = job_description.education_requirement
 
         # 4. Total Calculation
-        if possible_points == 0.0:
-            return MatchScore(value=None)
+        total_possible = sum(c.possible_points for c in components)
+        total_earned = sum(c.earned_points for c in components)
 
-        final_score = (earned_points / possible_points) * 100
-        return MatchScore(value=round(final_score, 2))
+        if total_possible == 0.0:
+            final_score_obj = MatchScore(value=None)
+        else:
+            final_score = (total_earned / total_possible) * 100
+            final_score_obj = MatchScore(value=round(final_score, 2))
 
-    def _satisfies_education(
+        gap_analysis = GapAnalysis(
+            missing_required_skills=tuple(missing_req_skills),
+            missing_preferred_skills=tuple(missing_pref_skills),
+            experience_gap=exp_gap,
+            education_gap=edu_gap,
+        )
+
+        return MatchExplanation(
+            score=final_score_obj,
+            components=tuple(components),
+            matched_skills=tuple(matched_skills),
+            experience=exp_evidence,
+            education=edu_evidence,
+            gaps=gap_analysis,
+            keyword_coverage=keyword_coverage,
+        )
+
+    def _satisfies_education_record(
         self, candidate_profile: CandidateProfile, req: "EducationRequirement"
-    ) -> bool:
+    ) -> "EducationRecord | None":
         """
         Check if any candidate education record fully satisfies the scoreable
-        structured education requirement.
+        structured education requirement, and return the first matched record.
         """
         from .education import EducationLevel
 
@@ -124,21 +306,6 @@ class DeterministicMatcher:
                 )
 
             if level_satisfied and field_satisfied:
-                return True
+                return record
 
-        return False
-
-    def _extract_unique_skills(self, candidate_profile: CandidateProfile) -> set[Skill]:
-        """
-        Collect unique canonical skills across CandidateProfile evidence.
-        Duplicate evidence does not increase weight.
-        """
-        unique_skills = set(candidate_profile.skills)
-
-        for experience in candidate_profile.experience:
-            unique_skills.update(experience.skills)
-
-        for project in candidate_profile.projects:
-            unique_skills.update(project.skills)
-
-        return unique_skills
+        return None

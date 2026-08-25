@@ -6,7 +6,20 @@ AI-powered job matching, application intelligence, and interview preparation wit
 
 Pathfinder AI is currently establishing its foundation. The current MVP-1 milestone aims to implement deterministic matching, application guidance, and optional AI enrichment. The structured Job Description and Candidate Profile domain models have been introduced, along with a deterministic structured candidate-job matching baseline.
 
-This matching baseline provides a heuristic structured compatibility score using exact normalized structured evidence. It is explainable and deterministic. It is explicitly **not** a hiring probability, recruiter probability, or an ATS compatibility score, and it does not use semantic matching or AI yet.
+Pathfinder AI now supports:
+- deterministic structured compatibility scoring
+- transparent score components
+- matched structured skill evidence
+- structured gap analysis
+- structured skill keyword coverage
+
+**Explicit Limits of the Current Matching Baseline:**
+- keyword coverage uses structured job skills only
+- it is not ATS keyword analysis
+- no resume text is parsed
+- no fuzzy/semantic matching is performed
+- no hiring probability is produced
+- explanation results are deterministic
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
 - APIs (FastAPI)
