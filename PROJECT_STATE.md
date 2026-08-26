@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Current `main` baseline:
 
-`266ccc84cac1b485afafcef87487afed01934c85`
+`b0d48b953088cc206eba657bfaa20dd157c788c6`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 4 — Deterministic Matching Engine**
+**Commit 5 — Match Explanation & Gap Analysis**
 
 ## Completed MVP-1 Roadmap
 
@@ -21,50 +21,40 @@ Current completed roadmap milestone on `main`:
 - Commit 2 — Job Description Domain — complete
 - Commit 3 — Candidate Profile Domain — complete
 - Commit 4 — Deterministic Matching Engine — complete
+- Commit 5 — Match Explanation & Gap Analysis — complete
 
 These milestones must not be replayed or rebuilt.
 
 ## Active Work
 
-**Commit 5 — Match Explanation & Gap Analysis**
+**Commit 6 — Interview Preparation Engine**
 
 Active pull request:
 
-**PR #7 — Add match explanations and gap analysis**
+None yet.
 
 Current reviewed PR head:
 
-`32d0b699f42937a6b728fd341eeb92ccba08cc12`
+None yet.
 
-Commit 5 is **not complete until PR #7 is merged into `main`**.
+## Commit 6 Scope
 
-Do not begin Commit 6 from `main` until Commit 5 has been merged and this file has been updated.
+Commit 6 adds deterministic structured interview preparation capabilities on top of the existing matcher and explanation:
 
-## Commit 5 Scope
+- interview themes
+- candidate talking points
+- likely interview question categories
+- candidate-to-interviewer questions
 
-Commit 5 adds deterministic structured explanation capabilities on top of the existing matcher:
-
-- score components
-- matched skill evidence
-- evidence sources
-- missing required skills
-- missing preferred skills
-- structured experience evidence and gaps
-- structured education evidence and gaps
-- deterministic structured skill keyword coverage
-- `MatchExplanation`
-
-The existing deterministic score remains the source of truth.
+The existing deterministic score and match explanation remains the source of truth.
 
 This milestone does not introduce:
 
-- resume parsing
-- ATS analysis
-- fuzzy or semantic matching
-- LLM-generated explanations
+- LLM integration
+- AI provider abstraction
+- semantic matching
 - FastAPI
 - persistence
-- AI providers
 - frontend behavior
 
 ## Existing Capabilities
@@ -83,31 +73,19 @@ The repository already contains:
 - exact structured skill matching
 - deterministic experience scoring
 - deterministic education scoring
+- structured match explanation and gap analysis
+- `MatchExplanation`
 
 Future work must build on these capabilities rather than recreate them.
 
 ## Next Roadmap Milestone
 
-After Commit 5 is merged:
+After Commit 6 is merged:
 
-**Commit 6 — Interview Preparation Engine**
-
-Roadmap objective:
-
-Generate deterministic:
-
-- interview themes
-- candidate talking points
-- likely question categories
-- candidate-to-interviewer questions
-
-from existing structured candidate/job analysis data.
-
-Do not introduce AI provider integration in Commit 6.
+**Commit 7 — AI Provider Abstraction**
 
 ## Later MVP-1 Milestones
 
-- Commit 7 — AI Provider Abstraction
 - Commit 8 — FastAPI Analysis API
 - Commit 9 — Persistence & Analysis History
 - Commit 10 — Web MVP
