@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-08-25
+Last updated: 2026-08-26
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -31,11 +31,8 @@ These milestones must not be replayed or rebuilt.
 
 Active pull request:
 
-None yet.
+**PR #9 — Add deterministic interview preparation**
 
-Current reviewed PR head:
-
-None yet.
 
 ## Commit 6 Scope
 
@@ -46,7 +43,7 @@ Commit 6 adds deterministic structured interview preparation capabilities on top
 - likely interview question categories
 - candidate-to-interviewer questions
 
-The existing deterministic score and match explanation remains the source of truth.
+The existing deterministic score and match explanation remain the source of truth.
 
 This milestone does not introduce:
 

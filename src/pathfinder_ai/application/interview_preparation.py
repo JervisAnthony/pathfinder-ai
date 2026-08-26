@@ -29,10 +29,24 @@ class InterviewTheme:
     kind: InterviewThemeKind
     description: str
 
+    def __post_init__(self) -> None:
+        if not self.description or not self.description.strip():
+            raise ValueError("InterviewTheme description cannot be blank.")
+        from pathfinder_ai.domain._normalization import _normalize_whitespace
+
+        object.__setattr__(self, "description", _normalize_whitespace(self.description))
+
 
 @dataclass(frozen=True, slots=True)
 class TalkingPoint:
     description: str
+
+    def __post_init__(self) -> None:
+        if not self.description or not self.description.strip():
+            raise ValueError("TalkingPoint description cannot be blank.")
+        from pathfinder_ai.domain._normalization import _normalize_whitespace
+
+        object.__setattr__(self, "description", _normalize_whitespace(self.description))
 
 
 class InterviewQuestionCategory(StrEnum):
@@ -49,6 +63,13 @@ class InterviewQuestionCategory(StrEnum):
 @dataclass(frozen=True, slots=True)
 class InterviewerQuestion:
     description: str
+
+    def __post_init__(self) -> None:
+        if not self.description or not self.description.strip():
+            raise ValueError("InterviewerQuestion description cannot be blank.")
+        from pathfinder_ai.domain._normalization import _normalize_whitespace
+
+        object.__setattr__(self, "description", _normalize_whitespace(self.description))
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +127,23 @@ class DeterministicInterviewPreparer:
         req_skills_set = set(job_description.required_skills)
         pref_skills_set = set(job_description.preferred_skills)
 
+        # Profile validation dictionaries
+        cand_skills = set(candidate_profile.skills)
+        cand_exp_skills = {}
+        for exp in candidate_profile.experience:
+            cand_exp_skills[exp.role_title.title] = set(exp.skills)
+        cand_proj_skills = {}
+        for proj in candidate_profile.projects:
+            cand_proj_skills[proj.name] = set(proj.skills)
+
+        # Track seen matched skills
+        seen_matched_skills = set()
+
         for matched_evidence in match_explanation.matched_skills:
+            if matched_evidence.skill in seen_matched_skills:
+                raise ValueError("Duplicate matched evidence for skill.")
+            seen_matched_skills.add(matched_evidence.skill)
+
             if matched_evidence.is_required:
                 if matched_evidence.skill not in req_skills_set:
                     raise ValueError(
@@ -132,53 +169,174 @@ class DeterministicInterviewPreparer:
                     f"Skill '{matched_evidence.skill}' matched and missing (preferred)."
                 )
 
-        # Validate Keyword Coverage consistency with Job Skills
+            # Verify candidate profile evidence
+            for source in matched_evidence.evidence_sources:
+                if source.kind == "profile":
+                    if matched_evidence.skill not in cand_skills:
+                        raise ValueError(
+                            "Profile evidence for skill not in CandidateProfile."
+                        )
+                elif source.kind == "work_experience":
+                    if source.label not in cand_exp_skills:
+                        raise ValueError(
+                            f"Work experience '{source.label}' not in CandidateProfile."
+                        )
+                    if matched_evidence.skill not in cand_exp_skills[source.label]:
+                        raise ValueError(
+                            "Skill evidence missing in candidate experience."
+                        )
+                elif source.kind == "project":
+                    if source.label not in cand_proj_skills:
+                        raise ValueError(
+                            f"Project '{source.label}' not in CandidateProfile."
+                        )
+                    if matched_evidence.skill not in cand_proj_skills[source.label]:
+                        raise ValueError("Skill evidence missing in candidate project.")
+
+        # Complete Partition validation
+        for skill in req_skills_set:
+            if (
+                skill not in seen_matched_skills
+                and skill not in match_explanation.gaps.missing_required_skills
+            ):
+                raise ValueError(
+                    f"Required skill '{skill}' missing from explanation partition."
+                )
+        for skill in pref_skills_set:
+            if (
+                skill not in seen_matched_skills
+                and skill not in match_explanation.gaps.missing_preferred_skills
+            ):
+                raise ValueError(
+                    f"Preferred skill '{skill}' missing from explanation partition."
+                )
+
+        for skill in match_explanation.gaps.missing_required_skills:
+            if skill not in req_skills_set:
+                raise ValueError("Missing required skill not in job requirements.")
+        for skill in match_explanation.gaps.missing_preferred_skills:
+            if skill not in pref_skills_set:
+                raise ValueError("Missing preferred skill not in job requirements.")
+
+        # Validate Keyword Coverage consistency with Job Skills EXACTLY
         kw_matched = set(match_explanation.keyword_coverage.matched_keywords)
         kw_missing = set(match_explanation.keyword_coverage.missing_keywords)
 
-        all_job_skills = req_skills_set | pref_skills_set
-
-        for kw in kw_matched:
-            if kw not in all_job_skills:
-                raise ValueError(f"Matched keyword '{kw}' is not in job skills.")
-        for kw in kw_missing:
-            if kw not in all_job_skills:
-                raise ValueError(f"Missing keyword '{kw}' is not in job skills.")
+        if kw_matched != seen_matched_skills:
+            raise ValueError(
+                "Keyword coverage matched skills do not match exact job matched skills."
+            )
+        if kw_missing != set(match_explanation.gaps.missing_required_skills) | set(
+            match_explanation.gaps.missing_preferred_skills
+        ):
+            raise ValueError(
+                "Keyword coverage missing skills do not match exact job missing skills."
+            )
 
         # Validate Experience Gap consistency
-        if (
-            match_explanation.experience is not None
-            and match_explanation.gaps.experience_gap is not None
-        ):
+        if match_explanation.experience is not None:
+            # Match required
+            req_months = 0
             if (
-                match_explanation.experience.known_candidate_months
-                != match_explanation.gaps.experience_gap.known_candidate_months
+                job_description.experience_requirement
+                and job_description.experience_requirement.minimum_years
             ):
+                req_months = job_description.experience_requirement.minimum_years * 12
+            if req_months == 0:
                 raise ValueError(
-                    "Experience evidence and gap known months are inconsistent."
+                    "Scoreable evidence supplied for 0-min job requirement."
                 )
-            if (
-                match_explanation.experience.required_months
-                != match_explanation.gaps.experience_gap.required_months
-            ):
+
+            if match_explanation.experience.required_months != req_months:
                 raise ValueError(
-                    "Experience evidence and gap required months are inconsistent."
+                    "Experience evidence required months do not match job description."
                 )
+
+            # Match known
+            cand_months = sum(
+                e.duration_months
+                for e in candidate_profile.experience
+                if e.duration_months
+            )
+            if match_explanation.experience.known_candidate_months != cand_months:
+                raise ValueError(
+                    "Experience evidence known months do not match CandidateProfile."
+                )
+
+            # Match gap state exactly
+            expected_missing = max(0, req_months - cand_months)
+            has_gap = expected_missing > 0
+
+            if has_gap:
+                if match_explanation.gaps.experience_gap is None:
+                    raise ValueError("Experience gap missing when one is required.")
+                if match_explanation.gaps.experience_gap.required_months != req_months:
+                    raise ValueError(
+                        "Experience gap required months do not match job description."
+                    )
+                if (
+                    match_explanation.gaps.experience_gap.known_candidate_months
+                    != cand_months
+                ):
+                    raise ValueError(
+                        "Experience gap known months do not match CandidateProfile."
+                    )
+
+            else:
+                if match_explanation.gaps.experience_gap is not None:
+                    raise ValueError("Experience gap exists when none is expected.")
+
+        elif match_explanation.gaps.experience_gap is not None:
+            raise ValueError(
+                "Experience gap exists without corresponding experience evidence."
+            )
 
         # Validate Education State Consistency
         if match_explanation.education is not None:
-            if (
-                match_explanation.education.satisfied
-                and match_explanation.gaps.education_gap is not None
-            ):
-                raise ValueError("Education is satisfied but an education gap exists.")
-            if (
-                not match_explanation.education.satisfied
-                and match_explanation.gaps.education_gap is None
+            if not job_description.education_requirement or (
+                job_description.education_requirement.level is None
+                and job_description.education_requirement.field_of_study is None
             ):
                 raise ValueError(
-                    "Education is not satisfied but no education gap exists."
+                    "Education evidence supplied for non-scoreable job requirement."
                 )
+
+            if (
+                match_explanation.education.requirement
+                != job_description.education_requirement
+            ):
+                raise ValueError(
+                    "Education evidence requirement does not match JobDescription."
+                )
+
+            if match_explanation.education.satisfied:
+                if (
+                    match_explanation.education.matched_record
+                    not in candidate_profile.education
+                ):
+                    raise ValueError(
+                        "Matched education record not found in CandidateProfile."
+                    )
+                if match_explanation.gaps.education_gap is not None:
+                    raise ValueError(
+                        "Education is satisfied but an education gap exists."
+                    )
+            else:
+                if match_explanation.gaps.education_gap is None:
+                    raise ValueError(
+                        "Education is not satisfied but no education gap exists."
+                    )
+                if (
+                    match_explanation.gaps.education_gap
+                    != job_description.education_requirement
+                ):
+                    raise ValueError(
+                        "Education gap does not match JobDescription requirement."
+                    )
+        elif match_explanation.gaps.education_gap is not None:
+            raise ValueError(
+                "Education gap exists without corresponding education evidence."
+            )
 
     def _generate_themes(
         self, job_description: JobDescription, match_explanation: MatchExplanation
@@ -291,27 +449,27 @@ class DeterministicInterviewPreparer:
 
         for matched in match_explanation.matched_skills:
             for source in matched.evidence_sources:
+                s_name = matched.skill.name
                 if source.kind == "profile":
-                    points.append(
-                        TalkingPoint(
-                            description=f"Evidence in profile: {matched.skill.name}"
-                        )
-                    )
+                    desc = f"{s_name} evidence from profile"
+                    points.append(TalkingPoint(description=desc))
                 elif source.kind == "work_experience":
-                    points.append(TalkingPoint(description=f"Exp: {source.label}"))
+                    desc = f"{s_name} evidence from work experience: {source.label}"
+                    points.append(TalkingPoint(description=desc))
                 elif source.kind == "project":
-                    points.append(TalkingPoint(description=f"Proj: {source.label}"))
+                    desc = f"{s_name} evidence from project: {source.label}"
+                    points.append(TalkingPoint(description=desc))
 
         if match_explanation.experience is not None:
-            points.append(TalkingPoint(description="Candidate known experience"))
+            kn = match_explanation.experience.known_candidate_months
+            rq = match_explanation.experience.required_months
+            points.append(TalkingPoint(description=f"Known candidate months: {kn}"))
+            points.append(TalkingPoint(description=f"Required months: {rq}"))
             if match_explanation.gaps.experience_gap is not None:
-                points.append(TalkingPoint(description="Experience gap identified"))
+                ms = match_explanation.gaps.experience_gap.missing_months
+                points.append(TalkingPoint(description=f"Minimum not met. Missing months: {ms}"))
             else:
-                points.append(
-                    TalkingPoint(
-                        description="Candidate meets minimum experience requirement"
-                    )
-                )
+                points.append(TalkingPoint(description="Minimum experience requirement is met."))
 
         if match_explanation.education is not None:
             level_str = (
@@ -323,12 +481,6 @@ class DeterministicInterviewPreparer:
                 points.append(
                     TalkingPoint(
                         description=f"Candidate satisfies education {level_str}"
-                    )
-                )
-            else:
-                points.append(
-                    TalkingPoint(
-                        description=f"Candidate does not satisfy education {level_str}"
                     )
                 )
 
@@ -377,31 +529,23 @@ class DeterministicInterviewPreparer:
         for i, resp in enumerate(job_description.responsibilities):
             if i == 0:
                 questions.append(
-                    InterviewerQuestion(
-                        description=f"Day-to-day: {resp.description[:30]}?"
-                    )
+                    InterviewerQuestion(description=f"Day-to-day: {resp.description}?")
                 )
             elif i == 1:
                 questions.append(
                     InterviewerQuestion(
-                        description=f"Success for: {resp.description[:30]}?"
+                        description=f"Success definition: {resp.description}?"
                     )
                 )
 
         # Required Skills
-        if job_description.required_skills:
-            questions.append(
-                InterviewerQuestion(
-                    description="How is this required skill used day to day?"
-                )
-            )
+        for req_skill in job_description.required_skills:
+            desc = f"How is {req_skill.name} used day to day in this role?"
+            questions.append(InterviewerQuestion(description=desc))
 
         # Preferred Skills
-        if job_description.preferred_skills:
-            questions.append(
-                InterviewerQuestion(
-                    description="How does this preferred skill fit workflow?"
-                )
-            )
+        for pref_skill in job_description.preferred_skills:
+            desc = f"How does {pref_skill.name} fit into the team's workflow?"
+            questions.append(InterviewerQuestion(description=desc))
 
         return tuple(questions)
