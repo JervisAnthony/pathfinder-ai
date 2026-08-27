@@ -12,6 +12,11 @@ Pathfinder AI now supports:
 - matched structured skill evidence
 - structured gap analysis
 - structured skill keyword coverage
+- deterministic interview preparation
+- evidence-grounded interview themes
+- candidate talking points
+- likely interview question categories
+- candidate-to-interviewer questions
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
@@ -20,13 +25,16 @@ Pathfinder AI now supports:
 - no fuzzy/semantic matching is performed
 - no hiring probability is produced
 - explanation results are deterministic
+- no LLM required for interview generation
+- no AI-generated interview predictions
+- no employer-specific inference
+- interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
 - APIs (FastAPI)
 - Persistence and databases (SQLite)
 - AI enrichments, LLM SDKs, and semantic matching
 - Resume parsing and document ingestion
-- Interview generation and recommendations
 - Web application (React, TypeScript)
 
 ## MVP-1 Direction
