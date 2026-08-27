@@ -7,9 +7,18 @@ from enum import StrEnum
 
 from pathfinder_ai.domain import (
     CandidateProfile,
+    DeterministicMatcher,
+    EvidenceSourceKind,
     JobDescription,
     MatchExplanation,
 )
+
+
+def _normalize_text(value: str, type_name: str) -> str:
+    normalized = " ".join(value.split())
+    if not normalized:
+        raise ValueError(f"{type_name} description cannot be blank.")
+    return normalized
 
 
 class InterviewThemeKind(StrEnum):
@@ -30,11 +39,11 @@ class InterviewTheme:
     description: str
 
     def __post_init__(self) -> None:
-        if not self.description or not self.description.strip():
-            raise ValueError("InterviewTheme description cannot be blank.")
-        from pathfinder_ai.domain._normalization import _normalize_whitespace
-
-        object.__setattr__(self, "description", _normalize_whitespace(self.description))
+        object.__setattr__(
+            self,
+            "description",
+            _normalize_text(self.description, type(self).__name__),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,11 +51,11 @@ class TalkingPoint:
     description: str
 
     def __post_init__(self) -> None:
-        if not self.description or not self.description.strip():
-            raise ValueError("TalkingPoint description cannot be blank.")
-        from pathfinder_ai.domain._normalization import _normalize_whitespace
-
-        object.__setattr__(self, "description", _normalize_whitespace(self.description))
+        object.__setattr__(
+            self,
+            "description",
+            _normalize_text(self.description, type(self).__name__),
+        )
 
 
 class InterviewQuestionCategory(StrEnum):
@@ -65,11 +74,11 @@ class InterviewerQuestion:
     description: str
 
     def __post_init__(self) -> None:
-        if not self.description or not self.description.strip():
-            raise ValueError("InterviewerQuestion description cannot be blank.")
-        from pathfinder_ai.domain._normalization import _normalize_whitespace
-
-        object.__setattr__(self, "description", _normalize_whitespace(self.description))
+        object.__setattr__(
+            self,
+            "description",
+            _normalize_text(self.description, type(self).__name__),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,19 +133,25 @@ class DeterministicInterviewPreparer:
         match_explanation: MatchExplanation,
     ) -> None:
         """Ensure explanation does not contradict job description."""
-        req_skills_set = set(job_description.required_skills)
-        pref_skills_set = set(job_description.preferred_skills)
+        required_skills = job_description.required_skills
+        preferred_skills = job_description.preferred_skills
+        required_skill_set = set(required_skills)
+        preferred_skill_set = set(preferred_skills)
+        gaps = match_explanation.gaps
 
-        # Profile validation dictionaries
-        cand_skills = set(candidate_profile.skills)
-        cand_exp_skills = {}
-        for exp in candidate_profile.experience:
-            cand_exp_skills[exp.role_title.title] = set(exp.skills)
-        cand_proj_skills = {}
-        for proj in candidate_profile.projects:
-            cand_proj_skills[proj.name] = set(proj.skills)
+        self._reject_duplicates(gaps.missing_required_skills, "missing required skills")
+        self._reject_duplicates(
+            gaps.missing_preferred_skills, "missing preferred skills"
+        )
+        self._reject_duplicates(
+            match_explanation.keyword_coverage.matched_keywords,
+            "matched keywords",
+        )
+        self._reject_duplicates(
+            match_explanation.keyword_coverage.missing_keywords,
+            "missing keywords",
+        )
 
-        # Track seen matched skills
         seen_matched_skills = set()
 
         for matched_evidence in match_explanation.matched_skills:
@@ -144,198 +159,225 @@ class DeterministicInterviewPreparer:
                 raise ValueError("Duplicate matched evidence for skill.")
             seen_matched_skills.add(matched_evidence.skill)
 
+            if not matched_evidence.evidence_sources:
+                raise ValueError("Matched skill must contain evidence.")
+
             if matched_evidence.is_required:
-                if matched_evidence.skill not in req_skills_set:
+                if matched_evidence.skill not in required_skill_set:
                     raise ValueError(
                         f"Matched required skill '{matched_evidence.skill}' "
                         "is not required by the job."
                     )
             else:
-                if matched_evidence.skill not in pref_skills_set:
+                if matched_evidence.skill not in preferred_skill_set:
                     raise ValueError(
                         f"Matched preferred skill '{matched_evidence.skill}' "
                         "is not preferred by the job."
                     )
 
-            if matched_evidence.skill in match_explanation.gaps.missing_required_skills:
+            if matched_evidence.skill in gaps.missing_required_skills:
                 raise ValueError(
                     f"Skill '{matched_evidence.skill}' matched and missing (required)."
                 )
-            if (
-                matched_evidence.skill
-                in match_explanation.gaps.missing_preferred_skills
-            ):
+            if matched_evidence.skill in gaps.missing_preferred_skills:
                 raise ValueError(
                     f"Skill '{matched_evidence.skill}' matched and missing (preferred)."
                 )
 
-            # Verify candidate profile evidence
             for source in matched_evidence.evidence_sources:
-                if source.kind == "profile":
-                    if matched_evidence.skill not in cand_skills:
+                if source.kind == EvidenceSourceKind.PROFILE:
+                    if matched_evidence.skill not in candidate_profile.skills:
                         raise ValueError(
                             "Profile evidence for skill not in CandidateProfile."
                         )
-                elif source.kind == "work_experience":
-                    if source.label not in cand_exp_skills:
+                elif source.kind == EvidenceSourceKind.WORK_EXPERIENCE:
+                    matching_experiences = tuple(
+                        experience
+                        for experience in candidate_profile.experience
+                        if experience.role_title.title == source.label
+                    )
+                    if not matching_experiences:
                         raise ValueError(
                             f"Work experience '{source.label}' not in CandidateProfile."
                         )
-                    if matched_evidence.skill not in cand_exp_skills[source.label]:
+                    if not any(
+                        matched_evidence.skill in experience.skills
+                        for experience in matching_experiences
+                    ):
                         raise ValueError(
                             "Skill evidence missing in candidate experience."
                         )
-                elif source.kind == "project":
-                    if source.label not in cand_proj_skills:
+                elif source.kind == EvidenceSourceKind.PROJECT:
+                    matching_projects = tuple(
+                        project
+                        for project in candidate_profile.projects
+                        if project.name == source.label
+                    )
+                    if not matching_projects:
                         raise ValueError(
                             f"Project '{source.label}' not in CandidateProfile."
                         )
-                    if matched_evidence.skill not in cand_proj_skills[source.label]:
+                    if not any(
+                        matched_evidence.skill in project.skills
+                        for project in matching_projects
+                    ):
                         raise ValueError("Skill evidence missing in candidate project.")
 
-        # Complete Partition validation
-        for skill in req_skills_set:
+        for skill in required_skills:
             if (
                 skill not in seen_matched_skills
-                and skill not in match_explanation.gaps.missing_required_skills
+                and skill not in gaps.missing_required_skills
             ):
                 raise ValueError(
                     f"Required skill '{skill}' missing from explanation partition."
                 )
-        for skill in pref_skills_set:
+        for skill in preferred_skills:
             if (
                 skill not in seen_matched_skills
-                and skill not in match_explanation.gaps.missing_preferred_skills
+                and skill not in gaps.missing_preferred_skills
             ):
                 raise ValueError(
                     f"Preferred skill '{skill}' missing from explanation partition."
                 )
 
-        for skill in match_explanation.gaps.missing_required_skills:
-            if skill not in req_skills_set:
+        for skill in gaps.missing_required_skills:
+            if skill not in required_skill_set:
                 raise ValueError("Missing required skill not in job requirements.")
-        for skill in match_explanation.gaps.missing_preferred_skills:
-            if skill not in pref_skills_set:
+        for skill in gaps.missing_preferred_skills:
+            if skill not in preferred_skill_set:
                 raise ValueError("Missing preferred skill not in job requirements.")
 
-        # Validate Keyword Coverage consistency with Job Skills EXACTLY
-        kw_matched = set(match_explanation.keyword_coverage.matched_keywords)
-        kw_missing = set(match_explanation.keyword_coverage.missing_keywords)
+        expected_matched_keywords = tuple(
+            skill
+            for skill in (*required_skills, *preferred_skills)
+            if skill in seen_matched_skills
+        )
+        expected_missing_keywords = tuple(
+            skill
+            for skill in (*required_skills, *preferred_skills)
+            if skill not in seen_matched_skills
+        )
 
-        if kw_matched != seen_matched_skills:
+        if (
+            match_explanation.keyword_coverage.matched_keywords
+            != expected_matched_keywords
+        ):
             raise ValueError(
                 "Keyword coverage matched skills do not match exact job matched skills."
             )
-        if kw_missing != set(match_explanation.gaps.missing_required_skills) | set(
-            match_explanation.gaps.missing_preferred_skills
+        if (
+            match_explanation.keyword_coverage.missing_keywords
+            != expected_missing_keywords
         ):
             raise ValueError(
                 "Keyword coverage missing skills do not match exact job missing skills."
             )
 
-        # Validate Experience Gap consistency
-        if match_explanation.experience is not None:
-            # Match required
-            req_months = 0
-            if (
-                job_description.experience_requirement
-                and job_description.experience_requirement.minimum_years
-            ):
-                req_months = job_description.experience_requirement.minimum_years * 12
-            if req_months == 0:
+        self._validate_experience(candidate_profile, job_description, match_explanation)
+        self._validate_education(candidate_profile, job_description, match_explanation)
+
+    @staticmethod
+    def _reject_duplicates(items: tuple[object, ...], label: str) -> None:
+        if len(items) != len(set(items)):
+            raise ValueError(f"Duplicate {label} are not allowed.")
+
+    def _validate_experience(
+        self,
+        candidate_profile: CandidateProfile,
+        job_description: JobDescription,
+        match_explanation: MatchExplanation,
+    ) -> None:
+        requirement = job_description.experience_requirement
+        minimum_years = requirement.minimum_years if requirement is not None else None
+        evidence = match_explanation.experience
+        gap = match_explanation.gaps.experience_gap
+
+        if minimum_years is None or minimum_years <= 0:
+            if evidence is not None or gap is not None:
                 raise ValueError(
-                    "Scoreable evidence supplied for 0-min job requirement."
+                    "Experience evidence supplied for non-scoreable job requirement."
                 )
+            return
 
-            if match_explanation.experience.required_months != req_months:
-                raise ValueError(
-                    "Experience evidence required months do not match job description."
-                )
-
-            # Match known
-            cand_months = sum(
-                e.duration_months
-                for e in candidate_profile.experience
-                if e.duration_months
-            )
-            if match_explanation.experience.known_candidate_months != cand_months:
-                raise ValueError(
-                    "Experience evidence known months do not match CandidateProfile."
-                )
-
-            # Match gap state exactly
-            expected_missing = max(0, req_months - cand_months)
-            has_gap = expected_missing > 0
-
-            if has_gap:
-                if match_explanation.gaps.experience_gap is None:
-                    raise ValueError("Experience gap missing when one is required.")
-                if match_explanation.gaps.experience_gap.required_months != req_months:
-                    raise ValueError(
-                        "Experience gap required months do not match job description."
-                    )
-                if (
-                    match_explanation.gaps.experience_gap.known_candidate_months
-                    != cand_months
-                ):
-                    raise ValueError(
-                        "Experience gap known months do not match CandidateProfile."
-                    )
-
-            else:
-                if match_explanation.gaps.experience_gap is not None:
-                    raise ValueError("Experience gap exists when none is expected.")
-
-        elif match_explanation.gaps.experience_gap is not None:
+        if evidence is None:
             raise ValueError(
-                "Experience gap exists without corresponding experience evidence."
+                "Experience evidence missing for scoreable job requirement."
             )
 
-        # Validate Education State Consistency
-        if match_explanation.education is not None:
-            if not job_description.education_requirement or (
-                job_description.education_requirement.level is None
-                and job_description.education_requirement.field_of_study is None
-            ):
+        required_months = minimum_years * 12
+        candidate_months = sum(
+            experience.duration_months
+            for experience in candidate_profile.experience
+            if experience.duration_months is not None
+        )
+
+        if evidence.required_months != required_months:
+            raise ValueError(
+                "Experience evidence required months do not match job description."
+            )
+        if evidence.known_candidate_months != candidate_months:
+            raise ValueError(
+                "Experience evidence known months do not match CandidateProfile."
+            )
+
+        missing_months = required_months - candidate_months
+        if missing_months > 0:
+            if gap is None:
+                raise ValueError("Experience gap missing when one is required.")
+            if gap.required_months != required_months:
+                raise ValueError(
+                    "Experience gap required months do not match job description."
+                )
+            if gap.known_candidate_months != candidate_months:
+                raise ValueError(
+                    "Experience gap known months do not match CandidateProfile."
+                )
+            if gap.missing_months != missing_months:
+                raise ValueError("Experience gap missing months are inconsistent.")
+        elif gap is not None:
+            raise ValueError("Experience gap exists when none is expected.")
+
+    def _validate_education(
+        self,
+        candidate_profile: CandidateProfile,
+        job_description: JobDescription,
+        match_explanation: MatchExplanation,
+    ) -> None:
+        requirement = job_description.education_requirement
+        is_scoreable = requirement is not None and (
+            requirement.level is not None or requirement.field_of_study is not None
+        )
+        evidence = match_explanation.education
+        gap = match_explanation.gaps.education_gap
+
+        if not is_scoreable:
+            if evidence is not None or gap is not None:
                 raise ValueError(
                     "Education evidence supplied for non-scoreable job requirement."
                 )
+            return
 
-            if (
-                match_explanation.education.requirement
-                != job_description.education_requirement
-            ):
-                raise ValueError(
-                    "Education evidence requirement does not match JobDescription."
-                )
-
-            if match_explanation.education.satisfied:
-                if (
-                    match_explanation.education.matched_record
-                    not in candidate_profile.education
-                ):
-                    raise ValueError(
-                        "Matched education record not found in CandidateProfile."
-                    )
-                if match_explanation.gaps.education_gap is not None:
-                    raise ValueError(
-                        "Education is satisfied but an education gap exists."
-                    )
-            else:
-                if match_explanation.gaps.education_gap is None:
-                    raise ValueError(
-                        "Education is not satisfied but no education gap exists."
-                    )
-                if (
-                    match_explanation.gaps.education_gap
-                    != job_description.education_requirement
-                ):
-                    raise ValueError(
-                        "Education gap does not match JobDescription requirement."
-                    )
-        elif match_explanation.gaps.education_gap is not None:
+        if evidence is None:
             raise ValueError(
-                "Education gap exists without corresponding education evidence."
+                "Education evidence missing for scoreable job requirement."
+            )
+        if evidence.requirement != requirement:
+            raise ValueError(
+                "Education evidence requirement does not match JobDescription."
+            )
+        if evidence.matched_record is not None and (
+            evidence.matched_record not in candidate_profile.education
+        ):
+            raise ValueError("Matched education record not found in CandidateProfile.")
+
+        canonical = DeterministicMatcher().explain(candidate_profile, job_description)
+        if evidence != canonical.education:
+            raise ValueError(
+                "Education evidence does not match deterministic matcher result."
+            )
+        if gap != canonical.gaps.education_gap:
+            raise ValueError(
+                "Education gap does not match deterministic matcher result."
             )
 
     def _generate_themes(
@@ -467,9 +509,13 @@ class DeterministicInterviewPreparer:
             points.append(TalkingPoint(description=f"Required months: {rq}"))
             if match_explanation.gaps.experience_gap is not None:
                 ms = match_explanation.gaps.experience_gap.missing_months
-                points.append(TalkingPoint(description=f"Minimum not met. Missing months: {ms}"))
+                points.append(
+                    TalkingPoint(description=f"Minimum not met. Missing months: {ms}")
+                )
             else:
-                points.append(TalkingPoint(description="Minimum experience requirement is met."))
+                points.append(
+                    TalkingPoint(description="Minimum experience requirement is met.")
+                )
 
         if match_explanation.education is not None:
             level_str = (

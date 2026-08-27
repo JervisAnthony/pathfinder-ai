@@ -1,4 +1,4 @@
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 
 import pytest
 
@@ -14,15 +14,22 @@ from pathfinder_ai.application import (
 from pathfinder_ai.domain import (
     CandidateProfile,
     DeterministicMatcher,
+    EducationEvidence,
     EducationLevel,
     EducationRecord,
     EducationRequirement,
+    EvidenceSource,
+    EvidenceSourceKind,
+    ExperienceEvidence,
+    ExperienceGap,
     ExperienceRequirement,
     JobDescription,
     JobTitle,
+    MatchedSkillEvidence,
     Project,
     Responsibility,
     Skill,
+    SkillKeywordCoverage,
     WorkExperience,
 )
 
@@ -217,8 +224,9 @@ def test_education() -> None:
 
     themes_gap = [t.kind for t in prep_gap.themes]
     assert InterviewThemeKind.EDUCATION_GAP in themes_gap
-
-    pass
+    assert any(
+        theme.description == "Education gap: bachelor" for theme in prep_gap.themes
+    )
 
 
 def test_unscoreable_inputs() -> None:
@@ -317,10 +325,6 @@ def test_experience_consistency_failures() -> None:
     exp = DeterministicMatcher().explain(cand, job)
 
     # Mutate to make known months inconsistent
-    from dataclasses import replace
-
-    from pathfinder_ai.domain import ExperienceGap
-
     bad_exp_1 = replace(
         exp,
         gaps=replace(
@@ -360,15 +364,11 @@ def test_education_consistency_failures() -> None:
     cand = CandidateProfile(education=(EducationRecord(level=EducationLevel.BACHELOR),))
     exp = DeterministicMatcher().explain(cand, job)
 
-    from dataclasses import replace
-
     # education satisfied but gap exists
     bad_exp_1 = replace(
         exp, gaps=replace(exp.gaps, education_gap=job.education_requirement)
     )
-    with pytest.raises(
-        ValueError, match=r"Education is satisfied but an education gap exists"
-    ):
+    with pytest.raises(ValueError, match=r"Education gap does not match"):
         preparer.prepare(cand, job, bad_exp_1)
 
     cand2 = CandidateProfile(
@@ -377,9 +377,7 @@ def test_education_consistency_failures() -> None:
     exp2 = DeterministicMatcher().explain(cand2, job)
     # education not satisfied but gap missing
     bad_exp_2 = replace(exp2, gaps=replace(exp2.gaps, education_gap=None))
-    with pytest.raises(
-        ValueError, match=r"Education is not satisfied but no education gap exists"
-    ):
+    with pytest.raises(ValueError, match=r"Education gap does not match"):
         preparer.prepare(cand2, job, bad_exp_2)
 
 
@@ -391,8 +389,6 @@ def test_keyword_coverage_consistency_failures() -> None:
     )
     cand = CandidateProfile(skills=(Skill("Python"),))
     exp = DeterministicMatcher().explain(cand, job)
-
-    from dataclasses import replace
 
     from pathfinder_ai.domain import SkillKeywordCoverage
 
@@ -432,8 +428,6 @@ def test_missing_skill_consistency_failures() -> None:
     )
     cand = CandidateProfile(skills=(Skill("Python"), Skill("Docker")))
     exp = DeterministicMatcher().explain(cand, job)
-
-    from dataclasses import replace
 
     bad_exp_1 = replace(
         exp, gaps=replace(exp.gaps, missing_required_skills=(Skill("Python"),))
@@ -485,10 +479,6 @@ def test_remaining_validation_coverage() -> None:
         projects=(Project(name="App", skills=(Skill("Docker"),)),),
     )
     exp = DeterministicMatcher().explain(cand, job)
-    from dataclasses import replace
-
-    from pathfinder_ai.domain import EducationEvidence, ExperienceEvidence
-
     # Scoreable experience evidence on 0-min job
     bad_exp_1 = replace(
         exp,
@@ -499,9 +489,7 @@ def test_remaining_validation_coverage() -> None:
             possible_points=1.0,
         ),
     )
-    with pytest.raises(
-        ValueError, match=r"Scoreable evidence supplied for 0-min job requirement."
-    ):
+    with pytest.raises(ValueError, match=r"non-scoreable job requirement"):
         preparer.prepare(cand, job, bad_exp_1)
 
     # Duplicate matched evidence
@@ -535,7 +523,10 @@ def test_remaining_validation_coverage() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Required skill \'Skill\(name=\'a\'\)\' missing from explanation partition\.",
+        match=(
+            r"Required skill \'Skill\(name=\'a\'\)\' missing from explanation "
+            r"partition\."
+        ),
     ):
         preparer.prepare(cand, job_part, bad_exp_5)
 
@@ -548,7 +539,10 @@ def test_remaining_validation_coverage() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Preferred skill \'Skill\(name=\'a\'\)\' missing from explanation partition\.",
+        match=(
+            r"Preferred skill \'Skill\(name=\'a\'\)\' missing from explanation "
+            r"partition\."
+        ),
     ):
         preparer.prepare(cand, job_part_pref, bad_exp_6)
 
@@ -603,8 +597,6 @@ def test_remaining_validation_coverage() -> None:
         title=JobTitle("Dev"),
         experience_requirement=ExperienceRequirement(minimum_years=1),
     )
-    from pathfinder_ai.domain import ExperienceGap
-
     bad_exp_10 = replace(
         DeterministicMatcher().explain(cand, job_exp2),
         gaps=replace(
@@ -631,7 +623,7 @@ def test_remaining_validation_coverage() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Experience gap exists without corresponding experience evidence\.",
+        match=r"non-scoreable job requirement",
     ):
         preparer.prepare(cand, job, bad_exp_12)
 
@@ -662,9 +654,7 @@ def test_remaining_validation_coverage() -> None:
             exp.gaps, education_gap=EducationRequirement(level=EducationLevel.BACHELOR)
         ),
     )
-    with pytest.raises(
-        ValueError, match=r"Education gap does not match JobDescription requirement\."
-    ):
+    with pytest.raises(ValueError, match=r"Education gap does not match"):
         preparer.prepare(cand, job_ed2, bad_exp_14)
 
     # Education gap without evidence
@@ -677,7 +667,7 @@ def test_remaining_validation_coverage() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Education gap exists without corresponding education evidence\.",
+        match=r"Education evidence missing for scoreable job requirement\.",
     ):
         preparer.prepare(cand, job, bad_exp_15)
 
@@ -690,14 +680,6 @@ def test_evidence_source_failures() -> None:
     )
     cand = CandidateProfile(skills=(Skill("Python"),))
     exp = DeterministicMatcher().explain(cand, job)
-    from dataclasses import replace
-
-    from pathfinder_ai.domain import (
-        EvidenceSource,
-        EvidenceSourceKind,
-        MatchedSkillEvidence,
-    )
-
     # Missing profile evidence in cand
     bad_exp_1 = replace(
         exp,
@@ -814,11 +796,7 @@ def test_education_unmatched() -> None:
         education=(EducationRecord(level=EducationLevel.ASSOCIATE),)
     )
     exp = DeterministicMatcher().explain(cand, job)
-    from dataclasses import replace
-
     # Matched record not in candidate
-    from pathfinder_ai.domain import EducationEvidence
-
     bad_exp = replace(
         exp,
         education=EducationEvidence(
@@ -842,10 +820,6 @@ def test_education_evidence_requirement_mismatch() -> None:
     )
     cand = CandidateProfile(education=(EducationRecord(level=EducationLevel.BACHELOR),))
     exp = DeterministicMatcher().explain(cand, job)
-    from dataclasses import replace
-
-    from pathfinder_ai.domain import EducationEvidence
-
     # Requirement does not match job description
     bad_exp = replace(
         exp,
@@ -870,10 +844,6 @@ def test_keyword_coverage_missing_mismatch() -> None:
     )
     cand = CandidateProfile(skills=(Skill("Docker"),))
     exp = DeterministicMatcher().explain(cand, job)
-    from dataclasses import replace
-
-    from pathfinder_ai.domain import SkillKeywordCoverage
-
     bad_exp = replace(
         exp,
         keyword_coverage=SkillKeywordCoverage(
@@ -882,6 +852,353 @@ def test_keyword_coverage_missing_mismatch() -> None:
     )
     with pytest.raises(
         ValueError,
-        match=r"Keyword coverage missing skills do not match exact job missing skills\.",
+        match=(
+            r"Keyword coverage missing skills do not match exact job missing "
+            r"skills\."
+        ),
     ):
         preparer.prepare(cand, job, bad_exp)
+
+
+def test_duplicate_work_experience_labels_do_not_hide_valid_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        required_skills=(Skill("Python"), Skill("Java")),
+    )
+    candidate = CandidateProfile(
+        experience=(
+            WorkExperience(role_title=JobTitle("Engineer"), skills=(Skill("Python"),)),
+            WorkExperience(role_title=JobTitle("Engineer"), skills=(Skill("Java"),)),
+        )
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+
+    preparation = DeterministicInterviewPreparer().prepare(candidate, job, explanation)
+
+    assert {point.description for point in preparation.talking_points} == {
+        "python evidence from work experience: Engineer",
+        "java evidence from work experience: Engineer",
+    }
+
+
+def test_duplicate_work_experience_labels_still_reject_unsupported_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"), required_skills=(Skill("Python"),)
+    )
+    candidate = CandidateProfile(
+        experience=(
+            WorkExperience(role_title=JobTitle("Engineer"), skills=(Skill("Java"),)),
+            WorkExperience(role_title=JobTitle("Engineer"), skills=(Skill("Docker"),)),
+        )
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+    unsupported = replace(
+        explanation,
+        matched_skills=(
+            MatchedSkillEvidence(
+                skill=Skill("Python"),
+                is_required=True,
+                evidence_sources=(
+                    EvidenceSource(
+                        kind=EvidenceSourceKind.WORK_EXPERIENCE,
+                        label="Engineer",
+                    ),
+                ),
+            ),
+        ),
+        gaps=replace(explanation.gaps, missing_required_skills=()),
+        keyword_coverage=SkillKeywordCoverage(
+            matched_keywords=(Skill("Python"),),
+            missing_keywords=(),
+            percentage=100.0,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="candidate experience"):
+        DeterministicInterviewPreparer().prepare(candidate, job, unsupported)
+
+
+def test_duplicate_project_names_do_not_hide_valid_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        required_skills=(Skill("Python"), Skill("Java")),
+    )
+    candidate = CandidateProfile(
+        projects=(
+            Project(name="Platform", skills=(Skill("Python"),)),
+            Project(name="Platform", skills=(Skill("Java"),)),
+        )
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+
+    preparation = DeterministicInterviewPreparer().prepare(candidate, job, explanation)
+
+    assert {point.description for point in preparation.talking_points} == {
+        "python evidence from project: Platform",
+        "java evidence from project: Platform",
+    }
+
+
+def test_duplicate_project_names_still_reject_unsupported_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"), required_skills=(Skill("Python"),)
+    )
+    candidate = CandidateProfile(
+        projects=(
+            Project(name="Platform", skills=(Skill("Java"),)),
+            Project(name="Platform", skills=(Skill("Docker"),)),
+        )
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+    unsupported = replace(
+        explanation,
+        matched_skills=(
+            MatchedSkillEvidence(
+                skill=Skill("Python"),
+                is_required=True,
+                evidence_sources=(
+                    EvidenceSource(
+                        kind=EvidenceSourceKind.PROJECT,
+                        label="Platform",
+                    ),
+                ),
+            ),
+        ),
+        gaps=replace(explanation.gaps, missing_required_skills=()),
+        keyword_coverage=SkillKeywordCoverage(
+            matched_keywords=(Skill("Python"),),
+            missing_keywords=(),
+            percentage=100.0,
+        ),
+    )
+
+    with pytest.raises(ValueError, match="candidate project"):
+        DeterministicInterviewPreparer().prepare(candidate, job, unsupported)
+
+
+def test_matched_skill_requires_verifiable_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"), required_skills=(Skill("Python"),)
+    )
+    candidate = CandidateProfile(skills=(Skill("Python"),))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    without_evidence = replace(
+        explanation,
+        matched_skills=(
+            MatchedSkillEvidence(
+                skill=Skill("Python"), is_required=True, evidence_sources=()
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="Matched skill must contain evidence"):
+        DeterministicInterviewPreparer().prepare(candidate, job, without_evidence)
+
+
+@pytest.mark.parametrize(
+    ("field", "message"),
+    (
+        ("missing_required_skills", "Duplicate missing required skills"),
+        ("missing_preferred_skills", "Duplicate missing preferred skills"),
+    ),
+)
+def test_duplicate_gap_skills_are_rejected(field: str, message: str) -> None:
+    required = field == "missing_required_skills"
+    skill = Skill("Python")
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        required_skills=(skill,) if required else (),
+        preferred_skills=() if required else (skill,),
+    )
+    candidate = CandidateProfile(skills=(Skill("Unrelated"),))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    duplicate_gaps = replace(explanation.gaps, **{field: (skill, skill)})
+
+    with pytest.raises(ValueError, match=message):
+        DeterministicInterviewPreparer().prepare(
+            candidate, job, replace(explanation, gaps=duplicate_gaps)
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "message", "percentage"),
+    (
+        ("matched_keywords", "Duplicate matched keywords", 100.0),
+        ("missing_keywords", "Duplicate missing keywords", 0.0),
+    ),
+)
+def test_duplicate_keyword_entries_are_rejected(
+    field: str, message: str, percentage: float
+) -> None:
+    skill = Skill("Python")
+    job = JobDescription(title=JobTitle("Developer"), required_skills=(skill,))
+    candidate = CandidateProfile(skills=(skill,))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    values = {
+        "matched_keywords": (),
+        "missing_keywords": (),
+        field: (skill, skill),
+    }
+    coverage = SkillKeywordCoverage(percentage=percentage, **values)
+
+    with pytest.raises(ValueError, match=message):
+        DeterministicInterviewPreparer().prepare(
+            candidate,
+            job,
+            replace(explanation, keyword_coverage=coverage),
+        )
+
+
+def test_scoreable_experience_requires_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        experience_requirement=ExperienceRequirement(minimum_years=1),
+    )
+    candidate = CandidateProfile(
+        experience=(WorkExperience(role_title=JobTitle("Developer")),)
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+
+    with pytest.raises(ValueError, match="Experience evidence missing"):
+        DeterministicInterviewPreparer().prepare(
+            candidate, job, replace(explanation, experience=None)
+        )
+
+
+def test_experience_gap_missing_months_are_revalidated() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        experience_requirement=ExperienceRequirement(minimum_years=2),
+    )
+    candidate = CandidateProfile(
+        experience=(
+            WorkExperience(role_title=JobTitle("Developer"), duration_months=12),
+        )
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+    assert explanation.gaps.experience_gap is not None
+    object.__setattr__(explanation.gaps.experience_gap, "missing_months", 11)
+
+    with pytest.raises(ValueError, match="missing months are inconsistent"):
+        DeterministicInterviewPreparer().prepare(candidate, job, explanation)
+
+
+@pytest.mark.parametrize(
+    "requirement",
+    (
+        None,
+        ExperienceRequirement(minimum_years=0),
+        ExperienceRequirement(maximum_years=5),
+    ),
+)
+def test_non_scoreable_experience_rejects_evidence(
+    requirement: ExperienceRequirement | None,
+) -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"), experience_requirement=requirement
+    )
+    candidate = CandidateProfile(skills=(Skill("Python"),))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    evidence = ExperienceEvidence(
+        required_months=12,
+        known_candidate_months=0,
+        earned_points=0.0,
+        possible_points=1.0,
+    )
+
+    with pytest.raises(ValueError, match="non-scoreable job requirement"):
+        DeterministicInterviewPreparer().prepare(
+            candidate, job, replace(explanation, experience=evidence)
+        )
+
+
+def test_scoreable_education_requires_evidence() -> None:
+    job = JobDescription(
+        title=JobTitle("Developer"),
+        education_requirement=EducationRequirement(level=EducationLevel.BACHELOR),
+    )
+    candidate = CandidateProfile(
+        education=(EducationRecord(level=EducationLevel.BACHELOR),)
+    )
+    explanation = DeterministicMatcher().explain(candidate, job)
+
+    with pytest.raises(ValueError, match="Education evidence missing"):
+        DeterministicInterviewPreparer().prepare(
+            candidate, job, replace(explanation, education=None)
+        )
+
+
+def test_education_record_must_satisfy_canonical_matcher_semantics() -> None:
+    requirement = EducationRequirement(
+        level=EducationLevel.BACHELOR, field_of_study="Computer Science"
+    )
+    job = JobDescription(title=JobTitle("Developer"), education_requirement=requirement)
+    nonmatching_record = EducationRecord(
+        level=EducationLevel.BACHELOR, field_of_study="History"
+    )
+    candidate = CandidateProfile(education=(nonmatching_record,))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    invalid_evidence = EducationEvidence(
+        requirement=requirement,
+        matched_record=nonmatching_record,
+        satisfied=True,
+    )
+
+    with pytest.raises(ValueError, match="deterministic matcher result"):
+        DeterministicInterviewPreparer().prepare(
+            candidate,
+            job,
+            replace(
+                explanation,
+                education=invalid_evidence,
+                gaps=replace(explanation.gaps, education_gap=None),
+            ),
+        )
+
+
+def test_education_record_must_match_canonical_record_selection() -> None:
+    requirement = EducationRequirement(level=EducationLevel.BACHELOR)
+    job = JobDescription(title=JobTitle("Developer"), education_requirement=requirement)
+    first = EducationRecord(level=EducationLevel.MASTER, field_of_study="Physics")
+    second = EducationRecord(level=EducationLevel.BACHELOR, field_of_study="History")
+    candidate = CandidateProfile(education=(first, second))
+    explanation = DeterministicMatcher().explain(candidate, job)
+    wrong_record = replace(explanation.education, matched_record=second)
+
+    with pytest.raises(ValueError, match="deterministic matcher result"):
+        DeterministicInterviewPreparer().prepare(
+            candidate, job, replace(explanation, education=wrong_record)
+        )
+
+
+def test_education_gap_must_match_canonical_satisfaction_state() -> None:
+    requirement = EducationRequirement(level=EducationLevel.BACHELOR)
+    job = JobDescription(title=JobTitle("Developer"), education_requirement=requirement)
+    satisfied_candidate = CandidateProfile(
+        education=(EducationRecord(level=EducationLevel.BACHELOR),)
+    )
+    satisfied = DeterministicMatcher().explain(satisfied_candidate, job)
+
+    with pytest.raises(ValueError, match="Education gap does not match"):
+        DeterministicInterviewPreparer().prepare(
+            satisfied_candidate,
+            job,
+            replace(
+                satisfied,
+                gaps=replace(satisfied.gaps, education_gap=requirement),
+            ),
+        )
+
+    unsatisfied_candidate = CandidateProfile(
+        education=(EducationRecord(level=EducationLevel.ASSOCIATE),)
+    )
+    unsatisfied = DeterministicMatcher().explain(unsatisfied_candidate, job)
+    with pytest.raises(ValueError, match="Education gap does not match"):
+        DeterministicInterviewPreparer().prepare(
+            unsatisfied_candidate,
+            job,
+            replace(
+                unsatisfied,
+                gaps=replace(unsatisfied.gaps, education_gap=None),
+            ),
+        )
