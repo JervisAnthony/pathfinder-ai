@@ -109,3 +109,31 @@ async def ai_provider_execution_error_handler(
         code="ai_provider_error",
         message="AI enrichment provider failed.",
     )
+
+
+class PersistenceUnavailableError(Exception):
+    """Persistence was requested or accessed but no repository is configured."""
+
+
+async def persistence_unavailable_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    del request, exc
+    return create_error_response(
+        status_code=503,
+        code="persistence_unavailable",
+        message="Analysis persistence is unavailable.",
+    )
+
+
+class AnalysisNotFoundError(Exception):
+    """A requested saved analysis ID does not exist."""
+
+
+async def analysis_not_found_handler(request: Request, exc: Exception) -> JSONResponse:
+    del request, exc
+    return create_error_response(
+        status_code=404,
+        code="analysis_not_found",
+        message="Saved analysis was not found.",
+    )

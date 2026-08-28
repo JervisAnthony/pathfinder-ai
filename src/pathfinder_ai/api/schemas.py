@@ -2,6 +2,9 @@
 Pydantic v2 schemas for the FastAPI analysis API and domain mapping functions.
 """
 
+import uuid
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
@@ -137,6 +140,7 @@ class AnalysisRequestSchema(BaseStrictModel):
     candidate_profile: CandidateProfileSchema
     job_description: JobDescriptionSchema
     include_ai_enrichment: bool = False
+    save_analysis: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +236,37 @@ class AIEnrichmentResultSchema(BaseStrictModel):
     provider_name: str
 
 
+class SavedAnalysisMetadataSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    created_at: datetime
+
+
 class AnalysisResponseSchema(BaseStrictModel):
+    score: MatchScoreSchema
+    explanation: MatchExplanationSchema
+    interview_preparation: InterviewPreparationSchema
+    ai_enrichment: AIEnrichmentResultSchema | None
+    saved_analysis: SavedAnalysisMetadataSchema | None = None
+
+
+class SavedAnalysisSummarySchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    created_at: datetime
+    job_title: str
+    company_name: str | None
+    score: float
+    ai_enriched: bool
+
+
+class AnalysisHistoryResponseSchema(BaseStrictModel):
+    items: list[SavedAnalysisSummarySchema]
+
+
+class SavedAnalysisDetailSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    created_at: datetime
+    candidate_profile: CandidateProfileSchema
+    job_description: JobDescriptionSchema
     score: MatchScoreSchema
     explanation: MatchExplanationSchema
     interview_preparation: InterviewPreparationSchema
@@ -471,10 +505,109 @@ def map_analysis_response(
     explanation: MatchExplanation,
     interview_preparation: InterviewPreparation,
     ai_enrichment: AIEnrichmentResult | None,
+    saved_analysis_metadata: SavedAnalysisMetadataSchema | None = None,
 ) -> AnalysisResponseSchema:
     return AnalysisResponseSchema(
         score=map_score_to_schema(score),
         explanation=map_explanation_to_schema(explanation),
         interview_preparation=map_interview_prep_to_schema(interview_preparation),
         ai_enrichment=map_ai_enrichment_to_schema(ai_enrichment),
+        saved_analysis=saved_analysis_metadata,
+    )
+
+
+def map_domain_candidate_to_schema(
+    domain: CandidateProfile,
+) -> CandidateProfileSchema:
+    return CandidateProfileSchema(
+        skills=[SkillSchema(name=s.name) for s in domain.skills],
+        experience=[
+            WorkExperienceSchema(
+                role_title=JobTitleSchema(title=e.role_title.title),
+                company_name=e.company_name,
+                duration_months=e.duration_months,
+                description=e.description,
+                skills=[SkillSchema(name=s.name) for s in e.skills],
+            )
+            for e in domain.experience
+        ],
+        education=[
+            EducationRecordSchema(
+                level=e.level,
+                field_of_study=e.field_of_study,
+                institution=e.institution,
+                description=e.description,
+            )
+            for e in domain.education
+        ],
+        projects=[
+            ProjectSchema(
+                name=p.name,
+                description=p.description,
+                skills=[SkillSchema(name=s.name) for s in p.skills],
+            )
+            for p in domain.projects
+        ],
+        certifications=[
+            CertificationSchema(
+                name=c.name,
+                issuer=c.issuer,
+                description=c.description,
+            )
+            for c in domain.certifications
+        ],
+        preferences=(
+            CandidatePreferencesSchema(
+                target_titles=[
+                    JobTitleSchema(title=t.title)
+                    for t in domain.preferences.target_titles
+                ],
+                preferred_locations=list(domain.preferences.preferred_locations),
+                acceptable_work_modes=[
+                    m for m in domain.preferences.acceptable_work_modes
+                ],
+            )
+            if domain.preferences
+            else None
+        ),
+    )
+
+
+def map_domain_job_to_schema(
+    domain: JobDescription,
+) -> JobDescriptionSchema:
+    return JobDescriptionSchema(
+        title=JobTitleSchema(title=domain.title.title),
+        responsibilities=[
+            ResponsibilitySchema(description=r.description)
+            for r in domain.responsibilities
+        ],
+        required_skills=[SkillSchema(name=s.name) for s in domain.required_skills],
+        preferred_skills=[SkillSchema(name=s.name) for s in domain.preferred_skills],
+        company_info=(
+            CompanyInfoSchema(
+                name=domain.company_info.name,
+                industry=domain.company_info.industry,
+                location=domain.company_info.location,
+            )
+            if domain.company_info
+            else None
+        ),
+        experience_requirement=(
+            ExperienceRequirementSchema(
+                minimum_years=domain.experience_requirement.minimum_years,
+                maximum_years=domain.experience_requirement.maximum_years,
+            )
+            if domain.experience_requirement
+            else None
+        ),
+        education_requirement=(
+            EducationRequirementSchema(
+                level=domain.education_requirement.level,
+                field_of_study=domain.education_requirement.field_of_study,
+                description=domain.education_requirement.description,
+            )
+            if domain.education_requirement
+            else None
+        ),
     )

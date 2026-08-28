@@ -1,5 +1,6 @@
 """End-to-end tests for the analysis API."""
 
+import uuid
 from typing import Any
 
 import pytest
@@ -10,6 +11,11 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentProvider,
     AIEnrichmentRequest,
     AIEnrichmentResult,
+)
+from pathfinder_ai.application.analysis_history import (
+    AnalysisRepository,
+    SavedAnalysis,
+    SavedAnalysisSummary,
 )
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
 from pathfinder_ai.domain import JobDescription, MatchExplanation
@@ -28,6 +34,42 @@ class FakeAIProvider(AIEnrichmentProvider):
         return AIEnrichmentResult(
             content="Synthetic AI insight.", provider_name="FakeProvider"
         )
+
+
+class FakeRepository(AnalysisRepository):
+    def __init__(self) -> None:
+        self.saved: dict[uuid.UUID, SavedAnalysis] = {}
+
+    def save(self, analysis: SavedAnalysis) -> None:
+        self.saved[analysis.analysis_id] = analysis
+
+    def get(self, analysis_id: uuid.UUID) -> SavedAnalysis | None:
+        return self.saved.get(analysis_id)
+
+    def list_recent(
+        self, *, limit: int, offset: int
+    ) -> tuple[SavedAnalysisSummary, ...]:
+        items = list(self.saved.values())
+        items.sort(key=lambda x: (x.created_at, x.analysis_id), reverse=True)
+        summaries = [
+            SavedAnalysisSummary(
+                analysis_id=item.analysis_id,
+                created_at=item.created_at,
+                job_title=item.job_description.title.title,
+                company_name=item.job_description.company_info.name
+                if item.job_description.company_info
+                else None,
+                score=item.match_explanation.score.value or 0.0,
+                ai_enriched=item.ai_enrichment is not None,
+            )
+            for item in items
+        ]
+        return tuple(summaries[offset : offset + limit])
+
+
+@pytest.fixture
+def fake_repo() -> FakeRepository:
+    return FakeRepository()
 
 
 @pytest.fixture
@@ -63,7 +105,7 @@ def valid_payload() -> dict[str, Any]:
     }
 
 
-def _post(payload: dict[str, Any], provider: AIEnrichmentProvider | None = None):
+def _post(payload: dict[str, Any], provider: AIEnrichmentProvider | None = None) -> Any:
     return TestClient(create_app(ai_provider=provider)).post(
         "/api/v1/analysis", json=payload
     )
@@ -85,6 +127,103 @@ def test_deterministic_analysis_success(valid_payload: dict[str, Any]) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["score"] == {"value": 66.67}
+    assert data.get("saved_analysis") is None
+
+
+def test_explicit_save_success(
+    valid_payload: dict[str, Any], fake_repo: FakeRepository
+) -> None:
+    app = create_app(analysis_repository=fake_repo)
+    client = TestClient(app)
+
+    valid_payload["save_analysis"] = True
+    response = client.post("/api/v1/analysis", json=valid_payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("saved_analysis") is not None
+    assert data["saved_analysis"]["analysis_id"]
+    assert data["saved_analysis"]["created_at"]
+
+    assert len(fake_repo.saved) == 1
+
+
+def test_persistence_unavailable_when_requested(valid_payload: dict[str, Any]) -> None:
+    # No repository injected
+    app = create_app()
+    client = TestClient(app)
+
+    valid_payload["save_analysis"] = True
+    response = client.post("/api/v1/analysis", json=valid_payload)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "persistence_unavailable"
+
+
+def test_history_list(valid_payload: dict[str, Any], fake_repo: FakeRepository) -> None:
+    app = create_app(analysis_repository=fake_repo)
+    client = TestClient(app)
+
+    # Save a few
+    valid_payload["save_analysis"] = True
+    client.post("/api/v1/analysis", json=valid_payload)
+    client.post("/api/v1/analysis", json=valid_payload)
+
+    response = client.get("/api/v1/analyses")
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["items"]) == 2
+    assert "job_title" in data["items"][0]
+
+
+def test_history_list_persistence_unavailable() -> None:
+    app = create_app()
+    client = TestClient(app)
+    response = client.get("/api/v1/analyses")
+    assert response.status_code == 503
+
+
+def test_history_detail(
+    valid_payload: dict[str, Any], fake_repo: FakeRepository
+) -> None:
+    app = create_app(analysis_repository=fake_repo)
+    client = TestClient(app)
+
+    valid_payload["save_analysis"] = True
+    post_response = client.post("/api/v1/analysis", json=valid_payload)
+    analysis_id = post_response.json()["saved_analysis"]["analysis_id"]
+
+    response = client.get(f"/api/v1/analyses/{analysis_id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["analysis_id"] == analysis_id
+    assert data["score"] == {"value": 66.67}
+
+
+def test_history_detail_not_found(fake_repo: FakeRepository) -> None:
+    app = create_app(analysis_repository=fake_repo)
+    client = TestClient(app)
+
+    response = client.get(f"/api/v1/analyses/{uuid.uuid4()}")
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "analysis_not_found"
+
+
+def test_history_detail_persistence_unavailable() -> None:
+    app = create_app()
+    client = TestClient(app)
+
+    response = client.get(f"/api/v1/analyses/{uuid.uuid4()}")
+    assert response.status_code == 503
+
+
+def test_deterministic_analysis_response_structure(
+    valid_payload: dict[str, Any],
+) -> None:
+    response = _post(valid_payload)
+
+    assert response.status_code == 200
+    data = response.json()
     assert data["explanation"]["score"] == data["score"]
     assert data["explanation"]["components"] == [
         {

@@ -8,17 +8,25 @@ from fastapi.exceptions import RequestValidationError
 from pathfinder_ai.api.errors import (
     AIProviderExecutionError,
     AIProviderUnavailableError,
+    AnalysisNotFoundError,
     DomainValidationError,
+    PersistenceUnavailableError,
     ai_provider_execution_error_handler,
     ai_provider_unavailable_handler,
+    analysis_not_found_handler,
     domain_validation_error_handler,
+    persistence_unavailable_handler,
     validation_exception_handler,
 )
 from pathfinder_ai.api.routes.analysis import router as analysis_router
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentProvider
+from pathfinder_ai.application.analysis_history import AnalysisRepository
 
 
-def create_app(ai_provider: AIEnrichmentProvider | None = None) -> FastAPI:
+def create_app(
+    ai_provider: AIEnrichmentProvider | None = None,
+    analysis_repository: AnalysisRepository | None = None,
+) -> FastAPI:
     """
     Create and configure the FastAPI application.
     """
@@ -28,8 +36,9 @@ def create_app(ai_provider: AIEnrichmentProvider | None = None) -> FastAPI:
         description="MVP-1 Analysis API for matching and interview preparation.",
     )
 
-    # Inject dependency via app state
+    # Inject dependencies via app state
     app.state.ai_provider = ai_provider
+    app.state.analysis_repository = analysis_repository
 
     # Register Exception Handlers
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -41,6 +50,14 @@ def create_app(ai_provider: AIEnrichmentProvider | None = None) -> FastAPI:
     app.add_exception_handler(
         AIProviderExecutionError,
         ai_provider_execution_error_handler,
+    )
+    app.add_exception_handler(
+        PersistenceUnavailableError,
+        persistence_unavailable_handler,
+    )
+    app.add_exception_handler(
+        AnalysisNotFoundError,
+        analysis_not_found_handler,
     )
 
     # Register Routes
