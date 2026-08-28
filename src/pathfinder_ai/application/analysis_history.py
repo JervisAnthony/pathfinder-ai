@@ -39,11 +39,6 @@ class SavedAnalysis:
             "created_at",
             self.created_at.astimezone(UTC),
         )
-        object.__setattr__(
-            self,
-            "created_at",
-            self.created_at.astimezone(UTC),
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,14 +113,7 @@ class AnalysisHistoryService:
         Create and persist a new analysis snapshot.
         """
         analysis_id = self._generate_id()
-        # Fallback for incorrect type injection if the class itself was passed
-        if isinstance(analysis_id, type) and issubclass(analysis_id, uuid.UUID):
-            analysis_id = uuid.uuid4()
-
         created_at = self._now()
-
-        # Normalize to UTC
-        created_at = created_at.astimezone(UTC)
 
         analysis = SavedAnalysis(
             analysis_id=analysis_id,

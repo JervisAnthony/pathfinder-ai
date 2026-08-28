@@ -59,7 +59,7 @@ class FakeRepository(AnalysisRepository):
                 company_name=item.job_description.company_info.name
                 if item.job_description.company_info
                 else None,
-                score=item.match_explanation.score.value or 0.0,
+                score=item.match_explanation.score.value,
                 ai_enriched=item.ai_enrichment is not None,
             )
             for item in items
@@ -160,6 +160,22 @@ def test_persistence_unavailable_when_requested(valid_payload: dict[str, Any]) -
     assert response.json()["error"]["code"] == "persistence_unavailable"
 
 
+def test_persistence_unavailable_is_checked_before_ai(
+    valid_payload: dict[str, Any],
+) -> None:
+    provider = FakeAIProvider()
+    valid_payload["save_analysis"] = True
+    valid_payload["include_ai_enrichment"] = True
+
+    response = TestClient(create_app(ai_provider=provider)).post(
+        "/api/v1/analysis", json=valid_payload
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "persistence_unavailable"
+    assert provider.requests == []
+
+
 def test_history_list(valid_payload: dict[str, Any], fake_repo: FakeRepository) -> None:
     app = create_app(analysis_repository=fake_repo)
     client = TestClient(app)
@@ -215,6 +231,27 @@ def test_history_detail_persistence_unavailable() -> None:
 
     response = client.get(f"/api/v1/analyses/{uuid.uuid4()}")
     assert response.status_code == 503
+
+
+@pytest.mark.parametrize(
+    ("path", "location"),
+    (
+        ("/api/v1/analyses?limit=0", "limit"),
+        ("/api/v1/analyses?limit=101", "limit"),
+        ("/api/v1/analyses?offset=-1", "offset"),
+        ("/api/v1/analyses/not-a-uuid", "analysis_id"),
+    ),
+)
+def test_history_input_validation(
+    path: str, location: str, fake_repo: FakeRepository
+) -> None:
+    response = TestClient(create_app(analysis_repository=fake_repo)).get(path)
+
+    _assert_validation_error(response, location)
+    assert all(
+        set(detail) == {"loc", "msg", "type"}
+        for detail in response.json()["error"]["details"]
+    )
 
 
 def test_deterministic_analysis_response_structure(
@@ -427,3 +464,53 @@ def test_ai_provider_execution_error_is_safe(valid_payload: dict[str, Any]) -> N
     assert response.status_code == 502
     assert response.json()["error"]["code"] == "ai_provider_error"
     assert "private provider failure details" not in response.text
+
+
+def test_repository_never_saves_invalid_or_incomplete_analysis(
+    valid_payload: dict[str, Any], fake_repo: FakeRepository
+) -> None:
+    client = TestClient(create_app(analysis_repository=fake_repo))
+
+    schema_invalid = {**valid_payload, "unexpected": "value", "save_analysis": True}
+    assert client.post("/api/v1/analysis", json=schema_invalid).status_code == 422
+
+    domain_invalid = {
+        **valid_payload,
+        "save_analysis": True,
+        "job_description": {
+            **valid_payload["job_description"],
+            "required_skills": [{"name": "Docker"}],
+        },
+    }
+    assert client.post("/api/v1/analysis", json=domain_invalid).status_code == 422
+
+    provider_missing = {
+        **valid_payload,
+        "save_analysis": True,
+        "include_ai_enrichment": True,
+    }
+    assert client.post("/api/v1/analysis", json=provider_missing).status_code == 503
+
+    failing_client = TestClient(
+        create_app(
+            ai_provider=FakeAIProvider(should_fail=True),
+            analysis_repository=fake_repo,
+        )
+    )
+    assert (
+        failing_client.post("/api/v1/analysis", json=provider_missing).status_code
+        == 502
+    )
+
+    assert fake_repo.saved == {}
+
+
+def test_repository_is_not_called_when_persistence_is_not_requested(
+    valid_payload: dict[str, Any], fake_repo: FakeRepository
+) -> None:
+    response = TestClient(create_app(analysis_repository=fake_repo)).post(
+        "/api/v1/analysis", json=valid_payload
+    )
+
+    assert response.status_code == 200
+    assert fake_repo.saved == {}

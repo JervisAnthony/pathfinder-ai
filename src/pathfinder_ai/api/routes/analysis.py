@@ -35,7 +35,10 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentRequest,
     AIEnrichmentService,
 )
-from pathfinder_ai.application.analysis_history import AnalysisHistoryService
+from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryService,
+    AnalysisRepository,
+)
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
 )
@@ -96,7 +99,14 @@ async def analyze(
         candidate_profile, job_description, match_explanation
     )
 
-    # 3. Optional AI Enrichment
+    # 3. Check the requested persistence prerequisite before optional AI work.
+    repository: AnalysisRepository | None = None
+    if payload.save_analysis:
+        repository = getattr(request.app.state, "analysis_repository", None)
+        if repository is None:
+            raise PersistenceUnavailableError()
+
+    # 4. Optional AI Enrichment
     ai_result = None
     if payload.include_ai_enrichment:
         provider = getattr(request.app.state, "ai_provider", None)
@@ -116,13 +126,9 @@ async def analyze(
             # Mask internal exception details by raising our custom execution error
             raise AIProviderExecutionError() from e
 
-    # 4. Persistence (Explicit Opt-In)
+    # 5. Persistence (Explicit Opt-In)
     saved_analysis_metadata = None
-    if payload.save_analysis:
-        repository = getattr(request.app.state, "analysis_repository", None)
-        if repository is None:
-            raise PersistenceUnavailableError()
-
+    if repository is not None:
         history_service = AnalysisHistoryService(repository=repository)
         saved = history_service.save_analysis(
             candidate_profile=candidate_profile,
@@ -136,7 +142,7 @@ async def analyze(
             created_at=saved.created_at,
         )
 
-    # 5. Map output to response schema
+    # 6. Map output to response schema
     return map_analysis_response(
         score=match_score,
         explanation=match_explanation,
@@ -150,6 +156,10 @@ async def analyze(
     "/analyses",
     response_model=AnalysisHistoryResponseSchema,
     responses={
+        422: {
+            "model": ErrorResponseSchema,
+            "description": "Pagination validation failed.",
+        },
         503: {
             "model": ErrorResponseSchema,
             "description": "Persistence is unavailable.",
@@ -191,6 +201,10 @@ async def list_analyses(
         404: {
             "model": ErrorResponseSchema,
             "description": "Analysis not found.",
+        },
+        422: {
+            "model": ErrorResponseSchema,
+            "description": "Analysis ID validation failed.",
         },
         503: {
             "model": ErrorResponseSchema,

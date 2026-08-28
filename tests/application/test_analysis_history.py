@@ -1,7 +1,8 @@
 """Tests for AnalysisHistoryService."""
 
 import uuid
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -21,6 +22,7 @@ from pathfinder_ai.domain.explanation import (
 from pathfinder_ai.domain.job_description import JobDescription
 from pathfinder_ai.domain.job_title import JobTitle
 from pathfinder_ai.domain.matching import MatchScore
+from pathfinder_ai.domain.skill import Skill
 
 
 class FakeRepository(AnalysisRepository):
@@ -46,7 +48,7 @@ class FakeRepository(AnalysisRepository):
                 company_name=item.job_description.company_info.name
                 if item.job_description.company_info
                 else None,
-                score=item.match_explanation.score.value or 0.0,
+                score=item.match_explanation.score.value,
                 ai_enriched=item.ai_enrichment is not None,
             )
             for item in items
@@ -57,6 +59,33 @@ class FakeRepository(AnalysisRepository):
 @pytest.fixture
 def fake_repo() -> FakeRepository:
     return FakeRepository()
+
+
+def _minimal_analysis_parts() -> tuple[
+    CandidateProfile, JobDescription, MatchExplanation, InterviewPreparation
+]:
+    profile = CandidateProfile(skills=(Skill(name="Python"),))
+    job = JobDescription(title=JobTitle(title="Dev"))
+    explanation = MatchExplanation(
+        score=MatchScore(value=50.0),
+        components=(),
+        matched_skills=(),
+        experience=None,
+        education=None,
+        gaps=GapAnalysis(
+            missing_required_skills=(),
+            missing_preferred_skills=(),
+            experience_gap=None,
+            education_gap=None,
+        ),
+        keyword_coverage=SkillKeywordCoverage(
+            matched_keywords=(), missing_keywords=(), percentage=None
+        ),
+    )
+    preparation = InterviewPreparation(
+        themes=(), talking_points=(), question_categories=(), candidate_questions=()
+    )
+    return profile, job, explanation, preparation
 
 
 def test_save_and_get_analysis(fake_repo: FakeRepository) -> None:
@@ -168,6 +197,30 @@ def test_list_history_pagination(fake_repo: FakeRepository) -> None:
     assert len(service.list_history(limit=2, offset=4)) == 1
 
 
+def test_fake_repository_preserves_none_and_zero_scores(
+    fake_repo: FakeRepository,
+) -> None:
+    profile, job, explanation, preparation = _minimal_analysis_parts()
+    service = AnalysisHistoryService(repository=fake_repo)
+    none_saved = service.save_analysis(
+        profile,
+        job,
+        replace(explanation, score=MatchScore(value=None)),
+        preparation,
+    )
+    zero_saved = service.save_analysis(
+        profile,
+        job,
+        replace(explanation, score=MatchScore(value=0.0)),
+        preparation,
+    )
+
+    summaries = {item.analysis_id: item for item in service.list_history()}
+
+    assert summaries[none_saved.analysis_id].score is None
+    assert summaries[zero_saved.analysis_id].score == 0.0
+
+
 def test_list_history_invalid_pagination(fake_repo: FakeRepository) -> None:
     service = AnalysisHistoryService(repository=fake_repo)
     with pytest.raises(ValueError, match="Limit must be between 1 and 100"):
@@ -237,61 +290,26 @@ def test_invalid_timezone_models() -> None:
             ai_enriched=False,
         )
 
-
-def test_save_with_invalid_id_generator_fallback(fake_repo: FakeRepository) -> None:
-    # Pass a function that returns the uuid.UUID class to test the fallback block
-    def bad_gen() -> type[uuid.UUID]:
-        return uuid.UUID
-
-    service = AnalysisHistoryService(repository=fake_repo, id_generator=bad_gen)  # type: ignore[arg-type]
-
-    from pathfinder_ai.domain.skill import Skill
-
-    profile = CandidateProfile(
-        skills=(Skill(name="Python"),),
-        experience=(),
-        education=(),
-        projects=(),
-        certifications=(),
-        preferences=None,
+    source_time = datetime(2023, 1, 1, 3, tzinfo=timezone(timedelta(hours=3)))
+    summary = SavedAnalysisSummary(
+        analysis_id=uuid.uuid4(),
+        created_at=source_time,
+        job_title="Developer",
+        company_name=None,
+        score=None,
+        ai_enriched=False,
     )
-    job = JobDescription(
-        title=JobTitle(title="Dev"),
-        responsibilities=(),
-        required_skills=(),
-        preferred_skills=(),
-        company_info=None,
-        experience_requirement=None,
-        education_requirement=None,
-    )
-    explanation = MatchExplanation(
-        score=MatchScore(value=50.0),
-        components=(),
-        matched_skills=(),
-        experience=None,
-        education=None,
-        gaps=GapAnalysis(
-            missing_required_skills=(),
-            missing_preferred_skills=(),
-            experience_gap=None,
-            education_gap=None,
-        ),
-        keyword_coverage=SkillKeywordCoverage(
-            matched_keywords=(), missing_keywords=(), percentage=None
-        ),
-    )
-    prep = InterviewPreparation(
-        themes=(), talking_points=(), question_categories=(), candidate_questions=()
-    )
-
-    saved = service.save_analysis(profile, job, explanation, prep)
-    assert isinstance(saved.analysis_id, uuid.UUID)
+    assert summary.created_at == datetime(2023, 1, 1, tzinfo=UTC)
+    assert summary.created_at.timestamp() == source_time.timestamp()
 
 
 def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
+    source_time = datetime(
+        2023, 1, 1, 5, 30, tzinfo=timezone(timedelta(hours=5, minutes=30))
+    )
 
     def fixed_clock() -> datetime:
-        return datetime(2023, 1, 1, tzinfo=UTC)
+        return source_time
 
     fixed_id = uuid.uuid4()
 
@@ -304,46 +322,24 @@ def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
         id_generator=id_gen,
     )
 
-    from pathfinder_ai.domain.skill import Skill
+    profile, job, explanation, preparation = _minimal_analysis_parts()
 
-    profile = CandidateProfile(
-        skills=(Skill(name="Python"),),
-        experience=(),
-        education=(),
-        projects=(),
-        certifications=(),
-        preferences=None,
-    )
-    job = JobDescription(
-        title=JobTitle(title="Dev"),
-        responsibilities=(),
-        required_skills=(),
-        preferred_skills=(),
-        company_info=None,
-        experience_requirement=None,
-        education_requirement=None,
-    )
-    explanation = MatchExplanation(
-        score=MatchScore(value=50.0),
-        components=(),
-        matched_skills=(),
-        experience=None,
-        education=None,
-        gaps=GapAnalysis(
-            missing_required_skills=(),
-            missing_preferred_skills=(),
-            experience_gap=None,
-            education_gap=None,
-        ),
-        keyword_coverage=SkillKeywordCoverage(
-            matched_keywords=(), missing_keywords=(), percentage=None
-        ),
-    )
-    prep = InterviewPreparation(
-        themes=(), talking_points=(), question_categories=(), candidate_questions=()
-    )
-
-    saved = service.save_analysis(profile, job, explanation, prep)
+    saved = service.save_analysis(profile, job, explanation, preparation)
 
     assert saved.analysis_id == fixed_id
     assert saved.created_at == datetime(2023, 1, 1, tzinfo=UTC)
+    assert saved.created_at.tzinfo is UTC
+    assert saved.created_at.timestamp() == source_time.timestamp()
+
+
+def test_service_rejects_naive_clock(fake_repo: FakeRepository) -> None:
+    service = AnalysisHistoryService(
+        repository=fake_repo,
+        clock=lambda: datetime(2023, 1, 1),
+    )
+    profile, job, explanation, preparation = _minimal_analysis_parts()
+
+    with pytest.raises(ValueError, match="created_at must be timezone-aware"):
+        service.save_analysis(profile, job, explanation, preparation)
+
+    assert fake_repo.saved == {}

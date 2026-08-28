@@ -25,6 +25,7 @@ from pathfinder_ai.domain.candidate_profile import (
     WorkExperience,
     WorkMode,
 )
+from pathfinder_ai.domain.education import EducationLevel
 from pathfinder_ai.domain.explanation import (
     EducationEvidence,
     EvidenceSource,
@@ -178,7 +179,7 @@ def _decode_candidate_profile(data: dict[str, Any]) -> CandidateProfile:
         ),
         education=tuple(
             EducationRecord(
-                level=e["level"],
+                level=EducationLevel(e["level"]),
                 field_of_study=e["field_of_study"],
                 institution=e["institution"],
                 description=e.get("description"),
@@ -265,7 +266,11 @@ def _decode_job_description(data: dict[str, Any]) -> JobDescription:
     education_requirement = None
     if edu_data:
         education_requirement = EducationRequirement(
-            level=edu_data["level"],
+            level=(
+                EducationLevel(edu_data["level"])
+                if edu_data["level"] is not None
+                else None
+            ),
             field_of_study=edu_data.get("field_of_study"),
             description=edu_data.get("description"),
         )
@@ -396,7 +401,11 @@ def _decode_match_explanation(data: dict[str, Any]) -> MatchExplanation:
     if edu_data:
         req_data = edu_data["requirement"]
         requirement = EducationRequirement(
-            level=req_data["level"],
+            level=(
+                EducationLevel(req_data["level"])
+                if req_data["level"] is not None
+                else None
+            ),
             field_of_study=req_data.get("field_of_study"),
             description=req_data.get("description"),
         )
@@ -404,7 +413,7 @@ def _decode_match_explanation(data: dict[str, Any]) -> MatchExplanation:
         matched_record = None
         if rec_data:
             matched_record = EducationRecord(
-                level=rec_data["level"],
+                level=EducationLevel(rec_data["level"]),
                 field_of_study=rec_data.get("field_of_study"),
                 institution=rec_data["institution"],
                 description=rec_data.get("description"),
@@ -429,7 +438,11 @@ def _decode_match_explanation(data: dict[str, Any]) -> MatchExplanation:
     education_gap = None
     if edu_gap_data:
         education_gap = EducationRequirement(
-            level=edu_gap_data["level"],
+            level=(
+                EducationLevel(edu_gap_data["level"])
+                if edu_gap_data["level"] is not None
+                else None
+            ),
             field_of_study=edu_gap_data.get("field_of_study"),
             description=edu_gap_data.get("description"),
         )

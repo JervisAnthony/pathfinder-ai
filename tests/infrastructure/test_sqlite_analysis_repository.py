@@ -2,6 +2,7 @@
 
 import sqlite3
 import uuid
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -212,6 +213,36 @@ def test_sqlite_repository_round_trip(
 
     assert retrieved is not None
     assert retrieved == sample_analysis
+    assert isinstance(retrieved.analysis_id, uuid.UUID)
+    assert retrieved.created_at.tzinfo is UTC
+    assert isinstance(retrieved.candidate_profile.education[0].level, EducationLevel)
+    assert retrieved.candidate_profile.preferences is not None
+    assert all(
+        isinstance(mode, WorkMode)
+        for mode in retrieved.candidate_profile.preferences.acceptable_work_modes
+    )
+    assert retrieved.job_description.education_requirement is not None
+    assert isinstance(
+        retrieved.job_description.education_requirement.level, EducationLevel
+    )
+    assert retrieved.match_explanation.education is not None
+    assert isinstance(
+        retrieved.match_explanation.education.requirement.level, EducationLevel
+    )
+    assert retrieved.match_explanation.education.matched_record is not None
+    assert isinstance(
+        retrieved.match_explanation.education.matched_record.level, EducationLevel
+    )
+    assert retrieved.match_explanation.gaps.education_gap is not None
+    assert isinstance(
+        retrieved.match_explanation.gaps.education_gap.level, EducationLevel
+    )
+    assert retrieved.ai_enrichment is not None
+    assert retrieved.ai_enrichment.content == "Candidate looks great.\nConsider them."
+    assert retrieved.ai_enrichment.provider_name == "test-provider"
+    assert retrieved.job_description.experience_requirement is not None
+    assert retrieved.job_description.experience_requirement.maximum_years is None
+    assert retrieved.candidate_profile.experience[0].company_name == "Tech Corp"
 
 
 def test_sqlite_repository_list_recent(
@@ -248,6 +279,44 @@ def test_sqlite_repository_list_recent(
     summaries_offset = repo.list_recent(limit=10, offset=1)
     assert len(summaries_offset) == 1
     assert summaries_offset[0].analysis_id == sample_analysis.analysis_id
+
+
+def test_sqlite_preserves_none_and_zero_scores(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    db_path = tmp_path / "scores.db"
+    repository = SQLiteAnalysisRepository(db_path)
+    none_analysis = replace(
+        sample_analysis,
+        analysis_id=uuid.uuid4(),
+        match_explanation=replace(
+            sample_analysis.match_explanation, score=MatchScore(value=None)
+        ),
+    )
+    zero_analysis = replace(
+        sample_analysis,
+        analysis_id=uuid.uuid4(),
+        match_explanation=replace(
+            sample_analysis.match_explanation, score=MatchScore(value=0.0)
+        ),
+    )
+    repository.save(none_analysis)
+    repository.save(zero_analysis)
+
+    reopened = SQLiteAnalysisRepository(db_path)
+    loaded_none = reopened.get(none_analysis.analysis_id)
+    loaded_zero = reopened.get(zero_analysis.analysis_id)
+    summaries = {
+        summary.analysis_id: summary
+        for summary in reopened.list_recent(limit=10, offset=0)
+    }
+
+    assert loaded_none is not None
+    assert loaded_none.match_explanation.score.value is None
+    assert summaries[none_analysis.analysis_id].score is None
+    assert loaded_zero is not None
+    assert loaded_zero.match_explanation.score.value == 0.0
+    assert summaries[zero_analysis.analysis_id].score == 0.0
 
 
 def test_sqlite_repository_get_not_found(tmp_path: Path) -> None:
