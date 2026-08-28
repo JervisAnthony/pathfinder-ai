@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -32,7 +32,7 @@ These milestones must not be replayed or rebuilt.
 
 Active pull request:
 
-*Pending PR Creation*
+PR #10 — Add AI provider abstraction
 
 ## Commit 7 Scope
 

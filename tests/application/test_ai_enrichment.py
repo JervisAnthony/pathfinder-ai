@@ -23,14 +23,20 @@ class FakeAIProvider:
     """Fake provider for testing."""
 
     def __init__(
-        self, response_content: str, provider_name: str = "FakeProvider"
+        self,
+        response_content: str,
+        provider_name: str = "FakeProvider",
+        should_raise: bool = False,
     ) -> None:
         self.response_content = response_content
         self.provider_name = provider_name
+        self.should_raise = should_raise
         self.last_request: AIEnrichmentRequest | None = None
 
     def enrich(self, request: AIEnrichmentRequest) -> AIEnrichmentResult:
         self.last_request = request
+        if self.should_raise:
+            raise RuntimeError("Synthetic provider failure")
         return AIEnrichmentResult(
             content=self.response_content,
             provider_name=self.provider_name,
@@ -39,14 +45,13 @@ class FakeAIProvider:
 
 def test_ai_enrichment_result_validation() -> None:
     """Test validation of AIEnrichmentResult."""
-    result = AIEnrichmentResult(
-        content="  Valid Content  ", provider_name="  Provider  "
-    )
-    assert result.content == "Valid Content"
+    multiline_content = "  \n  Line 1  \n\n  Line 2  \n  "
+    result = AIEnrichmentResult(content=multiline_content, provider_name="  Provider  ")
+    assert result.content == "Line 1  \n\n  Line 2"
     assert result.provider_name == "Provider"
 
     with pytest.raises(ValueError, match=r"content cannot be blank\."):
-        AIEnrichmentResult(content="   ", provider_name="Provider")
+        AIEnrichmentResult(content=" \n  \n ", provider_name="Provider")
 
     with pytest.raises(ValueError, match=r"provider_name cannot be blank\."):
         AIEnrichmentResult(content="Content", provider_name="")
@@ -166,3 +171,31 @@ def test_core_integrity_not_altered_by_ai() -> None:
     assert request.job_description == job
     assert request.match_explanation == original_explanation
     assert request.interview_preparation == original_prep
+
+
+def test_ai_enrichment_provider_failure_propagation() -> None:
+    """Test that provider failures are explicitly propagated and do not alter state."""
+    job = JobDescription(
+        title=JobTitle("Software Engineer"),
+        required_skills=(Skill("Python"),),
+    )
+    candidate = CandidateProfile(skills=(Skill("Python"),))
+
+    matcher = DeterministicMatcher()
+    explanation = matcher.explain(candidate, job)
+
+    request = AIEnrichmentRequest(
+        job_description=job,
+        match_explanation=explanation,
+        interview_preparation=None,
+    )
+
+    failing_provider = FakeAIProvider("Error", should_raise=True)
+    service = AIEnrichmentService(provider=failing_provider)
+
+    with pytest.raises(RuntimeError, match="Synthetic provider failure"):
+        service.enrich(request)
+
+    # Verify deterministic object remains untouched
+    assert request.job_description == job
+    assert request.match_explanation == explanation

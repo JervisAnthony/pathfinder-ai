@@ -13,10 +13,17 @@ from pathfinder_ai.domain import (
 from .interview_preparation import InterviewPreparation
 
 
-def _normalize_text(value: str, field_name: str) -> str:
+def _normalize_content(value: str) -> str:
+    normalized = value.strip()
+    if not normalized:
+        raise ValueError("content cannot be blank.")
+    return normalized
+
+
+def _normalize_provider_name(value: str) -> str:
     normalized = " ".join(value.split())
     if not normalized:
-        raise ValueError(f"{field_name} cannot be blank.")
+        raise ValueError("provider_name cannot be blank.")
     return normalized
 
 
@@ -40,12 +47,12 @@ class AIEnrichmentResult:
         object.__setattr__(
             self,
             "content",
-            _normalize_text(self.content, "content"),
+            _normalize_content(self.content),
         )
         object.__setattr__(
             self,
             "provider_name",
-            _normalize_text(self.provider_name, "provider_name"),
+            _normalize_provider_name(self.provider_name),
         )
 
 
