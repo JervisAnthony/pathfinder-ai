@@ -1012,7 +1012,15 @@ def test_duplicate_gap_skills_are_rejected(field: str, message: str) -> None:
     )
     candidate = CandidateProfile(skills=(Skill("Unrelated"),))
     explanation = DeterministicMatcher().explain(candidate, job)
-    duplicate_gaps = replace(explanation.gaps, **{field: (skill, skill)})
+
+    if required:
+        duplicate_gaps = replace(
+            explanation.gaps, missing_required_skills=(skill, skill)
+        )
+    else:
+        duplicate_gaps = replace(
+            explanation.gaps, missing_preferred_skills=(skill, skill)
+        )
 
     with pytest.raises(ValueError, match=message):
         DeterministicInterviewPreparer().prepare(
@@ -1163,6 +1171,10 @@ def test_education_record_must_match_canonical_record_selection() -> None:
     second = EducationRecord(level=EducationLevel.BACHELOR, field_of_study="History")
     candidate = CandidateProfile(education=(first, second))
     explanation = DeterministicMatcher().explain(candidate, job)
+
+    if explanation.education is None:
+        pytest.fail("Expected education evidence to be generated.")
+
     wrong_record = replace(explanation.education, matched_record=second)
 
     with pytest.raises(ValueError, match="deterministic matcher result"):

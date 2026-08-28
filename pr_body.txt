@@ -1,0 +1,49 @@
+# Summary
+Introduces an optional, provider-neutral generative AI abstraction layer to enable future enrichment capabilities without compromising the deterministic core.
+
+# Roadmap Reference
+MVP-1 Commit 7 — AI Provider Abstraction
+
+# Architecture
+Introduced abstraction at the application layer (`src/pathfinder_ai/application/ai_enrichment.py`). The dependency direction remains: domain -> application -> (future) infrastructure adapters.
+
+# Provider Contract
+Added an `AIEnrichmentProvider` protocol defining a single `enrich()` method. Chose a synchronous contract for simplicity as this is a minimal abstraction (and avoids adding async testing dependencies).
+
+# Request and Response Models
+- `AIEnrichmentRequest`: Frozen dataclass encapsulating `JobDescription`, `MatchExplanation`, and optional `InterviewPreparation`.
+- `AIEnrichmentResult`: Frozen dataclass containing generated `content` and `provider_name`, with blank validation and whitespace normalization.
+
+# Optional Enrichment Service
+Implemented `AIEnrichmentService` which accepts an optional provider. If no provider is given, it safely returns `None`, ensuring AI is explicitly an optional addition.
+
+# Fake Provider Testing
+Created `FakeAIProvider` in the test suite to simulate provider behavior deterministically without external network calls, capturing requests, and allowing provider-swap tests.
+
+# Deterministic Core Boundary
+Verified through regression tests that the generative AI abstraction does *not* alter or affect `MatchScore`, `MatchExplanation`, or `InterviewPreparation`.
+
+# Testing
+Added unit tests covering:
+- Public contract validation (blanks, request/result construction).
+- Service optionality and correct provider delegation.
+- Interchangeable fake providers.
+- Core integrity (deterministic objects remain untouched).
+
+# Validation
+- **pytest**: 124 passed (100% test coverage)
+- **ruff check**: 0 errors
+- **ruff format**: 100% formatted
+- **mypy**: 0 errors
+
+# Project State Correction
+Updated `PROJECT_STATE.md` to formally mark Commits 1-6 complete and mark Commit 7 as Active. Removed stale PR #9 references.
+
+# Explicit Exclusions
+- no external provider implementation (no OpenAI, Anthropic, etc.)
+- no mandatory API calls
+- no provider SDK added
+- no new dependencies
+- no prompt templates implemented
+- no changes to deterministic scoring algorithms
+- no FastAPI/persistence/frontend work included
