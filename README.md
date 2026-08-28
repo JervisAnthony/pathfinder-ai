@@ -32,13 +32,23 @@ Pathfinder AI now supports:
 - interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
 - AI enrichment uses a replaceable provider contract but currently has no concrete external provider implemented
 - deterministic scoring and interview preparation remain independent of AI
+- the API is stateless; persistence is not yet implemented
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
-- APIs (FastAPI)
 - Persistence and databases (SQLite)
 - Concrete LLM SDKs (e.g. OpenAI, Gemini) and semantic matching
 - Resume parsing and document ingestion
 - Web application (React, TypeScript)
+
+## API Surface
+
+Pathfinder exposes a minimal FastAPI surface.
+
+Endpoints:
+- `GET /api/v1/health`
+- `POST /api/v1/analysis`
+
+The API receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if an external provider is configured in the environment.
 
 ## MVP-1 Direction
 

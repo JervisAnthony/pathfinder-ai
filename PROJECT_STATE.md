@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Current `main` baseline:
 
-`1178f86db6ca14704e485f1a37769a0fa5a34104`
+`d89f50ba5cf8be893bdb9dd5b5bcecaa09a4d268`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 6 — Interview Preparation Engine**
+**Commit 7 — AI Provider Abstraction**
 
 ## Completed MVP-1 Roadmap
 
@@ -23,33 +23,31 @@ Current completed roadmap milestone on `main`:
 - Commit 4 — Deterministic Matching Engine — complete
 - Commit 5 — Match Explanation & Gap Analysis — complete
 - Commit 6 — Interview Preparation Engine — complete
+- Commit 7 — AI Provider Abstraction — complete
 
 These milestones must not be replayed or rebuilt.
 
 ## Active Work
 
-**Commit 7 — AI Provider Abstraction**
+**Commit 8 — FastAPI Analysis API**
 
 Active pull request:
 
-PR #10 — Add AI provider abstraction
+(Will be updated when PR is open)
 
-## Commit 7 Scope
+## Commit 8 Scope
 
-Commit 7 introduces an optional, provider-neutral generative AI abstraction layer:
-- `AIEnrichmentRequest` value object
-- `AIEnrichmentResult` value object
-- `AIEnrichmentProvider` protocol
-- Optional enrichment application service
-- Deterministic fake provider for tests
+Commit 8 introduces the MVP-1 FastAPI Analysis API:
+- FastAPI interface
+- API request/response schemas
+- Validation error mapping
+- Health endpoint
+- Analysis endpoint
 
 This milestone does not introduce:
-- real external AI providers (e.g. OpenAI, Anthropic, Gemini)
-- API keys or .env logic
-- FastAPI
-- HTTP clients
-- semantic matching / vector databases
-- any alterations to the deterministic core matcher logic
+- Persistence or databases
+- Web frontend
+- Real external AI providers
 
 ## Existing Capabilities
 
@@ -75,13 +73,12 @@ Future work must build on these capabilities rather than recreate them.
 
 ## Next Roadmap Milestone
 
-After Commit 7 is merged:
+After Commit 8 is merged:
 
-**Commit 8 — FastAPI Analysis API**
+**Commit 9 — Persistence & Analysis History**
 
 ## Later MVP-1 Milestones
 
-- Commit 9 — Persistence & Analysis History
 - Commit 10 — Web MVP
 
 ## Architectural Boundary
