@@ -4,7 +4,10 @@ version = "0.1.0"
 description = "AI-powered job matching, application intelligence, and interview preparation."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-dependencies = []
+dependencies = [
+    "fastapi>=0.111.0",
+    "pydantic>=2.7.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -12,6 +15,7 @@ dev = [
     "pytest-cov>=4.1.0",
     "ruff>=0.2.0",
     "mypy>=1.8.0",
+    "httpx>=0.27.0",
 ]
 
 [build-system]

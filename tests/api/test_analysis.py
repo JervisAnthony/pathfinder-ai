@@ -1,0 +1,290 @@
+"""End-to-end tests for the analysis API."""
+
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+
+from pathfinder_ai.api import create_app
+from pathfinder_ai.application.ai_enrichment import (
+    AIEnrichmentProvider,
+    AIEnrichmentRequest,
+    AIEnrichmentResult,
+)
+from pathfinder_ai.application.interview_preparation import InterviewPreparation
+from pathfinder_ai.domain import JobDescription, MatchExplanation
+from pathfinder_ai.domain.matching import DeterministicMatcher
+
+
+class FakeAIProvider(AIEnrichmentProvider):
+    def __init__(self, should_fail: bool = False) -> None:
+        self.should_fail = should_fail
+        self.requests: list[AIEnrichmentRequest] = []
+
+    def enrich(self, request: AIEnrichmentRequest) -> AIEnrichmentResult:
+        self.requests.append(request)
+        if self.should_fail:
+            raise RuntimeError("private provider failure details")
+        return AIEnrichmentResult(
+            content="Synthetic AI insight.", provider_name="FakeProvider"
+        )
+
+
+@pytest.fixture
+def valid_payload() -> dict[str, Any]:
+    return {
+        "candidate_profile": {
+            "skills": [{"name": "Python"}],
+            "experience": [
+                {
+                    "role_title": {"title": "Software Engineer"},
+                    "duration_months": 24,
+                    "skills": [{"name": "Python"}],
+                }
+            ],
+            "education": [],
+            "projects": [],
+            "certifications": [],
+            "preferences": None,
+        },
+        "job_description": {
+            "title": {"title": "Backend Engineer"},
+            "responsibilities": [{"description": "Build reliable APIs."}],
+            "required_skills": [{"name": "Python"}],
+            "preferred_skills": [{"name": "Docker"}],
+            "company_info": None,
+            "experience_requirement": {
+                "minimum_years": 3,
+                "maximum_years": None,
+            },
+            "education_requirement": None,
+        },
+        "include_ai_enrichment": False,
+    }
+
+
+def _post(payload: dict[str, Any], provider: AIEnrichmentProvider | None = None):
+    return TestClient(create_app(ai_provider=provider)).post(
+        "/api/v1/analysis", json=payload
+    )
+
+
+def _assert_validation_error(response: Any, expected_loc: str) -> None:
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "validation_error"
+    assert error["message"] == "Request validation failed."
+    assert error["details"]
+    assert any(expected_loc in detail["loc"] for detail in error["details"])
+    assert all(set(detail) == {"loc", "msg", "type"} for detail in error["details"])
+
+
+def test_deterministic_analysis_success(valid_payload: dict[str, Any]) -> None:
+    response = _post(valid_payload)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["score"] == {"value": 66.67}
+    assert data["explanation"]["score"] == data["score"]
+    assert data["explanation"]["components"] == [
+        {
+            "kind": "required_skills",
+            "earned_points": 1.0,
+            "possible_points": 1.0,
+        },
+        {
+            "kind": "preferred_skills",
+            "earned_points": 0.0,
+            "possible_points": 0.5,
+        },
+        {
+            "kind": "experience",
+            "earned_points": pytest.approx(2 / 3),
+            "possible_points": 1.0,
+        },
+    ]
+    assert data["explanation"]["matched_skills"][0] == {
+        "skill": {"name": "python"},
+        "is_required": True,
+        "evidence_sources": [
+            {"kind": "profile", "label": None},
+            {"kind": "work_experience", "label": "Software Engineer"},
+        ],
+    }
+    assert data["explanation"]["experience"]["known_candidate_months"] == 24
+    assert data["explanation"]["gaps"] == {
+        "missing_required_skills": [],
+        "missing_preferred_skills": [{"name": "docker"}],
+        "experience_gap": {
+            "required_months": 36,
+            "known_candidate_months": 24,
+            "missing_months": 12,
+        },
+        "education_gap": None,
+    }
+    assert data["explanation"]["keyword_coverage"] == {
+        "matched_keywords": [{"name": "python"}],
+        "missing_keywords": [{"name": "docker"}],
+        "percentage": 50.0,
+    }
+
+    preparation = data["interview_preparation"]
+    assert {
+        "kind": "required_skill_strength",
+        "description": "Required skill: python",
+    } in preparation["themes"]
+    assert {"description": "python evidence from profile"} in preparation[
+        "talking_points"
+    ]
+    assert "experience_gap_discussion" in preparation["question_categories"]
+    assert {
+        "description": "How is python used day to day in this role?"
+    } in preparation["candidate_questions"]
+    assert data["ai_enrichment"] is None
+
+
+def test_analysis_uses_one_deterministic_result(
+    valid_payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original_explain = DeterministicMatcher.explain
+    explain_calls = 0
+
+    def counting_explain(self: Any, candidate: Any, job: Any) -> MatchExplanation:
+        nonlocal explain_calls
+        explain_calls += 1
+        return original_explain(self, candidate, job)
+
+    def forbidden_match(self: Any, candidate: Any, job: Any) -> None:
+        raise AssertionError("match() must not be called by the route")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", counting_explain)
+    monkeypatch.setattr(DeterministicMatcher, "match", forbidden_match)
+
+    response = _post(valid_payload)
+
+    assert response.status_code == 200
+    assert explain_calls == 1
+    assert response.json()["score"] == response.json()["explanation"]["score"]
+
+
+def test_unknown_top_level_field_is_rejected(valid_payload: dict[str, Any]) -> None:
+    valid_payload["unexpected"] = "value"
+    _assert_validation_error(_post(valid_payload), "unexpected")
+
+
+def test_unknown_nested_field_is_rejected(valid_payload: dict[str, Any]) -> None:
+    valid_payload["candidate_profile"]["skills"][0]["unexpected"] = "value"
+    _assert_validation_error(_post(valid_payload), "unexpected")
+
+
+def test_invalid_education_level_is_rejected(valid_payload: dict[str, Any]) -> None:
+    valid_payload["candidate_profile"]["education"] = [{"level": "not-a-level"}]
+    _assert_validation_error(_post(valid_payload), "level")
+
+
+def test_invalid_work_mode_is_rejected(valid_payload: dict[str, Any]) -> None:
+    valid_payload["candidate_profile"]["preferences"] = {
+        "acceptable_work_modes": ["teleportation"]
+    }
+    _assert_validation_error(_post(valid_payload), "acceptable_work_modes")
+
+
+def test_malformed_experience_is_rejected(valid_payload: dict[str, Any]) -> None:
+    valid_payload["candidate_profile"]["experience"][0]["duration_months"] = "invalid"
+    _assert_validation_error(_post(valid_payload), "duration_months")
+
+
+def test_domain_validation_error_is_safe(valid_payload: dict[str, Any]) -> None:
+    valid_payload["job_description"]["required_skills"].append({"name": "Docker"})
+
+    response = _post(valid_payload)
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "domain_validation_error",
+            "message": "Domain validation failed.",
+            "details": [
+                {
+                    "loc": ["body"],
+                    "msg": "Value violates domain constraints.",
+                    "type": "value_error.domain",
+                }
+            ],
+        }
+    }
+    assert "both required and preferred" not in response.text
+
+
+def test_unexpected_value_error_is_not_mapped_to_422(
+    valid_payload: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken_explain(self: Any, candidate: Any, job: Any) -> None:
+        raise ValueError("internal implementation detail")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", broken_explain)
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.post("/api/v1/analysis", json=valid_payload)
+
+    assert response.status_code == 500
+    assert "domain_validation_error" not in response.text
+    assert "internal implementation detail" not in response.text
+
+
+def test_ai_provider_is_not_called_when_disabled(
+    valid_payload: dict[str, Any],
+) -> None:
+    provider = FakeAIProvider()
+
+    response = _post(valid_payload, provider)
+
+    assert response.status_code == 200
+    assert provider.requests == []
+    assert response.json()["ai_enrichment"] is None
+
+
+def test_optional_ai_enrichment_preserves_deterministic_response(
+    valid_payload: dict[str, Any],
+) -> None:
+    provider = FakeAIProvider()
+    deterministic = _post(valid_payload).json()
+    valid_payload["include_ai_enrichment"] = True
+
+    response = _post(valid_payload, provider)
+
+    assert response.status_code == 200
+    assert len(provider.requests) == 1
+    captured = provider.requests[0]
+    assert isinstance(captured.job_description, JobDescription)
+    assert isinstance(captured.match_explanation, MatchExplanation)
+    assert isinstance(captured.interview_preparation, InterviewPreparation)
+    assert not hasattr(captured, "candidate_profile")
+
+    enriched = response.json()
+    assert {k: v for k, v in enriched.items() if k != "ai_enrichment"} == {
+        k: v for k, v in deterministic.items() if k != "ai_enrichment"
+    }
+    assert enriched["ai_enrichment"] == {
+        "content": "Synthetic AI insight.",
+        "provider_name": "FakeProvider",
+    }
+
+
+def test_ai_provider_missing_error(valid_payload: dict[str, Any]) -> None:
+    valid_payload["include_ai_enrichment"] = True
+
+    response = _post(valid_payload)
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "ai_provider_unavailable"
+
+
+def test_ai_provider_execution_error_is_safe(valid_payload: dict[str, Any]) -> None:
+    valid_payload["include_ai_enrichment"] = True
+
+    response = _post(valid_payload, FakeAIProvider(should_fail=True))
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == "ai_provider_error"
+    assert "private provider failure details" not in response.text
