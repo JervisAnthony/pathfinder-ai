@@ -1,8 +1,4 @@
-"""
-FastAPI routes for Pathfinder AI analysis.
-"""
-
-from typing import Any
+"""FastAPI routes for Pathfinder AI analysis."""
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
@@ -10,6 +6,8 @@ from pydantic import BaseModel
 from pathfinder_ai.api.errors import (
     AIProviderExecutionError,
     AIProviderUnavailableError,
+    DomainValidationError,
+    ErrorResponseSchema,
 )
 from pathfinder_ai.api.schemas import (
     AnalysisRequestSchema,
@@ -40,20 +38,42 @@ async def health_check() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.post("/analysis", response_model=AnalysisResponseSchema)
-async def analyze(payload: AnalysisRequestSchema, request: Request) -> Any:
+@router.post(
+    "/analysis",
+    response_model=AnalysisResponseSchema,
+    responses={
+        422: {
+            "model": ErrorResponseSchema,
+            "description": "Request or domain validation failed.",
+        },
+        502: {
+            "model": ErrorResponseSchema,
+            "description": "AI enrichment provider execution failed.",
+        },
+        503: {
+            "model": ErrorResponseSchema,
+            "description": "AI enrichment provider is unavailable.",
+        },
+    },
+)
+async def analyze(
+    payload: AnalysisRequestSchema, request: Request
+) -> AnalysisResponseSchema:
     """
     Perform a complete matching and interview preparation analysis.
     Optionally include AI enrichment if requested and configured.
     """
     # 1. Map input to domain
-    candidate_profile = map_candidate_profile(payload.candidate_profile)
-    job_description = map_job_description(payload.job_description)
+    try:
+        candidate_profile = map_candidate_profile(payload.candidate_profile)
+        job_description = map_job_description(payload.job_description)
+    except ValueError as exc:
+        raise DomainValidationError() from exc
 
     # 2. Run deterministic analysis
     matcher = DeterministicMatcher()
-    match_score = matcher.match(candidate_profile, job_description)
     match_explanation = matcher.explain(candidate_profile, job_description)
+    match_score = match_explanation.score
 
     preparer = DeterministicInterviewPreparer()
     interview_prep = preparer.prepare(

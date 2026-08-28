@@ -33,7 +33,7 @@ These milestones must not be replayed or rebuilt.
 
 Active pull request:
 
-(Will be updated when PR is open)
+**PR #11 — Add FastAPI analysis API**
 
 ## Commit 8 Scope
 

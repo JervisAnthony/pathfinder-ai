@@ -59,7 +59,7 @@ class WorkExperienceSchema(BaseStrictModel):
 
 
 class EducationRecordSchema(BaseStrictModel):
-    level: str  # maps to EducationLevel Enum
+    level: EducationLevel
     field_of_study: str | None = None
     institution: str | None = None
     description: str | None = None
@@ -80,7 +80,7 @@ class CertificationSchema(BaseStrictModel):
 class CandidatePreferencesSchema(BaseStrictModel):
     target_titles: list[JobTitleSchema] = Field(default_factory=list)
     preferred_locations: list[str] = Field(default_factory=list)
-    acceptable_work_modes: list[str] = Field(default_factory=list)
+    acceptable_work_modes: list[WorkMode] = Field(default_factory=list)
 
 
 class CandidateProfileSchema(BaseStrictModel):
@@ -113,7 +113,7 @@ class ExperienceRequirementSchema(BaseStrictModel):
 
 
 class EducationRequirementSchema(BaseStrictModel):
-    level: str | None = None
+    level: EducationLevel | None = None
     field_of_study: str | None = None
     description: str | None = None
 
@@ -259,7 +259,7 @@ def map_candidate_profile(schema: CandidateProfileSchema) -> CandidateProfile:
         ),
         education=tuple(
             EducationRecord(
-                level=EducationLevel(e.level),
+                level=e.level,
                 field_of_study=e.field_of_study,
                 institution=e.institution,
                 description=e.description,
@@ -288,9 +288,7 @@ def map_candidate_profile(schema: CandidateProfileSchema) -> CandidateProfile:
                     JobTitle(title=t.title) for t in schema.preferences.target_titles
                 ),
                 preferred_locations=tuple(schema.preferences.preferred_locations),
-                acceptable_work_modes=tuple(
-                    WorkMode(m) for m in schema.preferences.acceptable_work_modes
-                ),
+                acceptable_work_modes=tuple(schema.preferences.acceptable_work_modes),
             )
             if schema.preferences
             else None
@@ -325,11 +323,7 @@ def map_job_description(schema: JobDescriptionSchema) -> JobDescription:
         ),
         education_requirement=(
             EducationRequirement(
-                level=(
-                    EducationLevel(schema.education_requirement.level)
-                    if schema.education_requirement.level
-                    else None
-                ),
+                level=schema.education_requirement.level,
                 field_of_study=schema.education_requirement.field_of_study,
                 description=schema.education_requirement.description,
             )
@@ -383,15 +377,13 @@ def map_explanation_to_schema(domain: MatchExplanation) -> MatchExplanationSchem
         education=(
             EducationEvidenceSchema(
                 requirement=EducationRequirementSchema(
-                    level=domain.education.requirement.level.value
-                    if domain.education.requirement.level
-                    else None,
+                    level=domain.education.requirement.level,
                     field_of_study=domain.education.requirement.field_of_study,
                     description=domain.education.requirement.description,
                 ),
                 matched_record=(
                     EducationRecordSchema(
-                        level=domain.education.matched_record.level.value,
+                        level=domain.education.matched_record.level,
                         field_of_study=domain.education.matched_record.field_of_study,
                         institution=domain.education.matched_record.institution,
                         description=domain.education.matched_record.description,
@@ -422,9 +414,7 @@ def map_explanation_to_schema(domain: MatchExplanation) -> MatchExplanationSchem
             ),
             education_gap=(
                 EducationRequirementSchema(
-                    level=domain.gaps.education_gap.level.value
-                    if domain.gaps.education_gap.level
-                    else None,
+                    level=domain.gaps.education_gap.level,
                     field_of_study=domain.gaps.education_gap.field_of_study,
                     description=domain.gaps.education_gap.description,
                 )

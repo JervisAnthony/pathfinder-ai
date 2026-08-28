@@ -37,7 +37,7 @@ def test_map_candidate_profile_success() -> None:
         ],
         education=[
             EducationRecordSchema(
-                level="bachelor",
+                level=EducationLevel.BACHELOR,
                 field_of_study="Computer Science",
                 institution="State University",
                 description="Graduated with honors.",
@@ -60,7 +60,7 @@ def test_map_candidate_profile_success() -> None:
         preferences=CandidatePreferencesSchema(
             target_titles=[JobTitleSchema(title="Senior Engineer")],
             preferred_locations=["Remote"],
-            acceptable_work_modes=["remote"],
+            acceptable_work_modes=[WorkMode.REMOTE],
         ),
     )
 
@@ -105,7 +105,7 @@ def test_map_job_description_success() -> None:
             minimum_years=3, maximum_years=5
         ),
         education_requirement=EducationRequirementSchema(
-            level="bachelor", field_of_study="Computer Science"
+            level=EducationLevel.BACHELOR, field_of_study="Computer Science"
         ),
     )
 

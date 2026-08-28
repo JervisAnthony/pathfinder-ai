@@ -5,7 +5,7 @@ Tests for FastAPI application factory.
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from pathfinder_ai.api.app import create_app
+from pathfinder_ai.api import create_app
 from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentProvider,
     AIEnrichmentRequest,
@@ -38,3 +38,23 @@ def test_health_endpoint() -> None:
     response = client.get("/api/v1/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_openapi_documents_versioned_routes_and_contracts() -> None:
+    document = create_app().openapi()
+
+    assert "/api/v1/health" in document["paths"]
+    assert "get" in document["paths"]["/api/v1/health"]
+    analysis = document["paths"]["/api/v1/analysis"]["post"]
+    assert analysis["requestBody"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AnalysisRequestSchema"
+    }
+    responses = analysis["responses"]
+    assert responses["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AnalysisResponseSchema"
+    }
+    assert {"422", "502", "503"} <= responses.keys()
+    for status in ("422", "502", "503"):
+        assert responses[status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponseSchema"
+        }

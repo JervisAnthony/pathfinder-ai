@@ -8,10 +8,11 @@ from fastapi.exceptions import RequestValidationError
 from pathfinder_ai.api.errors import (
     AIProviderExecutionError,
     AIProviderUnavailableError,
+    DomainValidationError,
     ai_provider_execution_error_handler,
     ai_provider_unavailable_handler,
+    domain_validation_error_handler,
     validation_exception_handler,
-    value_error_handler,
 )
 from pathfinder_ai.api.routes.analysis import router as analysis_router
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentProvider
@@ -31,15 +32,15 @@ def create_app(ai_provider: AIEnrichmentProvider | None = None) -> FastAPI:
     app.state.ai_provider = ai_provider
 
     # Register Exception Handlers
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
-    app.add_exception_handler(ValueError, value_error_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(DomainValidationError, domain_validation_error_handler)
     app.add_exception_handler(
         AIProviderUnavailableError,
-        ai_provider_unavailable_handler,  # type: ignore[arg-type]
+        ai_provider_unavailable_handler,
     )
     app.add_exception_handler(
         AIProviderExecutionError,
-        ai_provider_execution_error_handler,  # type: ignore[arg-type]
+        ai_provider_execution_error_handler,
     )
 
     # Register Routes

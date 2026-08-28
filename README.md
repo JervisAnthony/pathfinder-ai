@@ -48,7 +48,7 @@ Endpoints:
 - `GET /api/v1/health`
 - `POST /api/v1/analysis`
 
-The API receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if an external provider is configured in the environment.
+The API receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis when the host explicitly injects a provider through `create_app(...)`. No concrete provider, API keys, or environment-based provider configuration are introduced in this milestone.
 
 ## MVP-1 Direction
 
