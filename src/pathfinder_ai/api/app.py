@@ -31,13 +31,15 @@ def create_app(ai_provider: AIEnrichmentProvider | None = None) -> FastAPI:
     app.state.ai_provider = ai_provider
 
     # Register Exception Handlers
-    app.add_exception_handler(RequestValidationError, validation_exception_handler) # type: ignore[arg-type]
-    app.add_exception_handler(ValueError, value_error_handler) # type: ignore[arg-type]
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)  # type: ignore[arg-type]
+    app.add_exception_handler(ValueError, value_error_handler)  # type: ignore[arg-type]
     app.add_exception_handler(
-        AIProviderUnavailableError, ai_provider_unavailable_handler # type: ignore[arg-type]
+        AIProviderUnavailableError,
+        ai_provider_unavailable_handler,  # type: ignore[arg-type]
     )
     app.add_exception_handler(
-        AIProviderExecutionError, ai_provider_execution_error_handler # type: ignore[arg-type]
+        AIProviderExecutionError,
+        ai_provider_execution_error_handler,  # type: ignore[arg-type]
     )
 
     # Register Routes
