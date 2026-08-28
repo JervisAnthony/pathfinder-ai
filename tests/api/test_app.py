@@ -58,3 +58,21 @@ def test_openapi_documents_versioned_routes_and_contracts() -> None:
         assert responses[status]["content"]["application/json"]["schema"] == {
             "$ref": "#/components/schemas/ErrorResponseSchema"
         }
+
+    history = document["paths"]["/api/v1/analyses"]["get"]
+    assert history["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/AnalysisHistoryResponseSchema"
+    }
+    for status in ("422", "503"):
+        assert history["responses"][status]["content"]["application/json"][
+            "schema"
+        ] == {"$ref": "#/components/schemas/ErrorResponseSchema"}
+
+    detail = document["paths"]["/api/v1/analyses/{analysis_id}"]["get"]
+    assert detail["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/SavedAnalysisDetailSchema"
+    }
+    for status in ("404", "422", "503"):
+        assert detail["responses"][status]["content"]["application/json"]["schema"] == {
+            "$ref": "#/components/schemas/ErrorResponseSchema"
+        }

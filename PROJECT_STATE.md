@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Current `main` baseline:
 
-`d89f50ba5cf8be893bdb9dd5b5bcecaa09a4d268`
+`eb2ae576548cd60412fe5d8508a89dab38cb363c`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 7 — AI Provider Abstraction**
+**Commit 8 — FastAPI Analysis API**
 
 ## Completed MVP-1 Roadmap
 
@@ -24,30 +24,17 @@ Current completed roadmap milestone on `main`:
 - Commit 5 — Match Explanation & Gap Analysis — complete
 - Commit 6 — Interview Preparation Engine — complete
 - Commit 7 — AI Provider Abstraction — complete
+- Commit 8 — FastAPI Analysis API — complete
 
 These milestones must not be replayed or rebuilt.
 
 ## Active Work
 
-**Commit 8 — FastAPI Analysis API**
+**Commit 9 — Persistence & Analysis History**
 
 Active pull request:
 
-**PR #11 — Add FastAPI analysis API**
-
-## Commit 8 Scope
-
-Commit 8 introduces the MVP-1 FastAPI Analysis API:
-- FastAPI interface
-- API request/response schemas
-- Validation error mapping
-- Health endpoint
-- Analysis endpoint
-
-This milestone does not introduce:
-- Persistence or databases
-- Web frontend
-- Real external AI providers
+**PR #12 — Add analysis persistence and history**
 
 ## Existing Capabilities
 
@@ -73,9 +60,9 @@ Future work must build on these capabilities rather than recreate them.
 
 ## Next Roadmap Milestone
 
-After Commit 8 is merged:
+After Commit 9 is merged:
 
-**Commit 9 — Persistence & Analysis History**
+**Commit 10 — Web MVP**
 
 ## Later MVP-1 Milestones
 

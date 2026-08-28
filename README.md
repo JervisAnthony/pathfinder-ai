@@ -32,23 +32,42 @@ Pathfinder AI now supports:
 - interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
 - AI enrichment uses a replaceable provider contract but currently has no concrete external provider implemented
 - deterministic scoring and interview preparation remain independent of AI
-- the API is stateless; persistence is not yet implemented
+- optional SQLite-backed history for saved analyses
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
-- Persistence and databases (SQLite)
 - Concrete LLM SDKs (e.g. OpenAI, Gemini) and semantic matching
 - Resume parsing and document ingestion
 - Web application (React, TypeScript)
+- Authentication and multi-user isolation
+- Cloud databases
 
-## API Surface
+## API Surface & Persistence
 
-Pathfinder exposes a minimal FastAPI surface.
+Pathfinder exposes a FastAPI surface with opt-in, repository-backed persistence.
 
 Endpoints:
 - `GET /api/v1/health`
 - `POST /api/v1/analysis`
+- `GET /api/v1/analyses`
+- `GET /api/v1/analyses/{analysis_id}`
 
-The API receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis when the host explicitly injects a provider through `create_app(...)`. No concrete provider, API keys, or environment-based provider configuration are introduced in this milestone.
+The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
+
+Persistence is entirely opt-in. The repository defaults to stateless operation. To save analyses, a client must set `save_analysis: true` in the request body, and the application host must inject an `AnalysisRepository` during initialization.
+
+Example host wiring:
+```python
+from pathfinder_ai.api.app import create_app
+from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
+    SQLiteAnalysisRepository,
+)
+
+repository = SQLiteAnalysisRepository("pathfinder.db")
+app = create_app(analysis_repository=repository)
+```
+
+**Security Warning:**
+Stored analysis data in the SQLite database contains sensitive candidate and job information. There is currently no multi-tenant isolation, user authentication, or encryption-at-rest. The database should be treated as sensitive local application data.
 
 ## MVP-1 Direction
 
