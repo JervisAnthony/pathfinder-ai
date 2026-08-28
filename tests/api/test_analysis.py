@@ -2,6 +2,8 @@
 Tests for API Analysis routes.
 """
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -26,8 +28,6 @@ class FakeAIProvider(AIEnrichmentProvider):
             content="Synthetic AI insight.", provider_name="FakeProvider"
         )
 
-
-from typing import Any
 
 @pytest.fixture
 def valid_payload() -> dict[str, Any]:
