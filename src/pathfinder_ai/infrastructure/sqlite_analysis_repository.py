@@ -48,7 +48,7 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                     created_at TEXT NOT NULL,
                     job_title TEXT NOT NULL,
                     company_name TEXT NULL,
-                    score REAL NOT NULL,
+                    score REAL NULL,
                     ai_enriched INTEGER NOT NULL,
                     payload_version INTEGER NOT NULL,
                     payload_json TEXT NOT NULL

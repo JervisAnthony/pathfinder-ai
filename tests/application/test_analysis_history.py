@@ -1,7 +1,7 @@
 """Tests for AnalysisHistoryService."""
 
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -290,10 +290,8 @@ def test_save_with_invalid_id_generator_fallback(fake_repo: FakeRepository) -> N
 
 def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
 
-    class FixedClock:
-        @staticmethod
-        def now(tz: timezone) -> datetime:
-            return datetime(2023, 1, 1, tzinfo=tz)
+    def fixed_clock() -> datetime:
+        return datetime(2023, 1, 1, tzinfo=UTC)
 
     fixed_id = uuid.uuid4()
 
@@ -302,8 +300,8 @@ def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
 
     service = AnalysisHistoryService(
         repository=fake_repo,
-        clock=FixedClock,  # type: ignore[arg-type]
-        id_generator=id_gen,  # type: ignore[arg-type]
+        clock=fixed_clock,
+        id_generator=id_gen,
     )
 
     from pathfinder_ai.domain.skill import Skill

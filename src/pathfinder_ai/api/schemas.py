@@ -254,7 +254,7 @@ class SavedAnalysisSummarySchema(BaseStrictModel):
     created_at: datetime
     job_title: str
     company_name: str | None
-    score: float
+    score: float | None
     ai_enriched: bool
 
 

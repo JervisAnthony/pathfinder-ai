@@ -3,9 +3,10 @@ Application models and repository contracts for analysis history.
 """
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Protocol
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
@@ -32,6 +33,18 @@ class SavedAnalysis:
         if self.created_at.tzinfo is None:
             raise ValueError("created_at must be timezone-aware")
 
+        # Ensure UTC
+        object.__setattr__(
+            self,
+            "created_at",
+            self.created_at.astimezone(UTC),
+        )
+        object.__setattr__(
+            self,
+            "created_at",
+            self.created_at.astimezone(UTC),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class SavedAnalysisSummary:
@@ -43,12 +56,15 @@ class SavedAnalysisSummary:
     created_at: datetime
     job_title: str
     company_name: str | None
-    score: float
+    score: float | None
     ai_enriched: bool
 
     def __post_init__(self) -> None:
         if self.created_at.tzinfo is None:
             raise ValueError("created_at must be timezone-aware")
+
+        # Ensure UTC
+        object.__setattr__(self, "created_at", self.created_at.astimezone(UTC))
 
 
 class AnalysisRepository(Protocol):
@@ -79,12 +95,16 @@ class AnalysisHistoryService:
     def __init__(
         self,
         repository: AnalysisRepository,
-        id_generator: type[uuid.UUID] | None = None,
-        clock: type[datetime] | None = None,
+        id_generator: "Callable[[], uuid.UUID] | None" = None,
+        clock: "Callable[[], datetime] | None" = None,
     ) -> None:
         self._repository = repository
-        self._generate_id: Any = id_generator or uuid.uuid4
-        self._now: Any = clock.now if clock else datetime.now
+        self._generate_id = id_generator or uuid.uuid4
+
+        def default_clock() -> datetime:
+            return datetime.now(UTC)
+
+        self._now = clock or default_clock
 
     def save_analysis(
         self,
@@ -102,7 +122,10 @@ class AnalysisHistoryService:
         if isinstance(analysis_id, type) and issubclass(analysis_id, uuid.UUID):
             analysis_id = uuid.uuid4()
 
-        created_at = self._now(UTC)
+        created_at = self._now()
+
+        # Normalize to UTC
+        created_at = created_at.astimezone(UTC)
 
         analysis = SavedAnalysis(
             analysis_id=analysis_id,
