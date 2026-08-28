@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-08-26
+Last updated: 2026-08-28
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Current `main` baseline:
 
-`b0d48b953088cc206eba657bfaa20dd157c788c6`
+`1178f86db6ca14704e485f1a37769a0fa5a34104`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 5 — Match Explanation & Gap Analysis**
+**Commit 6 — Interview Preparation Engine**
 
 ## Completed MVP-1 Roadmap
 
@@ -22,37 +22,34 @@ Current completed roadmap milestone on `main`:
 - Commit 3 — Candidate Profile Domain — complete
 - Commit 4 — Deterministic Matching Engine — complete
 - Commit 5 — Match Explanation & Gap Analysis — complete
+- Commit 6 — Interview Preparation Engine — complete
 
 These milestones must not be replayed or rebuilt.
 
 ## Active Work
 
-**Commit 6 — Interview Preparation Engine**
+**Commit 7 — AI Provider Abstraction**
 
 Active pull request:
 
-**PR #9 — Add deterministic interview preparation**
+PR #10 — Add AI provider abstraction
 
+## Commit 7 Scope
 
-## Commit 6 Scope
-
-Commit 6 adds deterministic structured interview preparation capabilities on top of the existing matcher and explanation:
-
-- interview themes
-- candidate talking points
-- likely interview question categories
-- candidate-to-interviewer questions
-
-The existing deterministic score and match explanation remain the source of truth.
+Commit 7 introduces an optional, provider-neutral generative AI abstraction layer:
+- `AIEnrichmentRequest` value object
+- `AIEnrichmentResult` value object
+- `AIEnrichmentProvider` protocol
+- Optional enrichment application service
+- Deterministic fake provider for tests
 
 This milestone does not introduce:
-
-- LLM integration
-- AI provider abstraction
-- semantic matching
+- real external AI providers (e.g. OpenAI, Anthropic, Gemini)
+- API keys or .env logic
 - FastAPI
-- persistence
-- frontend behavior
+- HTTP clients
+- semantic matching / vector databases
+- any alterations to the deterministic core matcher logic
 
 ## Existing Capabilities
 
@@ -72,18 +69,18 @@ The repository already contains:
 - deterministic education scoring
 - structured match explanation and gap analysis
 - `MatchExplanation`
+- deterministic interview preparation engine
 
 Future work must build on these capabilities rather than recreate them.
 
 ## Next Roadmap Milestone
 
-After Commit 6 is merged:
+After Commit 7 is merged:
 
-**Commit 7 — AI Provider Abstraction**
+**Commit 8 — FastAPI Analysis API**
 
 ## Later MVP-1 Milestones
 
-- Commit 8 — FastAPI Analysis API
 - Commit 9 — Persistence & Analysis History
 - Commit 10 — Web MVP
 

@@ -17,6 +17,7 @@ Pathfinder AI now supports:
 - candidate talking points
 - likely interview question categories
 - candidate-to-interviewer questions
+- provider-neutral optional AI enrichment abstraction
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
@@ -29,11 +30,13 @@ Pathfinder AI now supports:
 - no AI-generated interview predictions
 - no employer-specific inference
 - interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
+- AI enrichment uses a replaceable provider contract but currently has no concrete external provider implemented
+- deterministic scoring and interview preparation remain independent of AI
 
 **Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
 - APIs (FastAPI)
 - Persistence and databases (SQLite)
-- AI enrichments, LLM SDKs, and semantic matching
+- Concrete LLM SDKs (e.g. OpenAI, Gemini) and semantic matching
 - Resume parsing and document ingestion
 - Web application (React, TypeScript)
 
