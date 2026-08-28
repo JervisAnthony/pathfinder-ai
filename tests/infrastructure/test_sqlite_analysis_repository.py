@@ -42,10 +42,10 @@ from pathfinder_ai.domain.explanation import (
 )
 from pathfinder_ai.domain.job_description import (
     CompanyInfo,
+    EducationRequirement,
     ExperienceRequirement,
     JobDescription,
     Responsibility,
-    EducationRequirement,
 )
 from pathfinder_ai.domain.job_title import JobTitle
 from pathfinder_ai.domain.matching import MatchScore

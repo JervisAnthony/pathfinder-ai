@@ -289,7 +289,6 @@ def test_save_with_invalid_id_generator_fallback(fake_repo: FakeRepository) -> N
 
 
 def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
-    from typing import Any
 
     class FixedClock:
         @staticmethod
@@ -302,7 +301,9 @@ def test_save_with_clock_and_id_generator(fake_repo: FakeRepository) -> None:
         return fixed_id
 
     service = AnalysisHistoryService(
-        repository=fake_repo, clock=FixedClock, id_generator=id_gen  # type: ignore[arg-type]
+        repository=fake_repo,
+        clock=FixedClock,  # type: ignore[arg-type]
+        id_generator=id_gen,  # type: ignore[arg-type]
     )
 
     from pathfinder_ai.domain.skill import Skill
