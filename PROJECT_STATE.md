@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-08-28
+Last updated: 2026-08-30
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Current `main` baseline:
 
-`eb2ae576548cd60412fe5d8508a89dab38cb363c`
+`d805896b6c3650f36979cf09d9740b535eb32a21`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 8 — FastAPI Analysis API**
+**Commit 9 — Persistence & Analysis History**
 
 ## Completed MVP-1 Roadmap
 
@@ -25,16 +25,21 @@ Current completed roadmap milestone on `main`:
 - Commit 6 — Interview Preparation Engine — complete
 - Commit 7 — AI Provider Abstraction — complete
 - Commit 8 — FastAPI Analysis API — complete
+- Commit 9 — Persistence & Analysis History — complete
 
 These milestones must not be replayed or rebuilt.
 
 ## Active Work
 
-**Commit 9 — Persistence & Analysis History**
+**Commit 10 — Web MVP**
 
-Active pull request:
+Status:
 
-**PR #12 — Add analysis persistence and history**
+**Authorized next milestone — implementation not yet started**
+
+Active roadmap pull request:
+
+**None**
 
 ## Existing Capabilities
 
@@ -45,28 +50,24 @@ The repository already contains:
 - GitHub Actions CI
 - Job Description domain
 - Candidate Profile domain
-- shared `Skill`, `JobTitle`, and `EducationLevel` primitives
+- shared domain primitives
 - deterministic candidate-job matching
 - `DeterministicMatcher`
 - bounded `MatchScore`
-- exact structured skill matching
-- deterministic experience scoring
-- deterministic education scoring
-- structured match explanation and gap analysis
-- `MatchExplanation`
-- deterministic interview preparation engine
+- structured `MatchExplanation` and gap analysis
+- deterministic `InterviewPreparation`
+- provider-neutral optional AI enrichment abstraction
+- FastAPI application/API layer
+- `POST /api/v1/analysis`
+- `GET /api/v1/health`
+- `AnalysisRepository` persistence contract
+- `SQLiteAnalysisRepository`
+- explicit opt-in saved-analysis persistence
+- immutable/versioned historical snapshots
+- `GET /api/v1/analyses`
+- `GET /api/v1/analyses/{analysis_id}`
 
 Future work must build on these capabilities rather than recreate them.
-
-## Next Roadmap Milestone
-
-After Commit 9 is merged:
-
-**Commit 10 — Web MVP**
-
-## Later MVP-1 Milestones
-
-- Commit 10 — Web MVP
 
 ## Architectural Boundary
 
