@@ -9,9 +9,8 @@ on:
       - main
 
 jobs:
-  validate:
+  backend:
     runs-on: ubuntu-latest
-
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -37,3 +36,36 @@ jobs:
 
       - name: Run Pytest with Coverage
         run: python -m pytest --cov=pathfinder_ai --cov-report=term-missing --cov-fail-under=100
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Run Lint
+        working-directory: ./web
+        run: npm run lint
+
+      - name: Run Typecheck
+        working-directory: ./web
+        run: npm run typecheck
+
+      - name: Run Tests
+        working-directory: ./web
+        run: npm run test:run
+
+      - name: Build
+        working-directory: ./web
+        run: npm run build

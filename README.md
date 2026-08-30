@@ -4,7 +4,7 @@ AI-powered job matching, application intelligence, and interview preparation wit
 
 ## Development Status
 
-Pathfinder AI is currently establishing its foundation. The current MVP-1 milestone aims to implement deterministic matching, application guidance, and optional AI enrichment. The structured Job Description and Candidate Profile domain models have been introduced, along with a deterministic structured candidate-job matching baseline.
+Pathfinder AI has completed its MVP-1 roadmap! It includes deterministic structured compatibility scoring, gap analysis, and deterministic interview preparation. A React/TypeScript web application provides a frontend for submitting candidate and job profiles for deterministic analysis. Core scoring remains independent of LLMs, though optional AI enrichment is supported via a provider-neutral abstraction.
 
 Pathfinder AI now supports:
 - deterministic structured compatibility scoring
@@ -18,11 +18,12 @@ Pathfinder AI now supports:
 - likely interview question categories
 - candidate-to-interviewer questions
 - provider-neutral optional AI enrichment abstraction
+- A React/TypeScript frontend (Web MVP) for submitting structured candidate/job data and viewing the explainable match results.
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
 - it is not ATS keyword analysis
-- no resume text is parsed
+- no resume text is parsed (the web client expects structured data)
 - no fuzzy/semantic matching is performed
 - no hiring probability is produced
 - explanation results are deterministic
@@ -34,12 +35,12 @@ Pathfinder AI now supports:
 - deterministic scoring and interview preparation remain independent of AI
 - optional SQLite-backed history for saved analyses
 
-**Note:** The following features are intentionally out of scope for the current foundation and belong to future commits:
-- Concrete LLM SDKs (e.g. OpenAI, Gemini) and semantic matching
-- Resume parsing and document ingestion
-- Web application (React, TypeScript)
-- Authentication and multi-user isolation
-- Cloud databases
+**Notes on the Web MVP:**
+- The frontend operates as a single-page application (SPA).
+- No authentication or multi-user accounts are implemented.
+- The UI intentionally does not persist candidate data; refreshing the browser will clear the form.
+- The frontend currently submits analysis requests specifying that only deterministic matching is performed (no AI enrichment, no analysis saving).
+- There is no job scraping or automated course recommendation.
 
 ## API Surface & Persistence
 
@@ -53,64 +54,68 @@ Endpoints:
 
 The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
 
-Persistence is entirely opt-in. The repository defaults to stateless operation. To save analyses, a client must set `save_analysis: true` in the request body, and the application host must inject an `AnalysisRepository` during initialization.
-
-Example host wiring:
-```python
-from pathfinder_ai.api.app import create_app
-from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
-    SQLiteAnalysisRepository,
-)
-
-repository = SQLiteAnalysisRepository("pathfinder.db")
-app = create_app(analysis_repository=repository)
-```
-
-**Security Warning:**
-Stored analysis data in the SQLite database contains sensitive candidate and job information. There is currently no multi-tenant isolation, user authentication, or encryption-at-rest. The database should be treated as sensitive local application data.
-
-## MVP-1 Direction
-
-The goal for MVP-1 is to allow users to provide their candidate profile and a target job description. The system will then deterministically compare these to provide explainable match scores, identify missing skills, and generate tailored application guidance without requiring an LLM for its core matching path. AI enrichment is strictly an optional layer.
-
 ## Requirements
 
 - Python >= 3.13, < 3.14
+- Node.js (v24 recommended) / npm
 
-## Local Setup
+## Backend Local Setup
 
 We recommend creating a virtual environment using Python 3.13 before installing dependencies.
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Linux/macOS
-# or .venv\Scripts\activate on Windows
+```
+python -m virtual_env .venv
+source .venv/bin/activate
 ```
 
-## Development Installation
-
-Install the project along with its development dependencies (`pytest`, `pytest-cov`, `ruff`, `mypy`):
+Install the project along with its development dependencies:
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## Validation Commands
-
-To validate your changes, ensure you run the complete test suite with coverage, format checks, linting, and type checking:
+Start the FastAPI development server using uvicorn:
 
 ```bash
-# Run tests with 100% coverage requirement
+python -m uvicorn pathfinder_ai.api.app:create_app --factory --host 127.0.0.1 --port 8000
+```
+
+## Frontend Local Setup
+
+Navigate to the `web` directory to run the React application:
+
+```bash
+cd web
+npm ci
+```
+
+Start the Vite development server:
+
+```
+npm run development
+```
+
+The Vite development server is configured to proxy requests to `/api` directly to the FastAPI backend running on `http://127.0.0.1:8000`.
+
+## Validation Commands
+
+To validate backend changes:
+
+```bash
 python -m pytest --cov=pathfinder_ai --cov-report=term-missing --cov-fail-under=100
-
-# Check code formatting
 python -m ruff format --check .
-
-# Lint code
 python -m ruff check .
-
-# Type checking
 python -m mypy src
+```
+
+To validate frontend changes:
+
+```bash
+cd web
+npm run lint
+npm run typecheck
+npm run test:run
+npm run build
 ```
 
 ## Repository Structure
@@ -120,6 +125,7 @@ python -m mypy src
 ├── src/
 │   └── pathfinder_ai/      # Main application package
 ├── tests/                  # Unit and integration tests
+├── web/                    # React/TypeScript Web MVP
 ├── .github/workflows/      # CI/CD workflows
 ├── pyproject.toml          # Project and tool configuration
 └── README.md               # Project documentation
