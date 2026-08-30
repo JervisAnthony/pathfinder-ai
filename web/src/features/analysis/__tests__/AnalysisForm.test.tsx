@@ -6,7 +6,7 @@ describe('AnalysisForm', () => {
   it('renders essential fields', () => {
     render(<AnalysisForm onSubmit={() => {}} isLoading={false} error={null} />);
 
-    expect(screen.getByLabelText("Skills (comma-separated)")).toBeInTheDocument();
+    expect(screen.getByLabelText('Skills (comma-separated)')).toBeInTheDocument();
     expect(screen.getByLabelText(/Job Title/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Analyze Match/i })).toBeInTheDocument();
   });
@@ -23,6 +23,22 @@ describe('AnalysisForm', () => {
     fireEvent.click(removeExpBtn);
 
     expect(screen.queryByLabelText(/Role Title/i)).not.toBeInTheDocument();
+  });
+
+  it('allows adding and removing education, projects, certifications', () => {
+      render(<AnalysisForm onSubmit={() => {}} isLoading={false} error={null} />);
+
+      fireEvent.click(screen.getByRole('button', { name: /Add Education/i }));
+      expect(screen.getByLabelText(/Institution/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Remove Education/i }));
+
+      fireEvent.click(screen.getByRole('button', { name: /Add Project/i }));
+      expect(screen.getByLabelText(/Project Name/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Remove Project/i }));
+
+      fireEvent.click(screen.getByRole('button', { name: /Add Certification/i }));
+      expect(screen.getByLabelText(/Certification Name/i)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Remove Certification/i }));
   });
 
   it('shows error if no meaningful evidence is provided', () => {
@@ -42,8 +58,8 @@ describe('AnalysisForm', () => {
     const handleSubmit = vi.fn();
     render(<AnalysisForm onSubmit={handleSubmit} isLoading={false} error={null} />);
 
-    // Fill candidate skills
-    fireEvent.change(screen.getByLabelText("Skills (comma-separated)"), { target: { value: 'Python' } });
+    // Fill candidate skills using exact match for the label
+    fireEvent.change(screen.getByLabelText('Skills (comma-separated)'), { target: { value: 'Python' } });
 
     // Fill job title
     fireEvent.change(screen.getByLabelText(/Job Title/i), { target: { value: 'Software Engineer' } });

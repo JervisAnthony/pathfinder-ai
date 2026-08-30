@@ -14,8 +14,16 @@ export interface WorkExperience {
   skills: Skill[];
 }
 
+export type EducationLevel =
+  | 'high_school'
+  | 'associate'
+  | 'bachelor'
+  | 'master'
+  | 'doctorate'
+  | 'other';
+
 export interface EducationRecord {
-  level: string;
+  level: EducationLevel;
   field_of_study: string;
   institution: string;
   description?: string | null;
@@ -33,10 +41,12 @@ export interface Certification {
   description?: string | null;
 }
 
+export type WorkMode = 'remote' | 'hybrid' | 'onsite';
+
 export interface CandidatePreferences {
   target_titles: JobTitle[];
   preferred_locations: string[];
-  acceptable_work_modes: string[];
+  acceptable_work_modes: WorkMode[];
 }
 
 export interface CandidateProfile {
@@ -64,7 +74,7 @@ export interface ExperienceRequirement {
 }
 
 export interface EducationRequirement {
-  level: string;
+  level: EducationLevel;
   field_of_study?: string | null;
   description?: string | null;
 }
@@ -194,5 +204,9 @@ export interface ApiErrorDetail {
 }
 
 export interface ApiErrorResponse {
-  detail: string | ApiErrorDetail[];
+  error: {
+    code: string;
+    message: string;
+    details: ApiErrorDetail[] | null;
+  }
 }
