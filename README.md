@@ -4,7 +4,7 @@ AI-powered job matching, application intelligence, and interview preparation wit
 
 ## Development Status
 
-Pathfinder AI has completed its MVP-1 roadmap! It includes deterministic structured compatibility scoring, gap analysis, and deterministic interview preparation. A React/TypeScript web application provides a frontend for submitting candidate and job profiles for deterministic analysis. Core scoring remains independent of LLMs, though optional AI enrichment is supported via a provider-neutral abstraction.
+Pathfinder AI is at its final MVP-1 implementation milestone, the Web MVP, which is currently under review. The React/TypeScript/Vite application submits structured candidate and job profiles to the FastAPI API and presents deterministic, explainable analysis results. Core scoring remains independent of LLMs; no AI provider is required for the default flow.
 
 Pathfinder AI now supports:
 - deterministic structured compatibility scoring
@@ -18,7 +18,7 @@ Pathfinder AI now supports:
 - likely interview question categories
 - candidate-to-interviewer questions
 - provider-neutral optional AI enrichment abstraction
-- A React/TypeScript frontend (Web MVP) for submitting structured candidate/job data and viewing the explainable match results.
+- a React/TypeScript/Vite frontend (Web MVP) for submitting structured candidate/job data and viewing explainable match results
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
@@ -40,7 +40,8 @@ Pathfinder AI now supports:
 - No authentication or multi-user accounts are implemented.
 - The UI intentionally does not persist candidate data; refreshing the browser will clear the form.
 - The frontend currently submits analysis requests specifying that only deterministic matching is performed (no AI enrichment, no analysis saving).
-- There is no job scraping or automated course recommendation.
+- There is no frontend persistence, resume parsing, job scraping, authentication, or history UI.
+- There are no fabricated course recommendations; the backend does not yet expose a course-recommendation contract.
 
 ## API Surface & Persistence
 
@@ -64,7 +65,7 @@ The `POST /api/v1/analysis` endpoint receives typed candidate and job informatio
 We recommend creating a virtual environment using Python 3.13 before installing dependencies.
 
 ```
-python -m virtual_env .venv
+python -m venv .venv
 source .venv/bin/activate
 ```
 
@@ -92,7 +93,7 @@ npm ci
 Start the Vite development server:
 
 ```
-npm run development
+npm run dev
 ```
 
 The Vite development server is configured to proxy requests to `/api` directly to the FastAPI backend running on `http://127.0.0.1:8000`.

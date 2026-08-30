@@ -1,15 +1,47 @@
-import { AnalysisRequest, AnalysisResponse, ApiErrorDetail } from '../types/api'
+import {
+  AnalysisRequest,
+  AnalysisResponse,
+  ApiErrorDetail,
+  ApiErrorResponse,
+} from '../types/api'
 
 export class ApiError extends Error {
-  public details?: unknown;
-  public status?: number;
+  public readonly status?: number;
+  public readonly code?: string;
+  public readonly details: ApiErrorDetail[] | null;
 
-  constructor(message: string, status?: number, details?: unknown) {
+  constructor(
+    message: string,
+    status?: number,
+    code?: string,
+    details: ApiErrorDetail[] | null = null,
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
     this.details = details;
   }
+}
+
+function isErrorDetail(value: unknown): value is ApiErrorDetail {
+  if (typeof value !== 'object' || value === null) return false;
+  const detail = value as { loc?: unknown; msg?: unknown; type?: unknown };
+  return Array.isArray(detail.loc)
+    && detail.loc.every((part) => typeof part === 'string' || typeof part === 'number')
+    && typeof detail.msg === 'string'
+    && typeof detail.type === 'string';
+}
+
+function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
+  if (typeof value !== 'object' || value === null || !('error' in value)) return false;
+  const envelope = value as { error?: unknown };
+  if (typeof envelope.error !== 'object' || envelope.error === null) return false;
+  const error = envelope.error as { code?: unknown; message?: unknown; details?: unknown };
+  return typeof error.code === 'string'
+    && typeof error.message === 'string'
+    && (error.details === null
+      || (Array.isArray(error.details) && error.details.every(isErrorDetail)));
 }
 
 export async function analyzeCandidateJob(request: AnalysisRequest): Promise<AnalysisResponse> {
@@ -23,31 +55,19 @@ export async function analyzeCandidateJob(request: AnalysisRequest): Promise<Ana
     });
 
     if (!response.ok) {
-      let errorData: unknown = null;
+      let errorData: unknown;
       try {
         errorData = await response.json();
       } catch {
-        throw new ApiError(`Server error: ${response.status} ${response.statusText}`, response.status);
+        throw new ApiError('Pathfinder returned an unreadable error response.', response.status);
       }
 
-      const errorDataObj = errorData as Record<string, unknown>;
-      let errorMessage = `Request failed with status ${response.status}`;
-
-      if (errorDataObj?.detail) {
-        if (typeof errorDataObj.detail === 'string') {
-           errorMessage = errorDataObj.detail;
-        } else if (Array.isArray(errorDataObj.detail)) {
-            // It's a FastAPI validation error
-            const errors = errorDataObj.detail as ApiErrorDetail[];
-            const msgs = errors.map(err => {
-                 const path = err.loc.filter(l => l !== 'body').join('.');
-                 return path ? `${path}: ${err.msg}` : err.msg;
-            });
-            errorMessage = `Validation Error: ${msgs.join(', ')}`;
-        }
+      if (!isApiErrorResponse(errorData)) {
+        throw new ApiError('Pathfinder returned an invalid error response.', response.status);
       }
 
-      throw new ApiError(errorMessage, response.status, errorDataObj?.detail);
+      const { code, message, details } = errorData.error;
+      throw new ApiError(message, response.status, code, details);
     }
 
     return await response.json();
@@ -55,6 +75,6 @@ export async function analyzeCandidateJob(request: AnalysisRequest): Promise<Ana
     if (error instanceof ApiError) {
       throw error;
     }
-    throw new ApiError('Network error or unable to parse response');
+    throw new ApiError('Unable to reach Pathfinder. Check your connection and try again.');
   }
 }

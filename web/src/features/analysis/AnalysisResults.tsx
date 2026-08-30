@@ -7,7 +7,7 @@ interface Props {
 }
 
 export function AnalysisResults({ results }: Props) {
-  const { score, explanation, interview_preparation, ai_enrichment } = results;
+  const { score, explanation, interview_preparation, ai_enrichment, saved_analysis } = results;
 
   return (
     <div className="analysis-results">
@@ -227,6 +227,14 @@ export function AnalysisResults({ results }: Props) {
               </React.Fragment>
             ))}
           </div>
+        </section>
+      )}
+
+      {saved_analysis && (
+        <section className="saved-analysis">
+          <h3>Saved Analysis</h3>
+          <p>Analysis ID: {saved_analysis.analysis_id}</p>
+          <p>Created: {new Date(saved_analysis.created_at).toLocaleString()}</p>
         </section>
       )}
     </div>

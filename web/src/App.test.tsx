@@ -19,21 +19,23 @@ describe('App', () => {
   });
 
   it('handles successful submission flow', async () => {
-    const mockResponse = {
+    const mockResponse: AnalysisResponse = {
       score: { value: 80 },
       explanation: {
         score: { value: 80 },
         components: [],
-        matched_skills: [],
-        gaps: { missing_required_skills: [], missing_preferred_skills: [] },
+        matched_skills: [], experience: null, education: null,
+        gaps: { missing_required_skills: [], missing_preferred_skills: [], experience_gap: null, education_gap: null },
         keyword_coverage: { matched_keywords: [], missing_keywords: [], percentage: 0 }
       },
       interview_preparation: {
         themes: [], talking_points: [], question_categories: [], candidate_questions: []
-      }
+      },
+      ai_enrichment: null,
+      saved_analysis: null,
     };
 
-    vi.mocked(api.analyzeCandidateJob).mockResolvedValueOnce(mockResponse as unknown as AnalysisResponse);
+    vi.mocked(api.analyzeCandidateJob).mockResolvedValueOnce(mockResponse);
 
     render(<App />);
 
@@ -45,7 +47,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /Analyze Match/i }));
 
     // Verify loading state
-    expect(screen.getByRole('button', { name: /Analyzing/i })).toBeDisabled();
+    const loadingButton = screen.getByRole('button', { name: /Analyzing/i });
+    expect(loadingButton).toBeDisabled();
+    fireEvent.click(loadingButton);
+    expect(api.analyzeCandidateJob).toHaveBeenCalledOnce();
 
     // Wait for results
     await waitFor(() => {

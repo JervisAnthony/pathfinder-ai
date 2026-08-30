@@ -6,37 +6,47 @@ export interface JobTitle {
   title: string;
 }
 
+export type EducationLevel =
+  | 'high_school'
+  | 'associate'
+  | 'bachelor'
+  | 'master'
+  | 'doctorate'
+  | 'other';
+
+export type WorkMode = 'remote' | 'hybrid' | 'onsite';
+
 export interface WorkExperience {
   role_title: JobTitle;
-  company_name: string;
-  duration_months: number;
-  description: string;
+  company_name?: string | null;
+  duration_months?: number | null;
+  description?: string | null;
   skills: Skill[];
 }
 
 export interface EducationRecord {
-  level: string;
-  field_of_study: string;
-  institution: string;
+  level: EducationLevel;
+  field_of_study?: string | null;
+  institution?: string | null;
   description?: string | null;
 }
 
 export interface Project {
   name: string;
-  description: string;
+  description?: string | null;
   skills: Skill[];
 }
 
 export interface Certification {
   name: string;
-  issuer: string;
+  issuer?: string | null;
   description?: string | null;
 }
 
 export interface CandidatePreferences {
   target_titles: JobTitle[];
   preferred_locations: string[];
-  acceptable_work_modes: string[];
+  acceptable_work_modes: WorkMode[];
 }
 
 export interface CandidateProfile {
@@ -59,12 +69,12 @@ export interface CompanyInfo {
 }
 
 export interface ExperienceRequirement {
-  minimum_years: number;
+  minimum_years?: number | null;
   maximum_years?: number | null;
 }
 
 export interface EducationRequirement {
-  level: string;
+  level?: EducationLevel | null;
   field_of_study?: string | null;
   description?: string | null;
 }
@@ -194,5 +204,9 @@ export interface ApiErrorDetail {
 }
 
 export interface ApiErrorResponse {
-  detail: string | ApiErrorDetail[];
+  error: {
+    code: string;
+    message: string;
+    details: ApiErrorDetail[] | null;
+  };
 }

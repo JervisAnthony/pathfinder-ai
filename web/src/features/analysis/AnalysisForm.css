@@ -87,13 +87,30 @@ legend {
   padding: 0 0.5rem;
 }
 
-.experience-item,
-.education-item {
+.repeatable-item {
   background: #f9f9f9;
   padding: 1rem;
   border-radius: 4px;
   margin-bottom: 1rem;
   border: 1px solid #eaeaea;
+}
+
+.repeatable-item > label:not(:first-child),
+.form-column > label:not(:first-child),
+.checkbox-group {
+  margin-top: 1rem;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .add-btn,
