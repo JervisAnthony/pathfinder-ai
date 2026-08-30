@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import { AnalysisResults } from '../AnalysisResults';
-import { AnalysisResponse } from '../../types/api';
+import { AnalysisResponse } from '../../../types/api';
 
 const mockResults = {
   score: { value: 85 },
