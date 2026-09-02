@@ -179,6 +179,27 @@ export interface InterviewPreparation {
   candidate_questions: InterviewerQuestion[];
 }
 
+export type LearningRecommendationKind =
+  | 'required_skill'
+  | 'preferred_skill'
+  | 'experience'
+  | 'education';
+
+export type LearningRecommendationPriority = 'high' | 'medium';
+
+export interface LearningRecommendation {
+  kind: LearningRecommendationKind;
+  priority: LearningRecommendationPriority;
+  topic: string;
+  title: string;
+  rationale: string;
+  suggested_course_topic: string | null;
+}
+
+export interface LearningRecommendations {
+  items: LearningRecommendation[];
+}
+
 export interface AIEnrichmentResult {
   content: string;
   provider_name: string;
@@ -193,6 +214,7 @@ export interface AnalysisResponse {
   score: MatchScore;
   explanation: MatchExplanation;
   interview_preparation: InterviewPreparation;
+  learning_recommendations: LearningRecommendations;
   ai_enrichment?: AIEnrichmentResult | null;
   saved_analysis?: SavedAnalysisMetadata | null;
 }

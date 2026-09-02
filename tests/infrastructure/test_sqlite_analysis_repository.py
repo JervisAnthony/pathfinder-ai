@@ -1,7 +1,9 @@
 """Tests for SQLiteAnalysisRepository and _analysis_codec."""
 
+import json
 import sqlite3
 import uuid
+from contextlib import closing
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,6 +19,13 @@ from pathfinder_ai.application.interview_preparation import (
     InterviewTheme,
     InterviewThemeKind,
     TalkingPoint,
+)
+from pathfinder_ai.application.learning_recommendations import (
+    DeterministicLearningRecommender,
+    LearningRecommendation,
+    LearningRecommendationKind,
+    LearningRecommendationPriority,
+    LearningRecommendations,
 )
 from pathfinder_ai.domain.candidate_profile import (
     CandidatePreferences,
@@ -51,7 +60,11 @@ from pathfinder_ai.domain.job_description import (
 from pathfinder_ai.domain.job_title import JobTitle
 from pathfinder_ai.domain.matching import MatchScore
 from pathfinder_ai.domain.skill import Skill
-from pathfinder_ai.infrastructure._analysis_codec import decode_analysis
+from pathfinder_ai.infrastructure._analysis_codec import (
+    CURRENT_PAYLOAD_VERSION,
+    decode_analysis,
+    encode_analysis,
+)
 from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
     SQLiteAnalysisRepository,
 )
@@ -188,6 +201,27 @@ def sample_analysis() -> SavedAnalysis:
         provider_name="test-provider",
     )
 
+    recommendations = LearningRecommendations(
+        items=(
+            LearningRecommendation(
+                kind=LearningRecommendationKind.REQUIRED_SKILL,
+                priority=LearningRecommendationPriority.HIGH,
+                topic="sql",
+                title="Strengthen sql",
+                rationale="sql is required and matching evidence was not found.",
+                suggested_course_topic="sql fundamentals",
+            ),
+            LearningRecommendation(
+                kind=LearningRecommendationKind.EXPERIENCE,
+                priority=LearningRecommendationPriority.HIGH,
+                topic="Role-relevant experience",
+                title="Build demonstrable role-relevant experience",
+                rationale="The structured analysis found a 24 month experience gap.",
+                suggested_course_topic=None,
+            ),
+        )
+    )
+
     return SavedAnalysis(
         analysis_id=uuid.uuid4(),
         created_at=datetime.now(UTC),
@@ -196,6 +230,7 @@ def sample_analysis() -> SavedAnalysis:
         match_explanation=explanation,
         interview_preparation=prep,
         ai_enrichment=ai,
+        learning_recommendations=recommendations,
     )
 
 
@@ -243,6 +278,32 @@ def test_sqlite_repository_round_trip(
     assert retrieved.job_description.experience_requirement is not None
     assert retrieved.job_description.experience_requirement.maximum_years is None
     assert retrieved.candidate_profile.experience[0].company_name == "Tech Corp"
+    assert (
+        retrieved.learning_recommendations == sample_analysis.learning_recommendations
+    )
+    assert retrieved.learning_recommendations is not None
+    assert isinstance(
+        retrieved.learning_recommendations.items[0].kind,
+        LearningRecommendationKind,
+    )
+    assert isinstance(
+        retrieved.learning_recommendations.items[0].priority,
+        LearningRecommendationPriority,
+    )
+    assert retrieved.learning_recommendations.items[0].topic == "sql"
+    assert retrieved.learning_recommendations.items[0].title == "Strengthen sql"
+    assert "matching evidence" in retrieved.learning_recommendations.items[0].rationale
+    assert (
+        retrieved.learning_recommendations.items[0].suggested_course_topic
+        == "sql fundamentals"
+    )
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        version = connection.execute(
+            "SELECT payload_version FROM saved_analyses WHERE analysis_id = ?",
+            (str(sample_analysis.analysis_id),),
+        ).fetchone()[0]
+    assert version == CURRENT_PAYLOAD_VERSION == 2
 
 
 def test_sqlite_repository_list_recent(
@@ -327,6 +388,41 @@ def test_sqlite_repository_get_not_found(tmp_path: Path) -> None:
 def test_unsupported_payload_version() -> None:
     with pytest.raises(ValueError, match="Unsupported payload version: 99"):
         decode_analysis("{}", 99)
+
+
+def test_version_one_payload_decodes_without_historical_recomputation(
+    sample_analysis: SavedAnalysis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = json.loads(encode_analysis(sample_analysis))
+    payload.pop("learning_recommendations")
+
+    def forbidden_recommend(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Legacy history must not be recomputed")
+
+    monkeypatch.setattr(
+        DeterministicLearningRecommender, "recommend", forbidden_recommend
+    )
+    decoded = decode_analysis(json.dumps(payload), 1)
+
+    assert decoded.learning_recommendations is None
+    assert decoded.match_explanation == sample_analysis.match_explanation
+    assert decoded.interview_preparation == sample_analysis.interview_preparation
+    assert decoded.ai_enrichment == sample_analysis.ai_enrichment
+
+
+def test_version_two_preserves_empty_and_absent_recommendation_snapshots(
+    sample_analysis: SavedAnalysis,
+) -> None:
+    empty = replace(
+        sample_analysis, learning_recommendations=LearningRecommendations(items=())
+    )
+    absent = replace(sample_analysis, learning_recommendations=None)
+
+    decoded_empty = decode_analysis(encode_analysis(empty), 2)
+    decoded_absent = decode_analysis(encode_analysis(absent), 2)
+
+    assert decoded_empty.learning_recommendations == LearningRecommendations(items=())
+    assert decoded_absent.learning_recommendations is None
 
 
 def test_sqlite_repository_duplicate_save(

@@ -17,6 +17,13 @@ from .interview_preparation import (
     InterviewThemeKind,
     TalkingPoint,
 )
+from .learning_recommendations import (
+    DeterministicLearningRecommender,
+    LearningRecommendation,
+    LearningRecommendationKind,
+    LearningRecommendationPriority,
+    LearningRecommendations,
+)
 
 __all__ = [
     "AIEnrichmentProvider",
@@ -24,10 +31,15 @@ __all__ = [
     "AIEnrichmentResult",
     "AIEnrichmentService",
     "DeterministicInterviewPreparer",
+    "DeterministicLearningRecommender",
     "InterviewPreparation",
     "InterviewQuestionCategory",
     "InterviewTheme",
     "InterviewThemeKind",
     "InterviewerQuestion",
+    "LearningRecommendation",
+    "LearningRecommendationKind",
+    "LearningRecommendationPriority",
+    "LearningRecommendations",
     "TalkingPoint",
 ]

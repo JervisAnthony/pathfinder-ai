@@ -1,6 +1,7 @@
 """End-to-end tests for the analysis API."""
 
 import uuid
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -18,6 +19,7 @@ from pathfinder_ai.application.analysis_history import (
     SavedAnalysisSummary,
 )
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
+from pathfinder_ai.application.learning_recommendations import LearningRecommendations
 from pathfinder_ai.domain import JobDescription, MatchExplanation
 from pathfinder_ai.domain.matching import DeterministicMatcher
 
@@ -146,6 +148,9 @@ def test_explicit_save_success(
     assert data["saved_analysis"]["created_at"]
 
     assert len(fake_repo.saved) == 1
+    saved = next(iter(fake_repo.saved.values()))
+    assert isinstance(saved.learning_recommendations, LearningRecommendations)
+    assert saved.learning_recommendations.items
 
 
 def test_persistence_unavailable_when_requested(valid_payload: dict[str, Any]) -> None:
@@ -214,6 +219,18 @@ def test_history_detail(
     data = response.json()
     assert data["analysis_id"] == analysis_id
     assert data["score"] == {"value": 66.67}
+    assert (
+        data["learning_recommendations"]
+        == post_response.json()["learning_recommendations"]
+    )
+
+    saved_id = uuid.UUID(analysis_id)
+    fake_repo.saved[saved_id] = replace(
+        fake_repo.saved[saved_id], learning_recommendations=None
+    )
+    legacy_response = client.get(f"/api/v1/analyses/{analysis_id}")
+    assert legacy_response.status_code == 200
+    assert legacy_response.json()["learning_recommendations"] is None
 
 
 def test_history_detail_not_found(fake_repo: FakeRepository) -> None:
@@ -317,6 +334,75 @@ def test_deterministic_analysis_response_structure(
         "description": "How is python used day to day in this role?"
     } in preparation["candidate_questions"]
     assert data["ai_enrichment"] is None
+
+    recommendations = data["learning_recommendations"]["items"]
+    assert [(item["kind"], item["priority"]) for item in recommendations] == [
+        ("experience", "high"),
+        ("preferred_skill", "medium"),
+    ]
+    assert recommendations[0]["suggested_course_topic"] is None
+    assert recommendations[1]["suggested_course_topic"] == "docker fundamentals"
+
+
+def test_learning_recommendations_cover_all_gap_kinds_and_no_gap_state(
+    valid_payload: dict[str, Any],
+) -> None:
+    valid_payload["job_description"].update(
+        {
+            "required_skills": [{"name": "Python"}, {"name": "Docker"}],
+            "preferred_skills": [{"name": "Kubernetes"}],
+            "education_requirement": {
+                "level": "master",
+                "field_of_study": "Computer Science",
+                "description": "Advanced study expected.",
+            },
+        }
+    )
+
+    response = _post(valid_payload)
+
+    assert response.status_code == 200
+    items = response.json()["learning_recommendations"]["items"]
+    assert [item["kind"] for item in items] == [
+        "required_skill",
+        "experience",
+        "education",
+        "preferred_skill",
+    ]
+    assert [item["priority"] for item in items] == [
+        "high",
+        "high",
+        "high",
+        "medium",
+    ]
+
+    valid_payload["job_description"].update(
+        {
+            "required_skills": [{"name": "Python"}],
+            "preferred_skills": [],
+            "experience_requirement": {"minimum_years": 2, "maximum_years": None},
+            "education_requirement": None,
+        }
+    )
+    no_gaps = _post(valid_payload)
+
+    assert no_gaps.status_code == 200
+    assert no_gaps.json()["learning_recommendations"] == {"items": []}
+
+
+def test_openapi_exposes_learning_recommendation_contract() -> None:
+    document = TestClient(create_app()).get("/openapi.json").json()
+    schemas = document["components"]["schemas"]
+
+    response_properties = schemas["AnalysisResponseSchema"]["properties"]
+    assert "learning_recommendations" in response_properties
+    assert "learning_recommendations" in schemas["AnalysisResponseSchema"]["required"]
+    assert schemas["LearningRecommendationSchema"]["properties"]["kind"][
+        "$ref"
+    ].endswith("LearningRecommendationKind")
+    assert schemas["LearningRecommendationSchema"]["properties"]["priority"][
+        "$ref"
+    ].endswith("LearningRecommendationPriority")
 
 
 def test_analysis_uses_one_deterministic_result(

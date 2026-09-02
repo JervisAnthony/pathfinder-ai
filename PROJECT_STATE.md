@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-08-30
+Last updated: 2026-09-02
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`ad161785f1de6377a8bdd26b537bc42750754c06`
+`2b79cfa99a76192b55fcd48aa30a5696e4deef9a`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 9 — Persistence & Analysis History**
+**Commit 10 — Web MVP**
 
 ## Completed MVP-1 Roadmap
 
@@ -26,21 +26,25 @@ Current completed roadmap milestone on `main`:
 - Commit 7 — AI Provider Abstraction — complete
 - Commit 8 — FastAPI Analysis API — complete
 - Commit 9 — Persistence & Analysis History — complete
+- Commit 10 — Web MVP — complete
+
+**MVP-1 is complete.**
 
 These milestones must not be replayed or rebuilt.
 
-## Active Work
+## Post-MVP Active Work
 
-**Commit 10 — Web MVP**
+**Commit 11 — Targeted Learning Recommendations**
 
-Status: **Implementation / PR under review**
+Status: **PR under review**
 
-Active roadmap pull request:
+Active pull request:
 
-**PR #14 — Add Pathfinder Web MVP**
+**PR #15 — Add targeted learning recommendations**
 
-Commit 10 is the final MVP-1 implementation milestone. It is not complete until
-the pull request is reviewed and merged.
+This post-MVP milestone adds deterministic, explainable learning recommendations
+grounded in the existing candidate-to-role gap analysis. It does not use an LLM
+or query an external course catalog.
 
 ## Existing Capabilities
 
@@ -54,35 +58,39 @@ The repository already contains:
 - provider-neutral optional AI enrichment
 - typed FastAPI analysis endpoints and error contracts
 - repository-backed SQLite analysis persistence and history
-- a React/TypeScript/Vite Web MVP under review
+- a React/TypeScript/Vite Web MVP
 
-Future work must build on these capabilities rather than recreate them.
+The active feature branch additionally contains deterministic targeted learning
+recommendations and versioned persistence for recommendation snapshots.
 
 ## Architectural Boundary
 
-Core matching and explanation remain deterministic and independent of:
+Core matching, explanation, interview preparation, and learning recommendations
+remain deterministic and independent of:
 
 - LLMs
+- external course catalogs
 - FastAPI
 - databases
 - external providers
 - UI frameworks
 
-AI enrichment must remain separate from deterministic scoring.
+AI enrichment remains separate from deterministic scoring and recommendations.
 
-## Next Roadmap Milestone
+## Next Post-MVP Milestone
 
-None. Commit 10 is the final MVP-1 implementation milestone.
+None currently authorized.
 
 ## State Update Rule
 
-After every merged roadmap PR:
+After every merged roadmap or authorized post-MVP pull request:
 
 1. update the `main` SHA above
 2. mark the merged milestone complete
-3. remove it from Active Work
-4. set the next roadmap milestone as Active Work
+3. remove it from active work
+4. set the next authorized milestone as active work, if one exists
 5. preserve completed milestone history
 
-If repository contents and this file disagree, stop and ask the human maintainer
-which state is authoritative before implementing further work.
+If repository contents and this file disagree without an explicit maintainer
+exception, stop and ask the human maintainer which state is authoritative before
+implementing further work.

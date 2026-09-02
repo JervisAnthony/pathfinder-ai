@@ -4,12 +4,18 @@ Pydantic v2 schemas for the FastAPI analysis API and domain mapping functions.
 
 import uuid
 from datetime import datetime
+from typing import overload
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.interview_preparation import (
     InterviewPreparation,
+)
+from pathfinder_ai.application.learning_recommendations import (
+    LearningRecommendationKind,
+    LearningRecommendationPriority,
+    LearningRecommendations,
 )
 from pathfinder_ai.domain.candidate_profile import (
     CandidatePreferences,
@@ -231,6 +237,19 @@ class InterviewPreparationSchema(BaseStrictModel):
     candidate_questions: list[InterviewerQuestionSchema]
 
 
+class LearningRecommendationSchema(BaseStrictModel):
+    kind: LearningRecommendationKind
+    priority: LearningRecommendationPriority
+    topic: str
+    title: str
+    rationale: str
+    suggested_course_topic: str | None
+
+
+class LearningRecommendationsSchema(BaseStrictModel):
+    items: list[LearningRecommendationSchema]
+
+
 class AIEnrichmentResultSchema(BaseStrictModel):
     content: str
     provider_name: str
@@ -245,6 +264,7 @@ class AnalysisResponseSchema(BaseStrictModel):
     score: MatchScoreSchema
     explanation: MatchExplanationSchema
     interview_preparation: InterviewPreparationSchema
+    learning_recommendations: LearningRecommendationsSchema
     ai_enrichment: AIEnrichmentResultSchema | None
     saved_analysis: SavedAnalysisMetadataSchema | None = None
 
@@ -270,6 +290,7 @@ class SavedAnalysisDetailSchema(BaseStrictModel):
     score: MatchScoreSchema
     explanation: MatchExplanationSchema
     interview_preparation: InterviewPreparationSchema
+    learning_recommendations: LearningRecommendationsSchema | None
     ai_enrichment: AIEnrichmentResultSchema | None
 
 
@@ -489,6 +510,38 @@ def map_interview_prep_to_schema(
     )
 
 
+@overload
+def map_learning_recommendations_to_schema(
+    domain: LearningRecommendations,
+) -> LearningRecommendationsSchema: ...
+
+
+@overload
+def map_learning_recommendations_to_schema(
+    domain: None,
+) -> None: ...
+
+
+def map_learning_recommendations_to_schema(
+    domain: LearningRecommendations | None,
+) -> LearningRecommendationsSchema | None:
+    if domain is None:
+        return None
+    return LearningRecommendationsSchema(
+        items=[
+            LearningRecommendationSchema(
+                kind=item.kind,
+                priority=item.priority,
+                topic=item.topic,
+                title=item.title,
+                rationale=item.rationale,
+                suggested_course_topic=item.suggested_course_topic,
+            )
+            for item in domain.items
+        ]
+    )
+
+
 def map_ai_enrichment_to_schema(
     domain: AIEnrichmentResult | None,
 ) -> AIEnrichmentResultSchema | None:
@@ -504,6 +557,7 @@ def map_analysis_response(
     score: MatchScore,
     explanation: MatchExplanation,
     interview_preparation: InterviewPreparation,
+    learning_recommendations: LearningRecommendations,
     ai_enrichment: AIEnrichmentResult | None,
     saved_analysis_metadata: SavedAnalysisMetadataSchema | None = None,
 ) -> AnalysisResponseSchema:
@@ -511,6 +565,9 @@ def map_analysis_response(
         score=map_score_to_schema(score),
         explanation=map_explanation_to_schema(explanation),
         interview_preparation=map_interview_prep_to_schema(interview_preparation),
+        learning_recommendations=map_learning_recommendations_to_schema(
+            learning_recommendations
+        ),
         ai_enrichment=map_ai_enrichment_to_schema(ai_enrichment),
         saved_analysis=saved_analysis_metadata,
     )
