@@ -10,6 +10,7 @@ from typing import Protocol
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
+from pathfinder_ai.application.learning_recommendations import LearningRecommendations
 from pathfinder_ai.domain.candidate_profile import CandidateProfile
 from pathfinder_ai.domain.explanation import MatchExplanation
 from pathfinder_ai.domain.job_description import JobDescription
@@ -28,6 +29,7 @@ class SavedAnalysis:
     match_explanation: MatchExplanation
     interview_preparation: InterviewPreparation
     ai_enrichment: AIEnrichmentResult | None = None
+    learning_recommendations: LearningRecommendations | None = None
 
     def __post_init__(self) -> None:
         if self.created_at.tzinfo is None:
@@ -108,6 +110,7 @@ class AnalysisHistoryService:
         match_explanation: MatchExplanation,
         interview_preparation: InterviewPreparation,
         ai_enrichment: AIEnrichmentResult | None = None,
+        learning_recommendations: LearningRecommendations | None = None,
     ) -> SavedAnalysis:
         """
         Create and persist a new analysis snapshot.
@@ -123,6 +126,7 @@ class AnalysisHistoryService:
             match_explanation=match_explanation,
             interview_preparation=interview_preparation,
             ai_enrichment=ai_enrichment,
+            learning_recommendations=learning_recommendations,
         )
         self._repository.save(analysis)
         return analysis

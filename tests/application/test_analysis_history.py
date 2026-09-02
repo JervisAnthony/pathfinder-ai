@@ -13,6 +13,7 @@ from pathfinder_ai.application.analysis_history import (
     SavedAnalysisSummary,
 )
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
+from pathfinder_ai.application.learning_recommendations import LearningRecommendations
 from pathfinder_ai.domain.candidate_profile import CandidateProfile
 from pathfinder_ai.domain.explanation import (
     GapAnalysis,
@@ -129,6 +130,7 @@ def test_save_and_get_analysis(fake_repo: FakeRepository) -> None:
     prep = InterviewPreparation(
         themes=(), talking_points=(), question_categories=(), candidate_questions=()
     )
+    recommendations = LearningRecommendations(items=())
 
     saved = service.save_analysis(
         candidate_profile=profile,
@@ -136,10 +138,12 @@ def test_save_and_get_analysis(fake_repo: FakeRepository) -> None:
         match_explanation=explanation,
         interview_preparation=prep,
         ai_enrichment=None,
+        learning_recommendations=recommendations,
     )
 
     assert saved.analysis_id is not None
     assert saved.created_at.tzinfo == UTC
+    assert saved.learning_recommendations == recommendations
 
     retrieved = service.get_analysis(saved.analysis_id)
     assert retrieved == saved

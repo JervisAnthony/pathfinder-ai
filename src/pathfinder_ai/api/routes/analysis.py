@@ -29,6 +29,7 @@ from pathfinder_ai.api.schemas import (
     map_explanation_to_schema,
     map_interview_prep_to_schema,
     map_job_description,
+    map_learning_recommendations_to_schema,
     map_score_to_schema,
 )
 from pathfinder_ai.application.ai_enrichment import (
@@ -41,6 +42,9 @@ from pathfinder_ai.application.analysis_history import (
 )
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
+)
+from pathfinder_ai.application.learning_recommendations import (
+    DeterministicLearningRecommender,
 )
 from pathfinder_ai.domain.matching import DeterministicMatcher
 
@@ -99,6 +103,11 @@ async def analyze(
         candidate_profile, job_description, match_explanation
     )
 
+    recommender = DeterministicLearningRecommender()
+    learning_recommendations = recommender.recommend(
+        candidate_profile, job_description, match_explanation
+    )
+
     # 3. Check the requested persistence prerequisite before optional AI work.
     repository: AnalysisRepository | None = None
     if payload.save_analysis:
@@ -136,6 +145,7 @@ async def analyze(
             match_explanation=match_explanation,
             interview_preparation=interview_prep,
             ai_enrichment=ai_result,
+            learning_recommendations=learning_recommendations,
         )
         saved_analysis_metadata = SavedAnalysisMetadataSchema(
             analysis_id=saved.analysis_id,
@@ -147,6 +157,7 @@ async def analyze(
         score=match_score,
         explanation=match_explanation,
         interview_preparation=interview_prep,
+        learning_recommendations=learning_recommendations,
         ai_enrichment=ai_result,
         saved_analysis_metadata=saved_analysis_metadata,
     )
@@ -236,6 +247,9 @@ async def get_analysis(
         explanation=map_explanation_to_schema(analysis.match_explanation),
         interview_preparation=map_interview_prep_to_schema(
             analysis.interview_preparation
+        ),
+        learning_recommendations=map_learning_recommendations_to_schema(
+            analysis.learning_recommendations
         ),
         ai_enrichment=map_ai_enrichment_to_schema(analysis.ai_enrichment),
     )

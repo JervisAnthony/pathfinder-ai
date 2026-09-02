@@ -16,6 +16,12 @@ from pathfinder_ai.application.interview_preparation import (
     InterviewThemeKind,
     TalkingPoint,
 )
+from pathfinder_ai.application.learning_recommendations import (
+    LearningRecommendation,
+    LearningRecommendationKind,
+    LearningRecommendationPriority,
+    LearningRecommendations,
+)
 from pathfinder_ai.domain.candidate_profile import (
     CandidatePreferences,
     CandidateProfile,
@@ -50,7 +56,7 @@ from pathfinder_ai.domain.job_title import JobTitle
 from pathfinder_ai.domain.matching import MatchScore
 from pathfinder_ai.domain.skill import Skill
 
-CURRENT_PAYLOAD_VERSION = 1
+CURRENT_PAYLOAD_VERSION = 2
 
 
 def encode_analysis(analysis: SavedAnalysis) -> str:
@@ -61,11 +67,11 @@ def encode_analysis(analysis: SavedAnalysis) -> str:
 
 def decode_analysis(payload_json: str, version: int) -> SavedAnalysis:
     """Decode a JSON string payload into a SavedAnalysis."""
-    if version != CURRENT_PAYLOAD_VERSION:
+    if version not in (1, CURRENT_PAYLOAD_VERSION):
         raise ValueError(f"Unsupported payload version: {version}")
 
     data = json.loads(payload_json)
-    return _decode_analysis_dict(data)
+    return _decode_analysis_dict(data, version=version)
 
 
 def _encode_analysis_dict(analysis: SavedAnalysis) -> dict[str, Any]:
@@ -78,11 +84,14 @@ def _encode_analysis_dict(analysis: SavedAnalysis) -> dict[str, Any]:
         "interview_preparation": _encode_interview_preparation(
             analysis.interview_preparation
         ),
+        "learning_recommendations": _encode_learning_recommendations(
+            analysis.learning_recommendations
+        ),
         "ai_enrichment": _encode_ai_enrichment(analysis.ai_enrichment),
     }
 
 
-def _decode_analysis_dict(data: dict[str, Any]) -> SavedAnalysis:
+def _decode_analysis_dict(data: dict[str, Any], *, version: int) -> SavedAnalysis:
     import uuid
 
     return SavedAnalysis(
@@ -93,6 +102,11 @@ def _decode_analysis_dict(data: dict[str, Any]) -> SavedAnalysis:
         match_explanation=_decode_match_explanation(data["match_explanation"]),
         interview_preparation=_decode_interview_preparation(
             data["interview_preparation"]
+        ),
+        learning_recommendations=(
+            _decode_learning_recommendations(data["learning_recommendations"])
+            if version == CURRENT_PAYLOAD_VERSION
+            else None
         ),
         ai_enrichment=_decode_ai_enrichment(data["ai_enrichment"]),
     )
@@ -528,6 +542,49 @@ def _decode_interview_preparation(data: dict[str, Any]) -> InterviewPreparation:
             InterviewerQuestion(description=q["description"])
             for q in data["candidate_questions"]
         ),
+    )
+
+
+# --- Learning Recommendations ---
+
+
+def _encode_learning_recommendations(
+    recommendations: LearningRecommendations | None,
+) -> dict[str, Any] | None:
+    if recommendations is None:
+        return None
+    return {
+        "items": [
+            {
+                "kind": item.kind.value,
+                "priority": item.priority.value,
+                "topic": item.topic,
+                "title": item.title,
+                "rationale": item.rationale,
+                "suggested_course_topic": item.suggested_course_topic,
+            }
+            for item in recommendations.items
+        ]
+    }
+
+
+def _decode_learning_recommendations(
+    data: dict[str, Any] | None,
+) -> LearningRecommendations | None:
+    if data is None:
+        return None
+    return LearningRecommendations(
+        items=tuple(
+            LearningRecommendation(
+                kind=LearningRecommendationKind(item["kind"]),
+                priority=LearningRecommendationPriority(item["priority"]),
+                topic=item["topic"],
+                title=item["title"],
+                rationale=item["rationale"],
+                suggested_course_topic=item["suggested_course_topic"],
+            )
+            for item in data["items"]
+        )
     )
 
 
