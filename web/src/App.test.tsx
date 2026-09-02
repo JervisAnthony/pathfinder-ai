@@ -31,6 +31,7 @@ describe('App', () => {
       interview_preparation: {
         themes: [], talking_points: [], question_categories: [], candidate_questions: []
       },
+      learning_recommendations: { items: [] },
       ai_enrichment: null,
       saved_analysis: null,
     };

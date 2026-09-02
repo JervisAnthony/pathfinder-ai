@@ -45,6 +45,42 @@ const results: AnalysisResponse = {
     question_categories: ['System Design'],
     candidate_questions: [{ description: 'What is the team structure?' }],
   },
+  learning_recommendations: {
+    items: [
+      {
+        kind: 'required_skill',
+        priority: 'high',
+        topic: 'Docker',
+        title: 'Strengthen Docker',
+        rationale: 'Docker is required, but matching evidence was not found.',
+        suggested_course_topic: 'Docker fundamentals',
+      },
+      {
+        kind: 'experience',
+        priority: 'high',
+        topic: 'Role-relevant experience',
+        title: 'Build demonstrable experience',
+        rationale: 'The deterministic analysis found a 12 month experience gap.',
+        suggested_course_topic: null,
+      },
+      {
+        kind: 'education',
+        priority: 'high',
+        topic: 'Education requirement',
+        title: 'Review the education requirement',
+        rationale: 'The role specifies a master level education requirement.',
+        suggested_course_topic: null,
+      },
+      {
+        kind: 'preferred_skill',
+        priority: 'medium',
+        topic: 'Kubernetes',
+        title: 'Strengthen Kubernetes',
+        rationale: "Preferred evidence remains inert: <script>alert('unsafe')</script>",
+        suggested_course_topic: 'Kubernetes fundamentals',
+      },
+    ],
+  },
   ai_enrichment: {
     provider_name: 'safe-test-provider',
     content: "First line\n<script>alert('x')</script>",
@@ -87,6 +123,45 @@ describe('AnalysisResults', () => {
     expect(screen.getByText('System Design')).toBeInTheDocument();
     expect(screen.getByText(/What is the team structure/)).toBeInTheDocument();
     expect(screen.getByText(/11111111-1111-4111-8111-111111111111/)).toBeInTheDocument();
+  });
+
+  it('renders every deterministic learning recommendation and disclaimer', () => {
+    const { container } = render(<AnalysisResults results={results} />);
+    expect(screen.getByRole('heading', { name: 'Learning Recommendations' })).toBeInTheDocument();
+    expect(screen.getByText('Strengthen Docker')).toBeInTheDocument();
+    expect(screen.getByText('Build demonstrable experience')).toBeInTheDocument();
+    expect(screen.getByText('Review the education requirement')).toBeInTheDocument();
+    expect(screen.getByText('Strengthen Kubernetes')).toBeInTheDocument();
+    expect(screen.getAllByText('High priority')).toHaveLength(3);
+    expect(screen.getByText('Medium priority')).toBeInTheDocument();
+    for (const category of ['Required skill', 'Preferred skill', 'Experience', 'Education']) {
+      expect(screen.getByText(category)).toBeInTheDocument();
+    }
+    expect(screen.getByText('Docker fundamentals')).toBeInTheDocument();
+    expect(screen.getByText(/not verified third-party course listings/i)).toBeInTheDocument();
+    expect(container.querySelector('.learning-recommendations a')).toBeNull();
+  });
+
+  it('renders recommendation HTML-like text as inert plain text', () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+    const { container } = render(<AnalysisResults results={results} />);
+    expect(container.querySelector('.learning-recommendations')).toHaveTextContent(
+      "Preferred evidence remains inert: <script>alert('unsafe')</script>",
+    );
+    expect(container.querySelector('.learning-recommendations script')).toBeNull();
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('keeps the learning section visible for an empty recommendation result', () => {
+    render(
+      <AnalysisResults
+        results={{ ...results, learning_recommendations: { items: [] } }}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Learning Recommendations' })).toBeInTheDocument();
+    expect(
+      screen.getByText('No immediate learning gaps were identified from this role comparison.'),
+    ).toBeInTheDocument();
   });
 
   it('renders multiline AI content as inert plain text', () => {

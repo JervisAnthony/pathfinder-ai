@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnalysisResponse } from '../../types/api';
+import { AnalysisResponse, LearningRecommendationKind } from '../../types/api';
 import './AnalysisResults.css';
 
 interface Props {
@@ -7,7 +7,27 @@ interface Props {
 }
 
 export function AnalysisResults({ results }: Props) {
-  const { score, explanation, interview_preparation, ai_enrichment, saved_analysis } = results;
+  const {
+    score,
+    explanation,
+    interview_preparation,
+    learning_recommendations,
+    ai_enrichment,
+    saved_analysis,
+  } = results;
+
+  const categoryLabel = (kind: LearningRecommendationKind): string => {
+    switch (kind) {
+      case 'required_skill':
+        return 'Required skill';
+      case 'preferred_skill':
+        return 'Preferred skill';
+      case 'experience':
+        return 'Experience';
+      case 'education':
+        return 'Education';
+    }
+  };
 
   return (
     <div className="analysis-results">
@@ -158,6 +178,40 @@ export function AnalysisResults({ results }: Props) {
           </section>
         </div>
       </div>
+
+      <section className="learning-recommendations">
+        <h3>Learning Recommendations</h3>
+        <p className="learning-disclaimer">
+          Suggested topics are derived from Pathfinder&apos;s deterministic role-gap analysis and
+          are not verified third-party course listings.
+        </p>
+        {learning_recommendations.items.length > 0 ? (
+          <ul className="recommendation-list">
+            {learning_recommendations.items.map((recommendation, index) => (
+              <li className="recommendation-card" key={`${recommendation.kind}-${recommendation.topic}-${index}`}>
+                <div className="recommendation-header">
+                  <h4>{recommendation.title}</h4>
+                  <span className={`priority-badge ${recommendation.priority}`}>
+                    {recommendation.priority === 'high' ? 'High priority' : 'Medium priority'}
+                  </span>
+                </div>
+                <p className="recommendation-category">{categoryLabel(recommendation.kind)}</p>
+                <p className="recommendation-rationale">{recommendation.rationale}</p>
+                {recommendation.suggested_course_topic !== null && (
+                  <p className="suggested-topic">
+                    <strong>Suggested learning topic:</strong>{' '}
+                    {recommendation.suggested_course_topic}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="neutral-state">
+            No immediate learning gaps were identified from this role comparison.
+          </p>
+        )}
+      </section>
 
       <section className="interview-preparation">
         <h3>Interview Preparation</h3>
