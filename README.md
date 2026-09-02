@@ -4,7 +4,7 @@ AI-powered job matching, application intelligence, and interview preparation wit
 
 ## Development Status
 
-Pathfinder AI is at its final MVP-1 implementation milestone, the Web MVP, which is currently under review. The React/TypeScript/Vite application submits structured candidate and job profiles to the FastAPI API and presents deterministic, explainable analysis results. Core scoring remains independent of LLMs; no AI provider is required for the default flow.
+Pathfinder AI MVP-1 is complete. The React/TypeScript/Vite application submits structured candidate and job profiles to the FastAPI API and presents deterministic, explainable analysis results. Core scoring, interview preparation, and targeted learning recommendations remain independent of LLMs; no AI provider is required for the default flow.
 
 Pathfinder AI now supports:
 - deterministic structured compatibility scoring
@@ -13,6 +13,9 @@ Pathfinder AI now supports:
 - structured gap analysis
 - structured skill keyword coverage
 - deterministic interview preparation
+- deterministic targeted learning recommendations grounded in existing gap analysis
+- required- and preferred-skill learning guidance
+- experience- and education-gap guidance
 - evidence-grounded interview themes
 - candidate talking points
 - likely interview question categories
@@ -33,6 +36,9 @@ Pathfinder AI now supports:
 - interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
 - AI enrichment uses a replaceable provider contract but currently has no concrete external provider implemented
 - deterministic scoring and interview preparation remain independent of AI
+- targeted learning recommendations are deterministic and remain independent of AI
+- suggested course topics are generic learning or search topics, not verified courses
+- no external course catalog is queried and no provider or course listing is fabricated
 - optional SQLite-backed history for saved analyses
 
 **Notes on the Web MVP:**
@@ -41,7 +47,8 @@ Pathfinder AI now supports:
 - The UI intentionally does not persist candidate data; refreshing the browser will clear the form.
 - The frontend currently submits analysis requests specifying that only deterministic matching is performed (no AI enrichment, no analysis saving).
 - There is no frontend persistence, resume parsing, job scraping, authentication, or history UI.
-- There are no fabricated course recommendations; the backend does not yet expose a course-recommendation contract.
+- Learning recommendations are derived only from the supplied role comparison and its deterministic gap analysis.
+- The UI does not link to course marketplaces or claim that suggested topics are verified third-party listings.
 
 ## API Surface & Persistence
 
@@ -53,7 +60,7 @@ Endpoints:
 - `GET /api/v1/analyses`
 - `GET /api/v1/analyses/{analysis_id}`
 
-The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations and interview prep. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
+The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations, interview preparation, and targeted learning recommendations. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
 
 ## Requirements
 
