@@ -36,11 +36,11 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 11 — Targeted Learning Recommendations**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-**None**
+**PR #15 — Add targeted learning recommendations**
 
 This post-MVP milestone adds deterministic, explainable learning recommendations
 grounded in the existing candidate-to-role gap analysis. It does not use an LLM
