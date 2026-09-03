@@ -4,9 +4,10 @@ import './AnalysisResults.css';
 
 interface Props {
   results: AnalysisResponse;
+  legacyLearningRecommendations?: boolean;
 }
 
-export function AnalysisResults({ results }: Props) {
+export function AnalysisResults({ results, legacyLearningRecommendations = false }: Props) {
   const {
     score,
     explanation,
@@ -185,7 +186,11 @@ export function AnalysisResults({ results }: Props) {
           Suggested topics are derived from Pathfinder&apos;s deterministic role-gap analysis and
           are not verified third-party course listings.
         </p>
-        {learning_recommendations.items.length > 0 ? (
+        {legacyLearningRecommendations ? (
+          <p className="neutral-state">
+            Learning recommendations were not stored for this legacy analysis.
+          </p>
+        ) : learning_recommendations.items.length > 0 ? (
           <ul className="recommendation-list">
             {learning_recommendations.items.map((recommendation, index) => (
               <li className="recommendation-card" key={`${recommendation.kind}-${recommendation.topic}-${index}`}>

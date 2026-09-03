@@ -59,6 +59,7 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
   const [jobEducationLevel, setJobEducationLevel] = useState<EducationLevel | ''>('');
   const [jobEducationField, setJobEducationField] = useState('');
   const [jobEducationDescription, setJobEducationDescription] = useState('');
+  const [saveAnalysis, setSaveAnalysis] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const updateItem = <T,>(items: T[], setItems: React.Dispatch<React.SetStateAction<T[]>>, index: number, update: Partial<T>) => {
@@ -98,7 +99,7 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
 
     const request: AnalysisRequest = {
       include_ai_enrichment: false,
-      save_analysis: false,
+      save_analysis: saveAnalysis,
       candidate_profile: {
         skills: commaSeparatedSkills(candidateSkills),
         experience: experiences.map((experience) => ({
@@ -298,6 +299,20 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
       </div>
 
       <div className="form-actions" aria-live="polite">
+        <div className="save-control">
+          <label>
+            <input
+              type="checkbox"
+              checked={saveAnalysis}
+              onChange={(event) => setSaveAnalysis(event.target.checked)}
+            />
+            Save this analysis to local history
+          </label>
+          <p>
+            Saved analyses are stored by the configured Pathfinder backend. Do not
+            enable this on a shared or untrusted installation.
+          </p>
+        </div>
         {(error || formError) && <div className="error-message">{formError || error}</div>}
         <button type="submit" disabled={isLoading} className="submit-btn">{isLoading ? 'Analyzing...' : 'Analyze Match'}</button>
       </div>
