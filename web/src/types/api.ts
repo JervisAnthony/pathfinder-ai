@@ -219,6 +219,31 @@ export interface AnalysisResponse {
   saved_analysis?: SavedAnalysisMetadata | null;
 }
 
+export interface SavedAnalysisSummary {
+  analysis_id: string;
+  created_at: string;
+  job_title: string;
+  company_name: string | null;
+  score: number | null;
+  ai_enriched: boolean;
+}
+
+export interface AnalysisHistoryResponse {
+  items: SavedAnalysisSummary[];
+}
+
+export interface SavedAnalysisDetail {
+  analysis_id: string;
+  created_at: string;
+  candidate_profile: CandidateProfile;
+  job_description: JobDescription;
+  score: MatchScore;
+  explanation: MatchExplanation;
+  interview_preparation: InterviewPreparation;
+  learning_recommendations: LearningRecommendations | null;
+  ai_enrichment: AIEnrichmentResult | null;
+}
+
 export interface ApiErrorDetail {
   loc: (string | number)[];
   msg: string;

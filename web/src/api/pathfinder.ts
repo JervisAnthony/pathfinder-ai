@@ -1,8 +1,10 @@
 import {
   AnalysisRequest,
+  AnalysisHistoryResponse,
   AnalysisResponse,
   ApiErrorDetail,
   ApiErrorResponse,
+  SavedAnalysisDetail,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -44,15 +46,9 @@ function isApiErrorResponse(value: unknown): value is ApiErrorResponse {
       || (Array.isArray(error.details) && error.details.every(isErrorDetail)));
 }
 
-export async function analyzeCandidateJob(request: AnalysisRequest): Promise<AnalysisResponse> {
+async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   try {
-    const response = await fetch('/api/v1/analysis', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
+    const response = await fetch(input, init);
 
     if (!response.ok) {
       let errorData: unknown;
@@ -70,11 +66,36 @@ export async function analyzeCandidateJob(request: AnalysisRequest): Promise<Ana
       throw new ApiError(message, response.status, code, details);
     }
 
-    return await response.json();
+    return await response.json() as T;
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;
     }
     throw new ApiError('Unable to reach Pathfinder. Check your connection and try again.');
   }
+}
+
+export function analyzeCandidateJob(request: AnalysisRequest): Promise<AnalysisResponse> {
+  return requestJson('/api/v1/analysis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+}
+
+export function getAnalysisHistory(
+  limit = 20,
+  offset = 0,
+): Promise<AnalysisHistoryResponse> {
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return requestJson(`/api/v1/analyses?${query.toString()}`);
+}
+
+export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetail> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}`);
 }
