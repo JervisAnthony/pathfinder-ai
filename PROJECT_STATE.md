@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-02
+Last updated: 2026-09-03
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`2b79cfa99a76192b55fcd48aa30a5696e4deef9a`
+`ef1c05415fe918ab9934200a7c582db802305bdd`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 10 — Web MVP**
+**Commit 11 — Targeted Learning Recommendations**
 
 ## Completed MVP-1 Roadmap
 
@@ -32,19 +32,22 @@ Current completed roadmap milestone on `main`:
 
 These milestones must not be replayed or rebuilt.
 
+## Post-MVP Completed
+
+- Commit 11 — Targeted Learning Recommendations — complete
+
 ## Post-MVP Active Work
 
-**Commit 11 — Targeted Learning Recommendations**
+**Commit 12 — Saved Analysis History Web Experience**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #15 — Add targeted learning recommendations**
+None
 
-This post-MVP milestone adds deterministic, explainable learning recommendations
-grounded in the existing candidate-to-role gap analysis. It does not use an LLM
-or query an external course catalog.
+This post-MVP milestone makes the existing saved-analysis API usable from the
+browser while keeping persistence explicit, local, and server-backed.
 
 ## Existing Capabilities
 
@@ -55,13 +58,13 @@ The repository already contains:
 - deterministic candidate-job matching
 - structured match explanations and gap analysis
 - deterministic interview preparation
+- deterministic targeted learning recommendations
 - provider-neutral optional AI enrichment
 - typed FastAPI analysis endpoints and error contracts
-- repository-backed SQLite analysis persistence and history
-- a React/TypeScript/Vite Web MVP
-
-The active feature branch additionally contains deterministic targeted learning
-recommendations and versioned persistence for recommendation snapshots.
+- version-2 SQLite persistence for complete analysis snapshots
+- saved-analysis list and detail API endpoints
+- an explicit local SQLite persistence runtime
+- a React/TypeScript/Vite web experience for new and saved analyses
 
 ## Architectural Boundary
 

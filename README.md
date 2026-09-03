@@ -21,7 +21,8 @@ Pathfinder AI now supports:
 - likely interview question categories
 - candidate-to-interviewer questions
 - provider-neutral optional AI enrichment abstraction
-- a React/TypeScript/Vite frontend (Web MVP) for submitting structured candidate/job data and viewing explainable match results
+- explicit opt-in SQLite persistence for complete analysis snapshots
+- a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
@@ -44,11 +45,14 @@ Pathfinder AI now supports:
 **Notes on the Web MVP:**
 - The frontend operates as a single-page application (SPA).
 - No authentication or multi-user accounts are implemented.
-- The UI intentionally does not persist candidate data; refreshing the browser will clear the form.
-- The frontend currently submits analysis requests specifying that only deterministic matching is performed (no AI enrichment, no analysis saving).
-- There is no frontend persistence, resume parsing, job scraping, authentication, or history UI.
+- The browser does not persist candidate data in local storage, session storage, or IndexedDB.
+- Saving is explicit and the save checkbox defaults to off. AI enrichment remains off in the normal web flow.
+- The History view reads server-backed SQLite snapshots and never recomputes historical results.
+- Saved history is read-only; editing and deletion are not available.
 - Learning recommendations are derived only from the supplied role comparison and its deterministic gap analysis.
 - The UI does not link to course marketplaces or claim that suggested topics are verified third-party listings.
+
+> **Privacy:** Saved analysis history may contain candidate profile information and should be treated as sensitive local application data. Pathfinder does not currently provide authentication, authorization, encryption at rest, account isolation, or multi-user isolation.
 
 ## API Surface & Persistence
 
@@ -87,6 +91,27 @@ Start the FastAPI development server using uvicorn:
 ```bash
 python -m uvicorn pathfinder_ai.api.app:create_app --factory --host 127.0.0.1 --port 8000
 ```
+
+`create_app()` remains stateless by default. Saving and history endpoints return
+`persistence_unavailable` unless a repository is explicitly configured. To enable
+local SQLite persistence, set `PATHFINDER_SQLITE_PATH` and use the runtime factory.
+Its parent directory is created from the configured path when needed.
+
+On macOS or Linux:
+
+```bash
+PATHFINDER_SQLITE_PATH=.pathfinder/pathfinder.db python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 127.0.0.1 --port 8000
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:PATHFINDER_SQLITE_PATH = ".pathfinder\pathfinder.db"
+python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 127.0.0.1 --port 8000
+```
+
+The configured database contains sensitive candidate and job snapshots. Use it
+only on a trusted local installation and protect the database file appropriately.
 
 ## Frontend Local Setup
 
