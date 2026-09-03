@@ -26,6 +26,8 @@ describe('AnalysisForm', () => {
     expect(screen.getByLabelText('Target Titles (comma or newline-separated)')).toBeInTheDocument();
     expect(screen.getByLabelText('Company Industry (Optional)')).toBeInTheDocument();
     expect(screen.getByLabelText('Education Requirement Description')).toBeInTheDocument();
+    expect(screen.getByLabelText('Save this analysis to local history')).not.toBeChecked();
+    expect(screen.getByText(/shared or untrusted installation/)).toBeInTheDocument();
   });
 
   it.each([
@@ -194,5 +196,18 @@ describe('AnalysisForm', () => {
     expect(screen.getByRole('button', { name: 'Analyzing...' })).toBeDisabled();
     submit();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('sends explicit save opt-in while keeping AI enrichment disabled', () => {
+    const onSubmit = renderForm();
+    fireEvent.change(screen.getByLabelText('Skills (comma-separated)'), { target: { value: 'Python' } });
+    setJobTitle();
+    fireEvent.click(screen.getByLabelText('Save this analysis to local history'));
+    submit();
+
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      save_analysis: true,
+      include_ai_enrichment: false,
+    });
   });
 });

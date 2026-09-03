@@ -6,9 +6,13 @@ import { AnalysisResponse } from './types/api';
 
 vi.mock('./api/pathfinder', () => ({
   analyzeCandidateJob: vi.fn(),
+  getAnalysisHistory: vi.fn(),
+  getSavedAnalysis: vi.fn(),
   ApiError: class ApiError extends Error {
-    constructor(message: string) {
+    public readonly code?: string;
+    constructor(message: string, _status?: number, code?: string) {
       super(message);
+      this.code = code;
     }
   }
 }));
@@ -59,7 +63,7 @@ describe('App', () => {
     });
 
     // Can go back
-    fireEvent.click(screen.getByText(/New Analysis/i));
+    fireEvent.click(screen.getByRole('button', { name: '← New Analysis' }));
     expect(screen.getByLabelText(/Job Title/i)).toBeInTheDocument();
   });
 
@@ -79,5 +83,45 @@ describe('App', () => {
 
     // Form is preserved
     expect(screen.getByLabelText(/Job Title/i)).toHaveValue('Dev');
+  });
+
+  it('preserves form data and explains unavailable persistence', async () => {
+    vi.mocked(api.analyzeCandidateJob).mockRejectedValueOnce(
+      new api.ApiError('backend wording', 503, 'persistence_unavailable'),
+    );
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Skills (comma-separated)'), { target: { value: 'Python' } });
+    fireEvent.change(screen.getByLabelText(/Job Title/i), { target: { value: 'Dev' } });
+    fireEvent.click(screen.getByLabelText('Save this analysis to local history'));
+    fireEvent.click(screen.getByRole('button', { name: /Analyze Match/i }));
+
+    expect(await screen.findByText(/persistence is not configured/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Job Title/i)).toHaveValue('Dev');
+    expect(screen.getByLabelText('Save this analysis to local history')).toBeChecked();
+  });
+
+  it('confirms a saved analysis and offers history navigation', async () => {
+    const response: AnalysisResponse = {
+      score: { value: 80 },
+      explanation: {
+        score: { value: 80 }, components: [], matched_skills: [], experience: null, education: null,
+        gaps: { missing_required_skills: [], missing_preferred_skills: [], experience_gap: null, education_gap: null },
+        keyword_coverage: { matched_keywords: [], missing_keywords: [], percentage: 0 },
+      },
+      interview_preparation: { themes: [], talking_points: [], question_categories: [], candidate_questions: [] },
+      learning_recommendations: { items: [] },
+      ai_enrichment: null,
+      saved_analysis: { analysis_id: 'saved-id', created_at: '2026-09-03T10:00:00Z' },
+    };
+    vi.mocked(api.analyzeCandidateJob).mockResolvedValueOnce(response);
+    vi.mocked(api.getAnalysisHistory).mockResolvedValueOnce({ items: [] });
+    render(<App />);
+    fireEvent.change(screen.getByLabelText('Skills (comma-separated)'), { target: { value: 'Python' } });
+    fireEvent.change(screen.getByLabelText(/Job Title/i), { target: { value: 'Dev' } });
+    fireEvent.click(screen.getByRole('button', { name: /Analyze Match/i }));
+
+    expect(await screen.findByText('Analysis saved to history.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View History' }));
+    expect(await screen.findByRole('heading', { name: 'Analysis History' })).toBeInTheDocument();
   });
 });

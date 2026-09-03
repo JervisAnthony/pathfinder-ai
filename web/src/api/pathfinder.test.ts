@@ -1,6 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { analyzeCandidateJob, ApiError } from './pathfinder';
-import { AnalysisRequest, AnalysisResponse, ApiErrorDetail } from '../types/api';
+import {
+  analyzeCandidateJob,
+  ApiError,
+  getAnalysisHistory,
+  getSavedAnalysis,
+} from './pathfinder';
+import {
+  AnalysisRequest,
+  AnalysisResponse,
+  ApiErrorDetail,
+  SavedAnalysisDetail,
+} from '../types/api';
 
 const request: AnalysisRequest = {
   candidate_profile: { skills: [{ name: 'Python' }], experience: [], education: [], projects: [], certifications: [] },
@@ -76,6 +86,98 @@ describe('analyzeCandidateJob', () => {
       status: undefined,
       code: undefined,
       details: null,
+    });
+  });
+});
+
+const savedDetail: SavedAnalysisDetail = {
+  analysis_id: '65a88a10-4749-4a23-8079-890220dd5997',
+  created_at: '2026-09-03T10:00:00Z',
+  candidate_profile: request.candidate_profile,
+  job_description: request.job_description,
+  score: success.score,
+  explanation: success.explanation,
+  interview_preparation: success.interview_preparation,
+  learning_recommendations: success.learning_recommendations,
+  ai_enrichment: null,
+};
+
+describe('saved analysis API', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('gets a paginated analysis history response', async () => {
+    const history = {
+      items: [{
+        analysis_id: savedDetail.analysis_id,
+        created_at: savedDetail.created_at,
+        job_title: 'Engineer',
+        company_name: null,
+        score: 50,
+        ai_enriched: false,
+      }],
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(history));
+
+    await expect(getAnalysisHistory(10, 30)).resolves.toEqual(history);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses?limit=10&offset=30', undefined);
+  });
+
+  it('supports an empty history with default pagination', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [] }));
+
+    await expect(getAnalysisHistory()).resolves.toEqual({ items: [] });
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses?limit=20&offset=0', undefined);
+  });
+
+  it('gets saved detail and encodes its identifier', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(savedDetail));
+
+    await expect(getSavedAnalysis('id/with spaces')).resolves.toEqual(savedDetail);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%2Fwith%20spaces', undefined);
+  });
+
+  it('retains not-found and persistence errors', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      errorResponse(404, 'analysis_not_found', 'Saved analysis was not found.'),
+    );
+    await expect(getSavedAnalysis(savedDetail.analysis_id)).rejects.toMatchObject({
+      status: 404,
+      code: 'analysis_not_found',
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      errorResponse(503, 'persistence_unavailable', 'Analysis persistence is unavailable.'),
+    );
+    await expect(getAnalysisHistory()).rejects.toMatchObject({
+      status: 503,
+      code: 'persistence_unavailable',
+    });
+  });
+
+  it('handles malformed and non-JSON history failures safely', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'wrong shape' }), { status: 500 }),
+    );
+    await expect(getAnalysisHistory()).rejects.toMatchObject({
+      status: 500,
+      message: 'Pathfinder returned an invalid error response.',
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('<html>failure</html>', { status: 500 }),
+    );
+    await expect(getSavedAnalysis(savedDetail.analysis_id)).rejects.toMatchObject({
+      status: 500,
+      message: 'Pathfinder returned an unreadable error response.',
+    });
+  });
+
+  it('wraps history network failures safely', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('private detail'));
+
+    await expect(getAnalysisHistory()).rejects.toMatchObject({
+      message: 'Unable to reach Pathfinder. Check your connection and try again.',
+      status: undefined,
     });
   });
 });
