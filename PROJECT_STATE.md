@@ -41,11 +41,11 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 13 — Deterministic Resume Skill Import**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #17 — Add deterministic resume skill import**
 
 This post-MVP milestone adds deterministic role-relevant skill import from
 pasted résumé text. It compares text only with supplied target-job skills and
