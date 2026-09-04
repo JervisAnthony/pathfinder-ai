@@ -96,6 +96,19 @@ export interface AnalysisRequest {
   save_analysis: boolean;
 }
 
+export interface ResumeSkillImportRequest {
+  resume_text: string;
+  required_skills: Skill[];
+  preferred_skills: Skill[];
+}
+
+export interface ResumeSkillImportResponse {
+  matched_required_skills: Skill[];
+  matched_preferred_skills: Skill[];
+  unmatched_required_skills: Skill[];
+  unmatched_preferred_skills: Skill[];
+}
+
 export interface MatchScore {
   value: number | null;
 }

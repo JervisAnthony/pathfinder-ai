@@ -4,12 +4,15 @@ import {
   ApiError,
   getAnalysisHistory,
   getSavedAnalysis,
+  importResumeSkills,
 } from './pathfinder';
 import {
   AnalysisRequest,
   AnalysisResponse,
   ApiErrorDetail,
   SavedAnalysisDetail,
+  ResumeSkillImportRequest,
+  ResumeSkillImportResponse,
 } from '../types/api';
 
 const request: AnalysisRequest = {
@@ -86,6 +89,51 @@ describe('analyzeCandidateJob', () => {
       status: undefined,
       code: undefined,
       details: null,
+    });
+  });
+});
+
+describe('importResumeSkills', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const importRequest: ResumeSkillImportRequest = {
+    resume_text: 'Python',
+    required_skills: [{ name: 'Python' }],
+    preferred_skills: [],
+  };
+  const importResponse: ResumeSkillImportResponse = {
+    matched_required_skills: [{ name: 'python' }],
+    matched_preferred_skills: [],
+    unmatched_required_skills: [],
+    unmatched_preferred_skills: [],
+  };
+
+  it('posts the exact request and returns the response', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(importResponse));
+
+    await expect(importResumeSkills(importRequest)).resolves.toEqual(importResponse);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/resume/skill-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(importRequest),
+    });
+  });
+
+  it.each([
+    [errorResponse(422, 'validation_error', 'Request validation failed.'), 'Request validation failed.', 'validation_error'],
+    [new Response(JSON.stringify({ detail: 'wrong' }), { status: 500 }), 'Pathfinder returned an invalid error response.', undefined],
+    [new Response('not json', { status: 500 }), 'Pathfinder returned an unreadable error response.', undefined],
+  ])('handles safe API failures', async (response, message, code) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+
+    await expect(importResumeSkills(importRequest)).rejects.toMatchObject({ message, code });
+  });
+
+  it('wraps network failures safely', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('private resume detail'));
+
+    await expect(importResumeSkills(importRequest)).rejects.toMatchObject({
+      message: 'Unable to reach Pathfinder. Check your connection and try again.',
     });
   });
 });

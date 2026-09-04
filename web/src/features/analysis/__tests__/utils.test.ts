@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { commaSeparatedSkills, newlineResponsibilities } from '../utils';
+import { commaSeparatedSkills, mergeSkillText, newlineResponsibilities } from '../utils';
 
 describe('utils', () => {
   describe('commaSeparatedSkills', () => {
@@ -23,6 +23,16 @@ describe('utils', () => {
         { name: 'Python' },
         { name: 'React' }
       ]);
+    });
+  });
+
+  describe('mergeSkillText', () => {
+    it('preserves manual skills and removes canonical duplicates', () => {
+      expect(mergeSkillText('Python,  Machine   Learning', [
+        { name: 'python' },
+        { name: 'Docker' },
+        { name: ' machine learning ' },
+      ])).toBe('Python, Machine Learning, Docker');
     });
   });
 

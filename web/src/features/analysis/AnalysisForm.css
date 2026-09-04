@@ -204,3 +204,50 @@ legend {
   max-width: 600px;
   text-align: left;
 }
+
+.resume-import {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid #d6e2ef;
+  border-radius: 6px;
+  background: #f7fbff;
+}
+
+.resume-import h3 {
+  margin: 0 0 0.5rem;
+  color: #333;
+}
+
+.resume-import p {
+  color: #5b6470;
+}
+
+.privacy-copy {
+  font-size: 0.9rem;
+}
+
+.resume-import-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.clear-resume-btn {
+  padding: 0.5rem 0;
+  border: 0;
+  color: #0066cc;
+  background: transparent;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.resume-import .import-message {
+  color: #216e39;
+  font-weight: 600;
+}
+
+.resume-import .import-error {
+  color: #b42318;
+  font-weight: 600;
+}
