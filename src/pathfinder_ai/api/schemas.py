@@ -4,9 +4,9 @@ Pydantic v2 schemas for the FastAPI analysis API and domain mapping functions.
 
 import uuid
 from datetime import datetime
-from typing import overload
+from typing import Self, overload
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.interview_preparation import (
@@ -16,6 +16,10 @@ from pathfinder_ai.application.learning_recommendations import (
     LearningRecommendationKind,
     LearningRecommendationPriority,
     LearningRecommendations,
+)
+from pathfinder_ai.application.resume_skill_import import (
+    MAX_RESUME_TEXT_LENGTH,
+    ResumeSkillImport,
 )
 from pathfinder_ai.domain.candidate_profile import (
     CandidatePreferences,
@@ -147,6 +151,32 @@ class AnalysisRequestSchema(BaseStrictModel):
     job_description: JobDescriptionSchema
     include_ai_enrichment: bool = False
     save_analysis: bool = False
+
+
+class ResumeSkillImportRequestSchema(BaseStrictModel):
+    resume_text: str = Field(max_length=MAX_RESUME_TEXT_LENGTH)
+    required_skills: list[SkillSchema] = Field(default_factory=list)
+    preferred_skills: list[SkillSchema] = Field(default_factory=list)
+
+    @field_validator("resume_text")
+    @classmethod
+    def resume_text_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Resume text cannot be blank.")
+        return value
+
+    @model_validator(mode="after")
+    def at_least_one_target_skill(self) -> Self:
+        if not self.required_skills and not self.preferred_skills:
+            raise ValueError("At least one target-job skill is required.")
+        return self
+
+
+class ResumeSkillImportResponseSchema(BaseStrictModel):
+    matched_required_skills: list[SkillSchema]
+    matched_preferred_skills: list[SkillSchema]
+    unmatched_required_skills: list[SkillSchema]
+    unmatched_preferred_skills: list[SkillSchema]
 
 
 # ---------------------------------------------------------------------------
@@ -570,6 +600,25 @@ def map_analysis_response(
         ),
         ai_enrichment=map_ai_enrichment_to_schema(ai_enrichment),
         saved_analysis=saved_analysis_metadata,
+    )
+
+
+def map_resume_skill_import_to_schema(
+    domain: ResumeSkillImport,
+) -> ResumeSkillImportResponseSchema:
+    return ResumeSkillImportResponseSchema(
+        matched_required_skills=[
+            SkillSchema(name=skill.name) for skill in domain.matched_required_skills
+        ],
+        matched_preferred_skills=[
+            SkillSchema(name=skill.name) for skill in domain.matched_preferred_skills
+        ],
+        unmatched_required_skills=[
+            SkillSchema(name=skill.name) for skill in domain.unmatched_required_skills
+        ],
+        unmatched_preferred_skills=[
+            SkillSchema(name=skill.name) for skill in domain.unmatched_preferred_skills
+        ],
     )
 
 
