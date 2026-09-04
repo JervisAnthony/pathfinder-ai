@@ -23,11 +23,15 @@ Pathfinder AI now supports:
 - provider-neutral optional AI enrichment abstraction
 - explicit opt-in SQLite persistence for complete analysis snapshots
 - a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
+- deterministic role-relevant skill import from pasted résumé text
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
 - it is not ATS keyword analysis
-- no resume text is parsed (the web client expects structured data)
+- pasted résumé text can be compared only with supplied target required and preferred skills
+- résumé skill import uses deterministic exact phrase matching and does not infer synonyms
+- users review and edit imported skills before analysis
+- no general-purpose résumé parsing or PDF/DOCX import is supported
 - no fuzzy/semantic matching is performed
 - no hiring probability is produced
 - explanation results are deterministic
@@ -41,6 +45,7 @@ Pathfinder AI now supports:
 - suggested course topics are generic learning or search topics, not verified courses
 - no external course catalog is queried and no provider or course listing is fabricated
 - optional SQLite-backed history for saved analyses
+- no LLM or external service is required for résumé skill import
 
 **Notes on the Web MVP:**
 - The frontend operates as a single-page application (SPA).
@@ -51,8 +56,12 @@ Pathfinder AI now supports:
 - Saved history is read-only; editing and deletion are not available.
 - Learning recommendations are derived only from the supplied role comparison and its deterministic gap analysis.
 - The UI does not link to course marketplaces or claim that suggested topics are verified third-party listings.
+- Résumé text remains editable, and only exact target-skill matches are merged into the editable Candidate Skills field.
+- Résumé text is not written to localStorage, sessionStorage, or IndexedDB.
 
 > **Privacy:** Saved analysis history may contain candidate profile information and should be treated as sensitive local application data. Pathfinder does not currently provide authentication, authorization, encryption at rest, account isolation, or multi-user isolation.
+
+> **Résumé privacy:** Pasted résumé text may contain sensitive personal information. The web client sends it to the configured Pathfinder backend only for the skill-import request. Pathfinder does not include the raw text in `SavedAnalysis`, analysis-history payloads, or browser storage. Administrators of the configured server or network may still be able to observe request traffic.
 
 ## API Surface & Persistence
 
@@ -61,10 +70,17 @@ Pathfinder exposes a FastAPI surface with opt-in, repository-backed persistence.
 Endpoints:
 - `GET /api/v1/health`
 - `POST /api/v1/analysis`
+- `POST /api/v1/resume/skill-import`
 - `GET /api/v1/analyses`
 - `GET /api/v1/analyses/{analysis_id}`
 
 The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations, interview preparation, and targeted learning recommendations. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
+
+The `POST /api/v1/resume/skill-import` preprocessing endpoint accepts ephemeral
+résumé text plus target required/preferred skills. It returns boundary-aware,
+case-insensitive exact matches and unmatched skills in source order. It does not
+perform fuzzy or semantic matching, invoke an LLM, emulate an ATS, estimate a
+hiring probability, persist the raw text, or change deterministic scoring.
 
 ## Requirements
 

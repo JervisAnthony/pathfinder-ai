@@ -5,6 +5,8 @@ import {
   ApiErrorDetail,
   ApiErrorResponse,
   SavedAnalysisDetail,
+  ResumeSkillImportRequest,
+  ResumeSkillImportResponse,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -77,6 +79,18 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
 
 export function analyzeCandidateJob(request: AnalysisRequest): Promise<AnalysisResponse> {
   return requestJson('/api/v1/analysis', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(request),
+  });
+}
+
+export function importResumeSkills(
+  request: ResumeSkillImportRequest,
+): Promise<ResumeSkillImportResponse> {
+  return requestJson('/api/v1/resume/skill-import', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

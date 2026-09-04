@@ -19,6 +19,7 @@ from pathfinder_ai.api.errors import (
     validation_exception_handler,
 )
 from pathfinder_ai.api.routes.analysis import router as analysis_router
+from pathfinder_ai.api.routes.resume import router as resume_router
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentProvider
 from pathfinder_ai.application.analysis_history import AnalysisRepository
 
@@ -62,5 +63,6 @@ def create_app(
 
     # Register Routes
     app.include_router(analysis_router)
+    app.include_router(resume_router)
 
     return app

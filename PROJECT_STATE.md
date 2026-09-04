@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-03
+Last updated: 2026-09-04
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`ef1c05415fe918ab9934200a7c582db802305bdd`
+`618b93b77c83e0685d9cf2a0dd9398ced718c6f0`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 11 — Targeted Learning Recommendations**
+**Commit 12 — Saved Analysis History Web Experience**
 
 ## Completed MVP-1 Roadmap
 
@@ -35,19 +35,21 @@ These milestones must not be replayed or rebuilt.
 ## Post-MVP Completed
 
 - Commit 11 — Targeted Learning Recommendations — complete
+- Commit 12 — Saved Analysis History Web Experience — complete
 
 ## Post-MVP Active Work
 
-**Commit 12 — Saved Analysis History Web Experience**
+**Commit 13 — Deterministic Resume Skill Import**
 
 Status: **PR under review**
 
 Active pull request:
 
-**PR #16 — Add saved analysis history experience**
+**PR #17 — Add deterministic resume skill import**
 
-This post-MVP milestone makes the existing saved-analysis API usable from the
-browser while keeping persistence explicit, local, and server-backed.
+This post-MVP milestone adds deterministic role-relevant skill import from
+pasted résumé text. It compares text only with supplied target-job skills and
+does not perform general-purpose résumé parsing.
 
 ## Existing Capabilities
 
@@ -65,6 +67,7 @@ The repository already contains:
 - saved-analysis list and detail API endpoints
 - an explicit local SQLite persistence runtime
 - a React/TypeScript/Vite web experience for new and saved analyses
+- deterministic role-relevant résumé skill import on the active branch
 
 ## Architectural Boundary
 
@@ -79,6 +82,8 @@ remain deterministic and independent of:
 - UI frameworks
 
 AI enrichment remains separate from deterministic scoring and recommendations.
+Résumé skill import is also deterministic and independent of LLMs, persistence,
+and external services.
 
 ## Next Post-MVP Milestone
 

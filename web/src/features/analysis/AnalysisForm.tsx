@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { ApiError, importResumeSkills } from '../../api/pathfinder';
 import { AnalysisRequest, EducationLevel, WorkMode } from '../../types/api';
-import { commaSeparatedSkills, newlineResponsibilities } from './utils';
+import { commaSeparatedSkills, mergeSkillText, newlineResponsibilities } from './utils';
 import './AnalysisForm.css';
 
 interface Props {
@@ -61,6 +62,10 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
   const [jobEducationDescription, setJobEducationDescription] = useState('');
   const [saveAnalysis, setSaveAnalysis] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [resumeText, setResumeText] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
 
   const updateItem = <T,>(items: T[], setItems: React.Dispatch<React.SetStateAction<T[]>>, index: number, update: Partial<T>) => {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...update } : item));
@@ -70,6 +75,47 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
     setAcceptableWorkModes((current) => current.includes(mode)
       ? current.filter((value) => value !== mode)
       : [...current, mode]);
+  };
+
+  const handleResumeImport = async () => {
+    if (isImporting) return;
+    setImportMessage(null);
+    setImportError(null);
+
+    if (!resumeText.trim()) {
+      setImportError('Paste résumé text before finding role-relevant skills.');
+      return;
+    }
+
+    const requiredSkills = commaSeparatedSkills(jobRequiredSkills);
+    const preferredSkills = commaSeparatedSkills(jobPreferredSkills);
+    if (requiredSkills.length === 0 && preferredSkills.length === 0) {
+      setImportError('Add at least one required or preferred target-job skill before importing résumé skills.');
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const result = await importResumeSkills({
+        resume_text: resumeText,
+        required_skills: requiredSkills,
+        preferred_skills: preferredSkills,
+      });
+      const matchedSkills = [
+        ...result.matched_required_skills,
+        ...result.matched_preferred_skills,
+      ];
+      setCandidateSkills((current) => mergeSkillText(current, matchedSkills));
+      setImportMessage(matchedSkills.length === 0
+        ? 'No exact target-job skill matches were found in the supplied résumé text.'
+        : `Found ${matchedSkills.length} role-relevant ${matchedSkills.length === 1 ? 'skill' : 'skills'} in the supplied résumé.`);
+    } catch (caught) {
+      setImportError(caught instanceof ApiError
+        ? caught.message
+        : 'Pathfinder could not import résumé skills. Try again.');
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -171,6 +217,54 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
           <h2>Candidate Profile</h2>
           <label htmlFor="candidate-skills">Skills (comma-separated)</label>
           <textarea id="candidate-skills" value={candidateSkills} onChange={(event) => setCandidateSkills(event.target.value)} rows={3} />
+
+          <section className="resume-import" aria-labelledby="resume-import-heading">
+            <h3 id="resume-import-heading">Import Skills from Résumé</h3>
+            <p id="resume-import-help">
+              Paste résumé text to find exact skills that also appear in the target
+              job&apos;s required or preferred skill lists. This does not perform full
+              résumé parsing.
+            </p>
+            <label htmlFor="resume-text">Résumé Text</label>
+            <textarea
+              id="resume-text"
+              value={resumeText}
+              onChange={(event) => setResumeText(event.target.value)}
+              aria-describedby="resume-import-help resume-import-privacy"
+              rows={7}
+            />
+            <p id="resume-import-privacy" className="privacy-copy">
+              Résumé text is used only for this import request and is not included
+              in saved analysis history.
+            </p>
+            <div className="resume-import-actions">
+              <button
+                type="button"
+                className="add-btn"
+                disabled={isImporting}
+                onClick={() => void handleResumeImport()}
+              >
+                Find Role-Relevant Skills
+              </button>
+              <button
+                type="button"
+                className="clear-resume-btn"
+                onClick={() => {
+                  setResumeText('');
+                  setImportMessage(null);
+                  setImportError(null);
+                }}
+              >
+                Clear résumé text
+              </button>
+            </div>
+            {(isImporting || importMessage) && (
+              <p className="import-message" role="status">
+                {isImporting ? 'Finding role-relevant skills…' : importMessage}
+              </p>
+            )}
+            {importError && <p className="import-error" role="alert">{importError}</p>}
+          </section>
 
           <fieldset>
             <legend>Work Experience</legend>
