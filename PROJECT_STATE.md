@@ -42,11 +42,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 14 — Deterministic Resume File Skill Import**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-**None**
+**PR #18 — Add PDF and DOCX resume skill import**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/18
 
 This authorized post-MVP milestone extends deterministic role-relevant skill
 import to PDF/DOCX files. It extracts supported document text and delegates exact
