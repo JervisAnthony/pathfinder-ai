@@ -24,6 +24,7 @@ Pathfinder AI now supports:
 - explicit opt-in SQLite persistence for complete analysis snapshots
 - a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
 - deterministic role-relevant skill import from pasted résumé text
+- deterministic role-relevant skill import from PDF and DOCX résumé files
 
 **Explicit Limits of the Current Matching Baseline:**
 - keyword coverage uses structured job skills only
@@ -31,7 +32,7 @@ Pathfinder AI now supports:
 - pasted résumé text can be compared only with supplied target required and preferred skills
 - résumé skill import uses deterministic exact phrase matching and does not infer synonyms
 - users review and edit imported skills before analysis
-- no general-purpose résumé parsing or PDF/DOCX import is supported
+- PDF/DOCX text extraction is used only for exact target-skill import; no general-purpose résumé parsing, OCR, or ATS simulation is supported
 - no fuzzy/semantic matching is performed
 - no hiring probability is produced
 - explanation results are deterministic
@@ -71,6 +72,7 @@ Endpoints:
 - `GET /api/v1/health`
 - `POST /api/v1/analysis`
 - `POST /api/v1/resume/skill-import`
+- `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
 - `GET /api/v1/analyses/{analysis_id}`
 
@@ -81,6 +83,55 @@ résumé text plus target required/preferred skills. It returns boundary-aware,
 case-insensitive exact matches and unmatched skills in source order. It does not
 perform fuzzy or semantic matching, invoke an LLM, emulate an ATS, estimate a
 hiring probability, persist the raw text, or change deterministic scoring.
+
+### PDF and DOCX résumé skill import
+
+`POST /api/v1/resume/file-skill-import` accepts `multipart/form-data` with one
+`file`, repeated `required_skills` strings, and repeated `preferred_skills`
+strings. At least one target skill is required. It returns the same four ordered
+matched/unmatched required/preferred skill lists as pasted-text import, without
+raw extracted text, filenames, excerpts, or document metadata.
+
+The web form supports both upload and pasted-text import in its résumé section.
+Both merge exact matches into editable Candidate Skills, preserving manual skills
+and removing canonical duplicates. Zero matches is a successful result. Clearing
+the file resets selection without removing imported skills or pasted text.
+Only reviewed structured candidate data enters normal analysis and saved history.
+
+Supported files are PDFs with extractable text and DOCX documents, including
+uppercase extensions. The backend checks the PDF signature or DOCX ZIP/XML
+structure; filename and MIME type alone are insufficient. Image-only/scanned
+PDFs, encrypted/password-protected PDFs, legacy DOC, images, and other office
+formats are unsupported. Corrupt, blank, encrypted, and over-limit documents
+produce safe errors without parser details. There is no OCR fallback.
+
+Extraction limits (documents are rejected, never silently truncated):
+
+- 10 MiB uploaded file
+- 100 PDF pages
+- 200,000 extracted characters
+- 2,000 DOCX ZIP entries and 50 MiB total declared uncompressed content
+
+Infrastructure uses `pypdf>=6.17.0` for page-text extraction and
+`python-multipart>=0.0.32` for FastAPI uploads. DOCX uses standard-library
+`zipfile` and `xml.etree.ElementTree`, with no separate DOCX dependency. Paragraph
+text is reconstructed across runs, including tables, headers, footers, footnotes,
+and endnotes. Encrypted ZIP entries and XML DTD/entity declarations are rejected.
+Archives are never unpacked to filesystem paths; embedded objects, images,
+external relationships, and PDF attachments are not processed. Extraction then
+delegates to the existing deterministic skill importer, without changing scoring,
+using AI, or accessing persistence. These limits do not guarantee complete text
+recovery or provide a general-purpose document-parser sandbox.
+
+Uploaded files may contain sensitive personal information. Pathfinder processes
+them transiently for the import request, does not return extracted raw text to the
+browser, and does not add file bytes, filenames, metadata, or extracted raw text to
+`SavedAnalysis` or browser storage. Saved analysis payloads remain version 2.
+The route reads at most 10 MiB + 1 byte and explicitly closes the upload resource
+after handling, including failure paths. FastAPI/Starlette multipart handling may
+temporarily spool uploads before route entry according to framework/runtime
+behavior. This is not a guarantee of memory-only handling or secure deletion.
+The existing installation privacy limitations continue to apply.
 
 ## Requirements
 
