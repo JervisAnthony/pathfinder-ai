@@ -4,6 +4,7 @@ from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
+from tests.infrastructure.test_resume_document_text import make_docx, make_pdf
 
 from pathfinder_ai.api import create_app
 from pathfinder_ai.domain.matching import DeterministicMatcher
@@ -149,3 +150,163 @@ def test_openapi_documents_resume_import_contract() -> None:
         "$ref": "#/components/schemas/ErrorResponseSchema"
     }
     assert "ResumeSkillImport" not in create_app().openapi()["components"]["schemas"]
+
+
+def post_file(
+    client,
+    data=None,
+    filename="PRIVATE-CANDIDATE-CONTENT-12345.pdf",
+    required=None,
+    preferred=None,
+):
+    fields = [
+        (
+            "file",
+            (
+                filename,
+                data if data is not None else make_pdf(),
+                "application/octet-stream",
+            ),
+        )
+    ]
+    fields.extend(
+        ("required_skills", (None, skill))
+        for skill in (
+            required if required is not None else ["Python", "FastAPI", "Kubernetes"]
+        )
+    )
+    fields.extend(
+        ("preferred_skills", (None, skill))
+        for skill in (preferred if preferred is not None else ["Docker", "Terraform"])
+    )
+    return client.post("/api/v1/resume/file-skill-import", files=fields)
+
+
+@pytest.mark.parametrize("factory,extension", [(make_pdf, "PDF"), (make_docx, "DOCX")])
+def test_file_import_mixed_matches_and_private_response(
+    client, factory, extension, monkeypatch
+):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("analysis invoked")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", forbidden)
+    text = "PRIVATE-CANDIDATE-CONTENT-12345 Python FastAPI Docker C++ .NET"
+    filename = f"private-filename.{extension}"
+    response = post_file(client, factory(text), filename)
+    assert response.status_code == 200
+    assert response.json() == {
+        "matched_required_skills": [{"name": "python"}, {"name": "fastapi"}],
+        "unmatched_required_skills": [{"name": "kubernetes"}],
+        "matched_preferred_skills": [{"name": "docker"}],
+        "unmatched_preferred_skills": [{"name": "terraform"}],
+    }
+    assert filename not in response.text
+    assert "PRIVATE-CANDIDATE-CONTENT-12345" not in response.text
+
+
+@pytest.mark.parametrize(
+    "required,preferred,matched_required,matched_preferred",
+    [
+        (
+            ["Python", " python "],
+            ["PYTHON", "C++", ".NET"],
+            ["python"],
+            ["c++", ".net"],
+        ),
+        ([], ["C++"], [], ["c++"]),
+        (["Rust"], [], [], []),
+    ],
+)
+def test_file_matching_delegates_to_existing_importer(
+    client, required, preferred, matched_required, matched_preferred
+):
+    response = post_file(
+        client, make_docx("Python C++ .NET"), "r.docx", required, preferred
+    )
+    assert response.status_code == 200
+    assert response.json()["matched_required_skills"] == [
+        {"name": name} for name in matched_required
+    ]
+    assert response.json()["matched_preferred_skills"] == [
+        {"name": name} for name in matched_preferred
+    ]
+
+
+@pytest.mark.parametrize(
+    "data,extension,status,code",
+    [
+        (b"PRIVATE-CANDIDATE-CONTENT-12345", "txt", 415, "unsupported_resume_file"),
+        (b"PRIVATE-CANDIDATE-CONTENT-12345", "pdf", 422, "resume_file_unreadable"),
+        (
+            b"%PDF-1.7 PRIVATE-CANDIDATE-CONTENT-12345",
+            "pdf",
+            422,
+            "resume_file_unreadable",
+        ),
+        (b"PRIVATE-CANDIDATE-CONTENT-12345", "docx", 422, "resume_file_unreadable"),
+        (make_pdf(encrypted=True), "pdf", 422, "resume_file_unreadable"),
+        (make_pdf(""), "pdf", 422, "resume_file_no_text"),
+        (make_docx(""), "docx", 422, "resume_file_no_text"),
+        (b"x" * (10 * 1024 * 1024 + 1), "pdf", 413, "resume_file_too_large"),
+        (make_pdf(pages=101), "pdf", 422, "resume_file_content_too_large"),
+    ],
+    ids=lambda value: "document" if isinstance(value, bytes) else str(value),
+)
+def test_safe_file_errors(client, data, extension, status, code):
+    filename = f"PRIVATE-CANDIDATE-CONTENT-12345.{extension}"
+    response = post_file(client, data, filename)
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert "PRIVATE-CANDIDATE-CONTENT-12345" not in response.text
+
+
+@pytest.mark.parametrize("required,preferred", [([], []), ([" "], []), ([], [" "])])
+def test_invalid_file_target_skills(client, required, preferred):
+    response = post_file(client, required=required, preferred=preferred)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "domain_validation_error"
+
+
+def test_multipart_openapi_and_missing_upload(client):
+    schema = create_app().openapi()
+    operation = schema["paths"]["/api/v1/resume/file-skill-import"]["post"]
+    ref = operation["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    fields = schema["components"]["schemas"][ref.rsplit("/", 1)[-1]]["properties"]
+    assert set(fields) == {"file", "required_skills", "preferred_skills"}
+    for status in (413, 415, 422):
+        assert operation["responses"][str(status)]["content"]["application/json"][
+            "schema"
+        ]["$ref"].endswith("ErrorResponseSchema")
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"][
+        "$ref"
+    ].endswith("ResumeSkillImportResponseSchema")
+    assert "ExtractedResumeDocument" not in schema["components"]["schemas"]
+    assert client.post("/api/v1/resume/file-skill-import").status_code == 422
+
+
+@pytest.mark.parametrize(
+    "data,size,required",
+    [
+        (make_pdf(), None, ["Python"]),
+        (b"bad", 3, ["Python"]),
+        (make_pdf(), None, []),
+        (b"x" * (10 * 1024 * 1024 + 1), None, ["Python"]),
+        (b"", 10 * 1024 * 1024 + 1, ["Python"]),
+    ],
+    ids=lambda value: "document" if isinstance(value, bytes) else str(value),
+)
+def test_upload_closed_even_without_supplied_size(data, size, required):
+    import asyncio
+    from io import BytesIO
+
+    from fastapi import UploadFile
+
+    from pathfinder_ai.api.errors import DomainValidationError
+    from pathfinder_ai.api.routes.resume import import_resume_file_skills
+
+    upload = UploadFile(BytesIO(data), size=size, filename="private.pdf")
+    try:
+        asyncio.run(import_resume_file_skills(upload, required, []))
+    except DomainValidationError:
+        assert not required
+    assert upload.file.closed

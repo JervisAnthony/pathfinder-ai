@@ -152,3 +152,21 @@ def test_encrypted_zip_metadata():
     data[offset + 8] |= 1
     with pytest.raises(document.ResumeDocumentError, match="encrypted"):
         document.extract_resume_document(bytes(data), "r.docx")
+
+
+def test_actual_xml_read_is_bounded_even_if_metadata_understates_size(monkeypatch):
+    data = make_docx()
+    monkeypatch.setattr(document, "MAX_DOCX_UNCOMPRESSED_BYTES", 1024)
+    reads = []
+
+    class OversizedSource(BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            return super().read(size)
+
+    monkeypatch.setattr(
+        ZipFile, "open", lambda *args, **kwargs: OversizedSource(b"x" * 2048)
+    )
+    with pytest.raises(document.ResumeDocumentError, match="limit"):
+        document.extract_resume_document(data, "r.docx")
+    assert reads == [1025]
