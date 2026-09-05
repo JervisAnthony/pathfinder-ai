@@ -251,3 +251,13 @@ legend {
   color: #b42318;
   font-weight: 600;
 }
+
+.resume-file-import {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #d6e2ef;
+}
+
+.resume-file-import input[type="file"] {
+  max-width: 100%;
+}

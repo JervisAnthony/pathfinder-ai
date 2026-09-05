@@ -3,6 +3,7 @@ import { ApiError, importResumeSkills } from '../../api/pathfinder';
 import { AnalysisRequest, EducationLevel, WorkMode } from '../../types/api';
 import { commaSeparatedSkills, mergeSkillText, newlineResponsibilities } from './utils';
 import './AnalysisForm.css';
+import { ResumeFileImport } from './ResumeFileImport';
 
 interface Props {
   onSubmit: (request: AnalysisRequest) => void;
@@ -220,6 +221,11 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
 
           <section className="resume-import" aria-labelledby="resume-import-heading">
             <h3 id="resume-import-heading">Import Skills from Résumé</h3>
+            <ResumeFileImport
+              requiredSkills={jobRequiredSkills}
+              preferredSkills={jobPreferredSkills}
+              onImported={(skills) => setCandidateSkills((current) => mergeSkillText(current, skills))}
+            />
             <p id="resume-import-help">
               Paste résumé text to find exact skills that also appear in the target
               job&apos;s required or preferred skill lists. This does not perform full

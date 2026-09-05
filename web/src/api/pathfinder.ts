@@ -99,6 +99,18 @@ export function importResumeSkills(
   });
 }
 
+export function importResumeFileSkills(
+  file: File,
+  requiredSkills: string[],
+  preferredSkills: string[],
+): Promise<ResumeSkillImportResponse> {
+  const body = new FormData();
+  body.append('file', file);
+  requiredSkills.forEach((skill) => body.append('required_skills', skill));
+  preferredSkills.forEach((skill) => body.append('preferred_skills', skill));
+  return requestJson('/api/v1/resume/file-skill-import', { method: 'POST', body });
+}
+
 export function getAnalysisHistory(
   limit = 20,
   offset = 0,
