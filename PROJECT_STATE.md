@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-04
+Last updated: 2026-09-05
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`618b93b77c83e0685d9cf2a0dd9398ced718c6f0`
+`2a27f4fb1e5338670595ebad7ae6cc5f01f158fe`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 12 — Saved Analysis History Web Experience**
+**Commit 13 — Deterministic Resume Skill Import**
 
 ## Completed MVP-1 Roadmap
 
@@ -36,20 +36,24 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 11 — Targeted Learning Recommendations — complete
 - Commit 12 — Saved Analysis History Web Experience — complete
+- Commit 13 — Deterministic Resume Skill Import — complete (PR #17 merged)
 
 ## Post-MVP Active Work
 
-**Commit 13 — Deterministic Resume Skill Import**
+**Commit 14 — Deterministic Resume File Skill Import**
 
 Status: **PR under review**
 
 Active pull request:
 
-**PR #17 — Add deterministic resume skill import**
+**PR #18 — Add PDF and DOCX resume skill import**
 
-This post-MVP milestone adds deterministic role-relevant skill import from
-pasted résumé text. It compares text only with supplied target-job skills and
-does not perform general-purpose résumé parsing.
+https://github.com/JervisAnthony/pathfinder-ai/pull/18
+
+This authorized post-MVP milestone extends deterministic role-relevant skill
+import to PDF/DOCX files. It extracts supported document text and delegates exact
+target-skill matching to the existing importer. It does not perform general-purpose
+résumé parsing or OCR, alter scoring, use AI, or persist raw résumé content.
 
 ## Existing Capabilities
 
@@ -67,7 +71,8 @@ The repository already contains:
 - saved-analysis list and detail API endpoints
 - an explicit local SQLite persistence runtime
 - a React/TypeScript/Vite web experience for new and saved analyses
-- deterministic role-relevant résumé skill import on the active branch
+- deterministic role-relevant skill import from pasted résumé text
+- deterministic PDF/DOCX résumé file skill import on the active branch
 
 ## Architectural Boundary
 
