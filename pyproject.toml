@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.7.0",
     "pypdf>=6.17.0",
     "python-multipart>=0.0.32",
+    "openai>=3.8.0",
 ]
 
 [project.optional-dependencies]
