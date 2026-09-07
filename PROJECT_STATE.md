@@ -43,11 +43,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 15 — Optional OpenAI AI Enrichment**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-**None**
+**PR #19 — Add optional OpenAI AI enrichment**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/19
 
 This authorized post-MVP milestone adds an explicitly configured optional OpenAI
 provider and Web opt-in. It consumes existing structured analysis information,
