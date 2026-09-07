@@ -277,6 +277,7 @@ export function AnalysisResults({ results, legacyLearningRecommendations = false
       {ai_enrichment && (
         <section className="ai-enrichment">
           <h3>Optional AI-Generated Enrichment</h3>
+          <p>AI-generated enrichment may be inaccurate and does not affect Pathfinder&apos;s deterministic match score.</p>
           <p className="provider-name">Provider: {ai_enrichment.provider_name}</p>
           <div className="ai-content">
             {ai_enrichment.content.split('\n').map((line, i) => (

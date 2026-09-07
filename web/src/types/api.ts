@@ -96,6 +96,11 @@ export interface AnalysisRequest {
   save_analysis: boolean;
 }
 
+export interface PathfinderCapabilities {
+  ai_enrichment_available: boolean;
+  persistence_available: boolean;
+}
+
 export interface ResumeSkillImportRequest {
   resume_text: string;
   required_skills: Skill[];

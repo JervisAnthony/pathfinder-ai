@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getAnalysisHistory, getSavedAnalysis } from '../../../api/pathfinder';
+import { analyzeCandidateJob, ApiError, getAnalysisHistory, getSavedAnalysis } from '../../../api/pathfinder';
 import { SavedAnalysisDetail, SavedAnalysisSummary } from '../../../types/api';
 import { AnalysisHistory } from '../AnalysisHistory';
 import { formatSavedTimestamp } from '../formatting';
@@ -10,6 +10,7 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(),
   getSavedAnalysis: vi.fn(),
+  analyzeCandidateJob: vi.fn(),
 }));
 
 const summary: SavedAnalysisSummary = {
@@ -77,7 +78,7 @@ const detail: SavedAnalysisDetail = {
       suggested_course_topic: 'docker fundamentals',
     }],
   },
-  ai_enrichment: { provider_name: 'FakeProvider', content: 'Historical insight' },
+  ai_enrichment: { provider_name: 'OpenAI', content: 'Historical insight' },
 };
 
 describe('AnalysisHistory', () => {
@@ -151,6 +152,9 @@ describe('AnalysisHistory', () => {
     expect(screen.getByText('Discuss Python')).toBeInTheDocument();
     expect(screen.getByText('Build Docker capability')).toBeInTheDocument();
     expect(screen.getByText('Historical insight', { exact: false })).toBeInTheDocument();
+    expect(screen.getByText('Provider: OpenAI')).toBeInTheDocument();
+    expect(screen.getByText(/AI-generated enrichment may be inaccurate/)).toBeInTheDocument();
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
     expect(screen.getByText('<script>alert("no")</script>')).toBeInTheDocument();
     expect(document.querySelector('script')).toBeNull();
     expect(getSavedAnalysis).toHaveBeenCalledWith(summary.analysis_id);

@@ -7,6 +7,7 @@ import {
   SavedAnalysisDetail,
   ResumeSkillImportRequest,
   ResumeSkillImportResponse,
+  PathfinderCapabilities,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -85,6 +86,19 @@ export function analyzeCandidateJob(request: AnalysisRequest): Promise<AnalysisR
     },
     body: JSON.stringify(request),
   });
+}
+
+export async function getCapabilities(): Promise<PathfinderCapabilities> {
+  const value = await requestJson<unknown>('/api/v1/capabilities');
+  if (typeof value !== 'object' || value === null
+    || !('ai_enrichment_available' in value) || typeof value.ai_enrichment_available !== 'boolean'
+    || !('persistence_available' in value) || typeof value.persistence_available !== 'boolean') {
+    throw new ApiError('Pathfinder returned an invalid capabilities response.');
+  }
+  return {
+    ai_enrichment_available: value.ai_enrichment_available,
+    persistence_available: value.persistence_available,
+  };
 }
 
 export function importResumeSkills(

@@ -9,6 +9,8 @@ interface Props {
   onSubmit: (request: AnalysisRequest) => void;
   isLoading: boolean;
   error: string | null;
+  aiEnrichmentAvailable?: boolean;
+  aiAvailabilityMessage?: string;
 }
 
 interface ExperienceForm { role_title: string; company_name: string; duration_months: string; description: string; skills: string }
@@ -39,7 +41,7 @@ function separatedText(value: string): string[] {
   return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
+export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable = false, aiAvailabilityMessage }: Props) {
   const [candidateSkills, setCandidateSkills] = useState('');
   const [experiences, setExperiences] = useState<ExperienceForm[]>([]);
   const [educations, setEducations] = useState<EducationForm[]>([]);
@@ -62,6 +64,7 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
   const [jobEducationField, setJobEducationField] = useState('');
   const [jobEducationDescription, setJobEducationDescription] = useState('');
   const [saveAnalysis, setSaveAnalysis] = useState(false);
+  const [includeAIEnrichment, setIncludeAIEnrichment] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [resumeText, setResumeText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
@@ -145,7 +148,7 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
     const hasEducationRequirement = Boolean(jobEducationLevel || jobEducationField.trim() || jobEducationDescription.trim());
 
     const request: AnalysisRequest = {
-      include_ai_enrichment: false,
+      include_ai_enrichment: aiEnrichmentAvailable && includeAIEnrichment,
       save_analysis: saveAnalysis,
       candidate_profile: {
         skills: commaSeparatedSkills(candidateSkills),
@@ -399,6 +402,21 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
       </div>
 
       <div className="form-actions" aria-live="polite">
+        <div className="save-control ai-control">
+          <label>
+            <input type="checkbox"
+              checked={aiEnrichmentAvailable && includeAIEnrichment}
+              disabled={!aiEnrichmentAvailable || isLoading}
+              aria-describedby="ai-enrichment-help"
+              onChange={(event) => setIncludeAIEnrichment(event.target.checked)} />
+            Include optional AI-generated enrichment
+          </label>
+          <p id="ai-enrichment-help">
+            {aiEnrichmentAvailable
+              ? 'Deterministic Pathfinder analysis happens first. Enabling optional AI enrichment sends structured role-analysis information to OpenAI, which may contain candidate-derived evidence. Raw résumé upload bytes and raw pasted résumé text are not sent as part of AI enrichment. Generated text may be inaccurate and does not affect the deterministic match score.'
+              : aiAvailabilityMessage ?? 'AI enrichment is not configured on this Pathfinder server.'}
+          </p>
+        </div>
         <div className="save-control">
           <label>
             <input
@@ -413,7 +431,7 @@ export function AnalysisForm({ onSubmit, isLoading, error }: Props) {
             enable this on a shared or untrusted installation.
           </p>
         </div>
-        {(error || formError) && <div className="error-message">{formError || error}</div>}
+        {(error || formError) && <div className="error-message" role="alert">{formError || error}</div>}
         <button type="submit" disabled={isLoading} className="submit-btn">{isLoading ? 'Analyzing...' : 'Analyze Match'}</button>
       </div>
     </form>
