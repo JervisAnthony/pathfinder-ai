@@ -3,9 +3,13 @@
 import uuid
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
+from tests.infrastructure.test_openai_ai_enrichment import make_client
 
+from pathfinder_ai.api import create_app, runtime
 from pathfinder_ai.api.runtime import (
     SQLITE_PATH_ENVIRONMENT_VARIABLE,
     create_runtime_app,
@@ -13,6 +17,12 @@ from pathfinder_ai.api.runtime import (
 from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
     SQLiteAnalysisRepository,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_openai_configuration(monkeypatch):
+    monkeypatch.delenv("PATHFINDER_OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PATHFINDER_OPENAI_MODEL", raising=False)
 
 
 def _valid_payload() -> dict[str, Any]:
@@ -117,3 +127,95 @@ def test_runtime_http_errors_do_not_expose_database_path(
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "analysis_not_found"
     assert str(database_path) not in response.text
+
+
+@pytest.mark.parametrize(
+    "key,model",
+    [
+        ("SYNTHETIC-NOT-A-CREDENTIAL", None),
+        (None, "synthetic-model"),
+        ("SYNTHETIC-NOT-A-CREDENTIAL", " "),
+        (" ", "synthetic-model"),
+    ],
+)
+def test_partial_configuration_fails_without_side_effects(
+    monkeypatch, tmp_path, key, model
+):
+    if key is not None:
+        monkeypatch.setenv("PATHFINDER_OPENAI_API_KEY", key)
+    if model is not None:
+        monkeypatch.setenv("PATHFINDER_OPENAI_MODEL", model)
+    path = tmp_path / "should-not-exist.db"
+    monkeypatch.setenv("PATHFINDER_SQLITE_PATH", str(path))
+    factory = Mock(side_effect=AssertionError("client constructed"))
+    monkeypatch.setattr(runtime, "OpenAI", factory)
+    with pytest.raises(ValueError) as caught:
+        create_runtime_app()
+    assert "must both be nonblank" in str(caught.value)
+    assert "SYNTHETIC-NOT-A-CREDENTIAL" not in str(caught.value)
+    assert not path.exists()
+    factory.assert_not_called()
+
+
+@pytest.mark.parametrize("ai", [False, True])
+@pytest.mark.parametrize("persistence", [False, True])
+def test_independent_runtime_adapters_and_fresh_clients(
+    monkeypatch, tmp_path, ai, persistence
+):
+    monkeypatch.delenv("PATHFINDER_SQLITE_PATH", raising=False)
+    if persistence:
+        monkeypatch.setenv("PATHFINDER_SQLITE_PATH", str(tmp_path / "history.db"))
+    if ai:
+        monkeypatch.setenv("PATHFINDER_OPENAI_API_KEY", "SYNTHETIC-NOT-A-CREDENTIAL")
+        monkeypatch.setenv("PATHFINDER_OPENAI_MODEL", "synthetic-configured-model")
+    clients = [make_client(), make_client()]
+    factory = Mock(side_effect=clients)
+    monkeypatch.setattr(runtime, "OpenAI", factory)
+    first_app = create_runtime_app()
+    second_app = create_runtime_app()
+    with TestClient(first_app) as first, TestClient(second_app) as second:
+        for client in (first, second):
+            assert client.get("/api/v1/capabilities").json() == {
+                "ai_enrichment_available": ai,
+                "persistence_available": persistence,
+            }
+            payload = _valid_payload()
+            payload["save_analysis"] = persistence
+            assert client.post("/api/v1/analysis", json=payload).status_code == 200
+        if ai:
+            assert first_app.state.ai_provider is not second_app.state.ai_provider
+            for client in clients:
+                client.responses.create.assert_not_called()
+            payload["include_ai_enrichment"] = True
+            response = first.post("/api/v1/analysis", json=payload)
+            assert response.status_code == 200
+            assert response.json()["ai_enrichment"]["provider_name"] == "OpenAI"
+            assert (
+                clients[0].responses.create.call_args.kwargs["model"]
+                == "synthetic-configured-model"
+            )
+    assert factory.call_count == (2 if ai else 0)
+    if ai:
+        assert factory.call_args.kwargs == {
+            "api_key": "SYNTHETIC-NOT-A-CREDENTIAL",
+            "base_url": "https://api.openai.com/v1",
+            "max_retries": 0,
+            "timeout": 30.0,
+        }
+        for client in clients:
+            client.close.assert_called_once()
+
+
+def test_create_app_ignores_environment_and_runtime_treats_blank_as_unset(monkeypatch):
+    monkeypatch.setenv("PATHFINDER_OPENAI_API_KEY", "SYNTHETIC-NOT-A-CREDENTIAL")
+    monkeypatch.setenv("PATHFINDER_OPENAI_MODEL", "synthetic-model")
+    monkeypatch.setenv("PATHFINDER_SQLITE_PATH", "unused.db")
+    with TestClient(create_app()) as client:
+        assert client.get("/api/v1/capabilities").json() == {
+            "ai_enrichment_available": False,
+            "persistence_available": False,
+        }
+    monkeypatch.delenv("PATHFINDER_SQLITE_PATH")
+    monkeypatch.setenv("PATHFINDER_OPENAI_API_KEY", "  ")
+    monkeypatch.setenv("PATHFINDER_OPENAI_MODEL", "\n")
+    assert create_runtime_app().state.ai_provider is None
