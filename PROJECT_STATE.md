@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-05
+Last updated: 2026-09-07
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`2a27f4fb1e5338670595ebad7ae6cc5f01f158fe`
+`349b26cb06df7b6c90a769287e4461974b1e2410`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 13 — Deterministic Resume Skill Import**
+**Commit 14 — Deterministic Resume File Skill Import**
 
 ## Completed MVP-1 Roadmap
 
@@ -37,23 +37,22 @@ These milestones must not be replayed or rebuilt.
 - Commit 11 — Targeted Learning Recommendations — complete
 - Commit 12 — Saved Analysis History Web Experience — complete
 - Commit 13 — Deterministic Resume Skill Import — complete (PR #17 merged)
+- Commit 14 — Deterministic Resume File Skill Import — complete (PR #18 merged)
 
 ## Post-MVP Active Work
 
-**Commit 14 — Deterministic Resume File Skill Import**
+**Commit 15 — Optional OpenAI AI Enrichment**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #18 — Add PDF and DOCX resume skill import**
+**None**
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/18
-
-This authorized post-MVP milestone extends deterministic role-relevant skill
-import to PDF/DOCX files. It extracts supported document text and delegates exact
-target-skill matching to the existing importer. It does not perform general-purpose
-résumé parsing or OCR, alter scoring, use AI, or persist raw résumé content.
+This authorized post-MVP milestone adds an explicitly configured optional OpenAI
+provider and Web opt-in. It consumes existing structured analysis information,
+which may include candidate-derived evidence, without changing deterministic
+scoring, explanation, interview preparation, or learning recommendations.
 
 ## Existing Capabilities
 
@@ -72,7 +71,9 @@ The repository already contains:
 - an explicit local SQLite persistence runtime
 - a React/TypeScript/Vite web experience for new and saved analyses
 - deterministic role-relevant skill import from pasted résumé text
-- deterministic PDF/DOCX résumé file skill import on the active branch
+- deterministic PDF/DOCX résumé file skill import
+- explicit optional OpenAI enrichment with server-side configuration on the active branch
+- capability discovery and default-off Web AI opt-in on the active branch
 
 ## Architectural Boundary
 
