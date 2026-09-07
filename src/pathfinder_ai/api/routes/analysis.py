@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from pathfinder_ai.api.errors import (
     AIProviderExecutionError,
@@ -130,7 +131,9 @@ async def analyze(
         )
 
         try:
-            ai_result = enrichment_service.enrich(enrichment_request)
+            ai_result = await run_in_threadpool(
+                enrichment_service.enrich, enrichment_request
+            )
         except Exception as e:
             # Mask internal exception details by raising our custom execution error
             raise AIProviderExecutionError() from e

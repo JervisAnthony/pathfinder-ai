@@ -21,6 +21,7 @@ Pathfinder AI now supports:
 - likely interview question categories
 - candidate-to-interviewer questions
 - provider-neutral optional AI enrichment abstraction
+- an explicitly configured OpenAI enrichment adapter with Web opt-in
 - explicit opt-in SQLite persistence for complete analysis snapshots
 - a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
 - deterministic role-relevant skill import from pasted résumé text
@@ -40,7 +41,7 @@ Pathfinder AI now supports:
 - no AI-generated interview predictions
 - no employer-specific inference
 - interview prep is deterministic, structured, and grounded only in supplied candidate/job evidence
-- AI enrichment uses a replaceable provider contract but currently has no concrete external provider implemented
+- optional OpenAI enrichment uses the replaceable provider contract and never changes deterministic results
 - deterministic scoring and interview preparation remain independent of AI
 - targeted learning recommendations are deterministic and remain independent of AI
 - suggested course topics are generic learning or search topics, not verified courses
@@ -52,7 +53,7 @@ Pathfinder AI now supports:
 - The frontend operates as a single-page application (SPA).
 - No authentication or multi-user accounts are implemented.
 - The browser does not persist candidate data in local storage, session storage, or IndexedDB.
-- Saving is explicit and the save checkbox defaults to off. AI enrichment remains off in the normal web flow.
+- Saving and AI enrichment are independent explicit choices; both default to off. AI opt-in is available only when the server reports it configured.
 - The History view reads server-backed SQLite snapshots and never recomputes historical results.
 - Saved history is read-only; editing and deletion are not available.
 - Learning recommendations are derived only from the supplied role comparison and its deterministic gap analysis.
@@ -70,6 +71,7 @@ Pathfinder exposes a FastAPI surface with opt-in, repository-backed persistence.
 
 Endpoints:
 - `GET /api/v1/health`
+- `GET /api/v1/capabilities`
 - `POST /api/v1/analysis`
 - `POST /api/v1/resume/skill-import`
 - `POST /api/v1/resume/file-skill-import`
@@ -179,6 +181,89 @@ python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 
 
 The configured database contains sensitive candidate and job snapshots. Use it
 only on a trusted local installation and protect the database file appropriately.
+
+## Optional OpenAI AI Enrichment
+
+**AI enrichment defaults off.** It runs after deterministic analysis and does not
+affect the match score, explanation, gap analysis, interview preparation, or
+learning recommendations. Its generated text may be inaccurate and should be
+reviewed before use. It is not a hiring probability, ATS score, employer
+prediction, or automated hiring recommendation. It does not parse résumés or job
+descriptions.
+
+Only `create_runtime_app()` reads server configuration. Set both
+`PATHFINDER_OPENAI_API_KEY` and `PATHFINDER_OPENAI_MODEL` to nonblank values to
+enable OpenAI. Neither set (or both blank) leaves AI disabled. Partial
+configuration fails at startup with a message that does not echo values. There is
+no default model: the operator must select a model that supports the Responses
+API and the request parameters below. No key or model is supplied by the browser.
+
+On macOS/Linux, using placeholders:
+
+```bash
+export PATHFINDER_OPENAI_API_KEY='<your-key>'
+export PATHFINDER_OPENAI_MODEL='<chosen-model>'
+python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 127.0.0.1 --port 8000
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:PATHFINDER_OPENAI_API_KEY = "<your-key>"
+$env:PATHFINDER_OPENAI_MODEL = "<chosen-model>"
+python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 127.0.0.1 --port 8000
+```
+
+Keep real credentials outside source control and browser configuration. These
+settings work independently of `PATHFINDER_SQLITE_PATH`: neither adapter,
+persistence only, AI only, and both together are supported. Plain `create_app()`
+remains environment-independent and has no provider or persistence unless injected.
+
+`GET /api/v1/capabilities` returns only `ai_enrichment_available` and
+`persistence_available` booleans. It describes configured adapters, without
+contacting OpenAI or verifying keys, models, quota, balance, or network health.
+The Web client loads it when the app initializes. Failure leaves deterministic
+analysis available and AI unavailable; the client does not poll. The checkbox
+never opts in automatically. Checked analysis sends `include_ai_enrichment=true`;
+unchecked analysis sends false. If AI fails (502 `ai_provider_error`) or becomes
+unavailable (503 `ai_provider_unavailable`), the form is preserved so the user can
+uncheck AI and retry. There is no silent fallback.
+
+The infrastructure adapter uses the official `openai>=3.8.0` Python SDK, the
+verified Python-3.13-compatible implementation floor. It calls
+`client.responses.create(...)` and reads `response.output_text`. Calls use
+`store=False`, `max_output_tokens=1000`, no tools, no conversation/previous-response
+IDs, and no model-specific temperature or reasoning settings. The runtime uses a
+30-second SDK timeout, disables automatic retries (`max_retries=0`), and closes
+its client on application shutdown. The synchronous provider executes through a
+thread pool rather than blocking the API event loop. No frontend dependency is
+added. See the [official Responses API documentation](https://developers.openai.com/api/reference/python/resources/responses/methods/create).
+
+The high-level provider instructions are separate from serialized untrusted
+input. They preserve the authority of deterministic evidence, prohibit invented
+qualifications/employer facts, and request concise Application Framing, Interview
+Emphasis, Gaps to Address, and Caveats / Verify Before Use. Embedded instructions
+are treated as data. Prompt injection can still influence generated text, but the
+model has no tools or external action capability. Output renders as ordinary
+React text, including in saved history; blank output is a provider failure.
+
+**External data and cost:** Enabling AI sends structured `JobDescription`,
+`MatchExplanation`, and optional `InterviewPreparation` information to OpenAI.
+This can contain candidate-derived evidence or labels. The complete candidate
+profile and raw uploaded/pasted résumé content are not directly supplied by this
+workflow. Processing is therefore not local-only when AI is enabled, and API
+usage may incur cost under the operator's account/model configuration.
+
+Pathfinder uses `store=False` and does not intentionally create provider-side
+conversation state. This does not override provider/account data policies or
+guarantee zero retention or confidentiality. No key, prompt, model configuration,
+provider response ID, or SDK metadata is deliberately logged or included in saved
+snapshots. When saving is selected, only the existing AI result fields (`content`
+and `provider_name`, which is `OpenAI`) accompany the deterministic snapshot.
+History displays that stored text without calling the provider again. SQLite
+schema and payload version 2 remain unchanged. Browser storage does not retain AI
+payloads. Canonical tests use fake clients or in-memory HTTP transports, never
+live OpenAI credentials or paid requests.
 
 ## Frontend Local Setup
 

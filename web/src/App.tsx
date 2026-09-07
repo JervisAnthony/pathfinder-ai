@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnalysisForm } from './features/analysis/AnalysisForm'
 import { AnalysisResults } from './features/analysis/AnalysisResults'
 import { AnalysisHistory } from './features/history/AnalysisHistory'
-import { analyzeCandidateJob, ApiError } from './api/pathfinder'
-import { AnalysisRequest, AnalysisResponse } from './types/api'
+import { analyzeCandidateJob, ApiError, getCapabilities } from './api/pathfinder'
+import { AnalysisRequest, AnalysisResponse, PathfinderCapabilities } from './types/api'
 import './App.css'
 
 function App() {
@@ -11,6 +11,18 @@ function App() {
   const [results, setResults] = useState<AnalysisResponse | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [capabilities, setCapabilities] = useState<PathfinderCapabilities | null>(null)
+  const [capabilityFailed, setCapabilityFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    getCapabilities().then((result) => {
+      if (active) setCapabilities(result)
+    }).catch(() => {
+      if (active) setCapabilityFailed(true)
+    })
+    return () => { active = false }
+  }, [])
 
   const handleAnalyze = async (request: AnalysisRequest) => {
     setIsLoading(true)
@@ -21,9 +33,12 @@ function App() {
       setResults(await analyzeCandidateJob(request))
     } catch (caught) {
       if (caught instanceof ApiError) {
-        setError(caught.code === 'persistence_unavailable'
-          ? 'Analysis persistence is not configured on this Pathfinder server.'
-          : caught.message)
+        const messages: Record<string, string> = {
+          persistence_unavailable: 'Analysis persistence is not configured on this Pathfinder server.',
+          ai_provider_unavailable: 'AI enrichment is unavailable on this Pathfinder server. Uncheck optional AI enrichment and retry deterministic analysis.',
+          ai_provider_error: 'AI enrichment could not be completed. Uncheck optional AI enrichment and retry deterministic analysis.',
+        }
+        setError(messages[caught.code ?? ''] ?? caught.message)
       } else {
         setError('An unexpected error occurred during analysis.')
       }
@@ -50,7 +65,11 @@ function App() {
 
       <main className="app-main">
         {view === 'analysis' && !results && (
-          <AnalysisForm onSubmit={handleAnalyze} isLoading={isLoading} error={error} />
+          <AnalysisForm onSubmit={handleAnalyze} isLoading={isLoading} error={error}
+            aiEnrichmentAvailable={capabilities?.ai_enrichment_available ?? false}
+            aiAvailabilityMessage={capabilityFailed
+              ? 'AI availability could not be checked. Deterministic analysis remains available.'
+              : capabilities === null ? 'Checking AI enrichment availability…' : undefined} />
         )}
 
         {view === 'analysis' && results && (

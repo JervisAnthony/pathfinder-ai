@@ -6,6 +6,7 @@ import { AnalysisResponse } from './types/api';
 
 vi.mock('./api/pathfinder', () => ({
   analyzeCandidateJob: vi.fn(),
+  getCapabilities: vi.fn(),
   getAnalysisHistory: vi.fn(),
   getSavedAnalysis: vi.fn(),
   ApiError: class ApiError extends Error {
@@ -20,6 +21,7 @@ vi.mock('./api/pathfinder', () => ({
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getCapabilities).mockResolvedValue({ ai_enrichment_available: false, persistence_available: false });
   });
 
   it('handles successful submission flow', async () => {

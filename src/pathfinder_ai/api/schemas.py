@@ -50,6 +50,11 @@ class BaseStrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PathfinderCapabilitiesSchema(BaseStrictModel):
+    ai_enrichment_available: bool
+    persistence_available: bool
+
+
 # ---------------------------------------------------------------------------
 # Domain Request Schemas (Candidate Profile)
 # ---------------------------------------------------------------------------
