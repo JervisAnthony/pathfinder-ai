@@ -44,11 +44,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 16 — AI-Assisted Job Description Import**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-**None**
+**PR #20 — Add AI-assisted job description import**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/20
 
 This authorized post-MVP milestone adds optional AI-assisted structured drafts
 from supplied job-posting text. Drafts require explicit human review and Apply
