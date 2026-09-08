@@ -12,6 +12,10 @@ from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.interview_preparation import (
     InterviewPreparation,
 )
+from pathfinder_ai.application.job_description_import import (
+    MAX_JOB_DESCRIPTION_TEXT_LENGTH,
+    validate_job_description_text,
+)
 from pathfinder_ai.application.learning_recommendations import (
     LearningRecommendationKind,
     LearningRecommendationPriority,
@@ -52,7 +56,33 @@ class BaseStrictModel(BaseModel):
 
 class PathfinderCapabilitiesSchema(BaseStrictModel):
     ai_enrichment_available: bool
+    job_description_import_available: bool
     persistence_available: bool
+
+
+class JobDescriptionDraftRequestSchema(BaseStrictModel):
+    raw_job_description: str = Field(max_length=MAX_JOB_DESCRIPTION_TEXT_LENGTH)
+
+    @field_validator("raw_job_description")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return validate_job_description_text(value)
+
+
+class JobDescriptionDraftResponseSchema(BaseStrictModel):
+    title: str | None
+    company_name: str | None
+    company_industry: str | None
+    company_location: str | None
+    responsibilities: tuple[str, ...]
+    required_skills: tuple[str, ...]
+    preferred_skills: tuple[str, ...]
+    unclassified_skills: tuple[str, ...]
+    minimum_years: int | None
+    maximum_years: int | None
+    education_level: EducationLevel | None
+    education_field_of_study: str | None
+    education_description: str | None
 
 
 # ---------------------------------------------------------------------------
