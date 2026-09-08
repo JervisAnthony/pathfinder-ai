@@ -22,6 +22,7 @@ Pathfinder AI now supports:
 - candidate-to-interviewer questions
 - provider-neutral optional AI enrichment abstraction
 - an explicitly configured OpenAI enrichment adapter with Web opt-in
+- optional AI-assisted job-description drafting with explicit preview and Apply
 - explicit opt-in SQLite persistence for complete analysis snapshots
 - a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
 - deterministic role-relevant skill import from pasted résumé text
@@ -73,6 +74,7 @@ Endpoints:
 - `GET /api/v1/health`
 - `GET /api/v1/capabilities`
 - `POST /api/v1/analysis`
+- `POST /api/v1/job-description/draft`
 - `POST /api/v1/resume/skill-import`
 - `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
@@ -219,8 +221,8 @@ settings work independently of `PATHFINDER_SQLITE_PATH`: neither adapter,
 persistence only, AI only, and both together are supported. Plain `create_app()`
 remains environment-independent and has no provider or persistence unless injected.
 
-`GET /api/v1/capabilities` returns only `ai_enrichment_available` and
-`persistence_available` booleans. It describes configured adapters, without
+`GET /api/v1/capabilities` returns only `ai_enrichment_available`,
+`job_description_import_available`, and `persistence_available` booleans. It describes configured adapters, without
 contacting OpenAI or verifying keys, models, quota, balance, or network health.
 The Web client loads it when the app initializes. Failure leaves deterministic
 analysis available and AI unavailable; the client does not poll. The checkbox
@@ -264,6 +266,77 @@ History displays that stored text without calling the provider again. SQLite
 schema and payload version 2 remain unchanged. Browser storage does not retain AI
 payloads. Canonical tests use fake clients or in-memory HTTP transports, never
 live OpenAI credentials or paid requests.
+
+## AI-Assisted Job Description Import
+
+Paste a job posting into **Import Job Description** inside Target Job, then
+choose **Create Structured Draft**. **Generated fields may be inaccurate: review
+the preview before explicitly choosing Apply Draft to Target Job.** Generation
+does not change the form or run analysis. Applied fields remain editable; only
+the final reviewed structured Target Job enters the existing analysis request.
+
+Apply fills blank scalar fields (including experience and education), preserves
+existing nonblank values, and merges responsibilities and skill lists in existing
+order with case/whitespace-insensitive deduplication. Required skills take
+precedence over preferred duplicates. Unclassified skills appear only in the
+preview and must be assigned manually if appropriate. Missing titles remain
+blank and must be supplied before normal analysis. Clear job posting text clears
+only the source; Discard Draft removes only the preview. Failed generation keeps
+the raw text, previous successful draft, and existing form work.
+
+The provider-neutral application contract returns an immutable
+`JobDescriptionDraft`, not a domain `JobDescription`. Extraction instructions
+require source-supported titles, company details, responsibilities, explicit
+experience and education, and skills. Missing information stays null/empty;
+ambiguous skills remain unclassified. No confidence percentage, candidate score,
+hiring recommendation, company lookup, or skill ontology expansion is produced.
+Structured constraints cannot guarantee factual accuracy or perfect resistance
+to prompt injection. High-level instructions stay separate from untrusted job
+text, and output renders as ordinary React text.
+
+`POST /api/v1/job-description/draft` accepts only `raw_job_description` and returns
+the typed draft, without raw input or provider metadata. Input must be nonblank
+and at most 50,000 characters, checked before trimming. Drafts allow at most 30
+responsibilities and 50 skills per category; oversized output is rejected rather
+than truncated. Experience must be nonnegative integers in a valid range.
+Education uses the existing `EducationLevel` values; unmatched explicit
+qualifications can be retained as an education description. Unusable output,
+refusal, parse failure, or incompatible models fail safely with 502
+`job_description_import_error`; an unconfigured provider returns 503
+`job_description_import_unavailable`. Invalid requests return safe 422 errors.
+
+The existing `PATHFINDER_OPENAI_API_KEY` and `PATHFINDER_OPENAI_MODEL` configuration
+enables both AI capabilities. There is no new setting or default model. Runtime
+shares one SDK client and shutdown lifecycle across both adapters, retaining the
+30-second timeout and disabled automatic retries. Draft calls run in a thread
+pool. Plain `create_app()` remains environment-independent; each provider can be
+injected separately. Persistence remains independent of both AI capabilities.
+
+The adapter uses `client.responses.parse(..., text_format=...)` with an internal
+Pydantic schema that forbids extra fields, then maps the parsed result into the
+application draft. This exact path was verified with installed OpenAI SDK 3.8.0
+through an in-memory HTTP transport. Requests use `store=False`,
+`max_output_tokens=1600`, no tools, web/file search, conversation, or previous
+response ID. The configured model must support the Structured Outputs operation;
+capabilities report configuration only, not model compatibility, key validity,
+quota, or connectivity. See [OpenAI Structured Outputs documentation](https://developers.openai.com/api/docs/guides/structured-outputs).
+
+**External processing and privacy:** Explicit draft generation sends raw
+job-posting text to the configured OpenAI provider and may incur API cost. No
+candidate profile is required, and no scoring, enrichment, or history save runs
+during drafting. Pathfinder does not deliberately log or persist raw postings,
+unapplied drafts, prompts, model settings, response IDs, or import metadata in
+SQLite or browser storage. `store=False` does not override provider/account
+retention policies or guarantee universal zero retention.
+
+Job import and downstream analysis enrichment are independent user actions:
+using either, both, or neither is supported. Draft creation never checks the
+analysis-enrichment checkbox. Deterministic scoring, explanation, interview
+preparation, learning recommendations, and résumé import remain unchanged.
+Saving stores the reviewed structured job through the existing version-2
+snapshot format; history never regenerates drafts or analysis. There is no
+persistence migration, new Python dependency, or frontend dependency. Tests use
+synthetic data and fake providers; no live or paid API request is required.
 
 ## Frontend Local Setup
 

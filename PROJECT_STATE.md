@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-07
+Last updated: 2026-09-08
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`349b26cb06df7b6c90a769287e4461974b1e2410`
+`a3e0be53dd9053b4366e3766caada324df83a1a3`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 14 — Deterministic Resume File Skill Import**
+**Commit 15 — Optional OpenAI AI Enrichment**
 
 ## Completed MVP-1 Roadmap
 
@@ -38,23 +38,22 @@ These milestones must not be replayed or rebuilt.
 - Commit 12 — Saved Analysis History Web Experience — complete
 - Commit 13 — Deterministic Resume Skill Import — complete (PR #17 merged)
 - Commit 14 — Deterministic Resume File Skill Import — complete (PR #18 merged)
+- Commit 15 — Optional OpenAI AI Enrichment — complete (PR #19 merged)
 
 ## Post-MVP Active Work
 
-**Commit 15 — Optional OpenAI AI Enrichment**
+**Commit 16 — AI-Assisted Job Description Import**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #19 — Add optional OpenAI AI enrichment**
+**None**
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/19
-
-This authorized post-MVP milestone adds an explicitly configured optional OpenAI
-provider and Web opt-in. It consumes existing structured analysis information,
-which may include candidate-derived evidence, without changing deterministic
-scoring, explanation, interview preparation, or learning recommendations.
+This authorized post-MVP milestone adds optional AI-assisted structured drafts
+from supplied job-posting text. Drafts require explicit human review and Apply
+before entering editable Target Job fields. Draft generation does not run
+analysis or save history. Deterministic analysis remains unchanged.
 
 ## Existing Capabilities
 
@@ -74,8 +73,10 @@ The repository already contains:
 - a React/TypeScript/Vite web experience for new and saved analyses
 - deterministic role-relevant skill import from pasted résumé text
 - deterministic PDF/DOCX résumé file skill import
-- explicit optional OpenAI enrichment with server-side configuration on the active branch
-- capability discovery and default-off Web AI opt-in on the active branch
+- explicit optional OpenAI enrichment with server-side configuration
+- capability discovery and default-off Web AI opt-in
+- optional AI-assisted job-description drafting on the active branch
+- explicit draft review/apply workflow on the active branch
 
 ## Architectural Boundary
 
