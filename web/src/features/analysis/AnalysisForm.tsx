@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ApiError, importResumeSkills } from '../../api/pathfinder';
-import { AnalysisRequest, EducationLevel, WorkMode } from '../../types/api';
+import { AnalysisRequest, EducationLevel, WorkMode, JobDescriptionDraftResponse } from '../../types/api';
+import { JobDescriptionImport } from './JobDescriptionImport';
+import { mergeDraftEntries, mergeDraftSkills } from './jobDraftMerge';
 import { commaSeparatedSkills, mergeSkillText, newlineResponsibilities } from './utils';
 import './AnalysisForm.css';
 import { ResumeFileImport } from './ResumeFileImport';
@@ -11,6 +13,7 @@ interface Props {
   error: string | null;
   aiEnrichmentAvailable?: boolean;
   aiAvailabilityMessage?: string;
+  jobDescriptionImportAvailable?: boolean;
 }
 
 interface ExperienceForm { role_title: string; company_name: string; duration_months: string; description: string; skills: string }
@@ -41,7 +44,7 @@ function separatedText(value: string): string[] {
   return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable = false, aiAvailabilityMessage }: Props) {
+export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable = false, aiAvailabilityMessage, jobDescriptionImportAvailable = false }: Props) {
   const [candidateSkills, setCandidateSkills] = useState('');
   const [experiences, setExperiences] = useState<ExperienceForm[]>([]);
   const [educations, setEducations] = useState<EducationForm[]>([]);
@@ -70,6 +73,21 @@ export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable
   const [isImporting, setIsImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  const applyJobDraft = (draft: JobDescriptionDraftResponse) => {
+    setJobTitle((current) => current.trim() ? current : draft.title ?? '');
+    setJobCompanyName((current) => current.trim() ? current : draft.company_name ?? '');
+    setJobCompanyIndustry((current) => current.trim() ? current : draft.company_industry ?? '');
+    setJobCompanyLocation((current) => current.trim() ? current : draft.company_location ?? '');
+    setJobMinYears((current) => current === '' ? String(draft.minimum_years ?? '') : current);
+    setJobMaxYears((current) => current === '' ? String(draft.maximum_years ?? '') : current);
+    setJobEducationLevel((current) => current || draft.education_level || '');
+    setJobEducationField((current) => current.trim() ? current : draft.education_field_of_study ?? '');
+    setJobEducationDescription((current) => current.trim() ? current : draft.education_description ?? '');
+    setJobResponsibilities((current) => mergeDraftEntries(current.split('\n'), draft.responsibilities).join('\n'));
+    const skills = mergeDraftSkills(jobRequiredSkills, jobPreferredSkills, draft);
+    setJobRequiredSkills(skills.required); setJobPreferredSkills(skills.preferred);
+  };
 
   const updateItem = <T,>(items: T[], setItems: React.Dispatch<React.SetStateAction<T[]>>, index: number, update: Partial<T>) => {
     setItems(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...update } : item));
@@ -363,6 +381,7 @@ export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable
 
         <div className="form-column">
           <h2>Target Job</h2>
+          <JobDescriptionImport available={jobDescriptionImportAvailable} onApply={applyJobDraft} />
           <label htmlFor="job-title">Job Title</label>
           <input id="job-title" value={jobTitle} onChange={(event) => setJobTitle(event.target.value)} required />
           <label htmlFor="job-company-name">Company Name (Optional)</label>

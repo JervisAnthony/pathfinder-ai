@@ -21,7 +21,7 @@ vi.mock('./api/pathfinder', () => ({
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(api.getCapabilities).mockResolvedValue({ ai_enrichment_available: false, persistence_available: false });
+    vi.mocked(api.getCapabilities).mockResolvedValue({ ai_enrichment_available: false, job_description_import_available: false, persistence_available: false });
   });
 
   it('handles successful submission flow', async () => {

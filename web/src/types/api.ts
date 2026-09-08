@@ -98,7 +98,28 @@ export interface AnalysisRequest {
 
 export interface PathfinderCapabilities {
   ai_enrichment_available: boolean;
+  job_description_import_available: boolean;
   persistence_available: boolean;
+}
+
+export interface JobDescriptionDraftRequest {
+  raw_job_description: string;
+}
+
+export interface JobDescriptionDraftResponse {
+  title: string | null;
+  company_name: string | null;
+  company_industry: string | null;
+  company_location: string | null;
+  responsibilities: string[];
+  required_skills: string[];
+  preferred_skills: string[];
+  unclassified_skills: string[];
+  minimum_years: number | null;
+  maximum_years: number | null;
+  education_level: EducationLevel | null;
+  education_field_of_study: string | null;
+  education_description: string | null;
 }
 
 export interface ResumeSkillImportRequest {

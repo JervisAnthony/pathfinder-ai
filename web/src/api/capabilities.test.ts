@@ -4,11 +4,19 @@ import { getCapabilities } from './pathfinder';
 afterEach(() => vi.restoreAllMocks());
 
 describe('capabilities client', () => {
-  it.each([[false, false], [true, false], [false, true], [true, true]])('reads configuration flags: AI %s persistence %s', async (ai, persistence) => {
-    const capabilities = { ai_enrichment_available: ai, persistence_available: persistence };
+  it.each([[false, false, false], [false, false, true], [false, true, false], [false, true, true], [true, false, false], [true, false, true], [true, true, false], [true, true, true]])('reads independent configuration flags: AI %s import %s persistence %s', async (ai, jobImport, persistence) => {
+    const capabilities = { ai_enrichment_available: ai, job_description_import_available: jobImport, persistence_available: persistence };
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json(capabilities));
     expect(await getCapabilities()).toEqual(capabilities);
     expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/v1/capabilities', undefined);
+  });
+
+  it('rejects missing or non-boolean job-import availability', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    for (const jobImport of [undefined, 'true']) {
+      fetchMock.mockResolvedValue(Response.json({ ai_enrichment_available: true, persistence_available: true, job_description_import_available: jobImport }));
+      await expect(getCapabilities()).rejects.toThrow('invalid capabilities');
+    }
   });
 
   it.each([null, {}, [], { ai_enrichment_available: 'true', persistence_available: false }, { ai_enrichment_available: true }, { ai_enrichment_available: true, persistence_available: 'false' }])('rejects malformed success %j', async (value) => {

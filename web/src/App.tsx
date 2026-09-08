@@ -67,6 +67,7 @@ function App() {
         {view === 'analysis' && !results && (
           <AnalysisForm onSubmit={handleAnalyze} isLoading={isLoading} error={error}
             aiEnrichmentAvailable={capabilities?.ai_enrichment_available ?? false}
+            jobDescriptionImportAvailable={capabilities?.job_description_import_available ?? false}
             aiAvailabilityMessage={capabilityFailed
               ? 'AI availability could not be checked. Deterministic analysis remains available.'
               : capabilities === null ? 'Checking AI enrichment availability…' : undefined} />

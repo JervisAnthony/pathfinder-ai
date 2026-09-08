@@ -8,6 +8,8 @@ import {
   ResumeSkillImportRequest,
   ResumeSkillImportResponse,
   PathfinderCapabilities,
+  JobDescriptionDraftRequest,
+  JobDescriptionDraftResponse,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -92,13 +94,39 @@ export async function getCapabilities(): Promise<PathfinderCapabilities> {
   const value = await requestJson<unknown>('/api/v1/capabilities');
   if (typeof value !== 'object' || value === null
     || !('ai_enrichment_available' in value) || typeof value.ai_enrichment_available !== 'boolean'
+    || !('job_description_import_available' in value) || typeof value.job_description_import_available !== 'boolean'
     || !('persistence_available' in value) || typeof value.persistence_available !== 'boolean') {
     throw new ApiError('Pathfinder returned an invalid capabilities response.');
   }
   return {
     ai_enrichment_available: value.ai_enrichment_available,
+    job_description_import_available: value.job_description_import_available,
     persistence_available: value.persistence_available,
   };
+}
+
+export async function createJobDescriptionDraft(request: JobDescriptionDraftRequest): Promise<JobDescriptionDraftResponse> {
+  const value = await requestJson<unknown>('/api/v1/job-description/draft', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request),
+  });
+  if (!isJobDescriptionDraft(value)) throw new ApiError('Pathfinder returned an invalid job draft.');
+  return value;
+}
+
+function isJobDescriptionDraft(value: unknown): value is JobDescriptionDraftResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const draft = value as Record<string, unknown>;
+  const strings = ['title', 'company_name', 'company_industry', 'company_location', 'education_field_of_study', 'education_description'];
+  const lists = ['responsibilities', 'required_skills', 'preferred_skills', 'unclassified_skills'];
+  const numbers = ['minimum_years', 'maximum_years'];
+  const keys = [...strings, ...lists, ...numbers, 'education_level'];
+  return Object.keys(draft).length === keys.length && keys.every((key) => key in draft)
+    && strings.every((key) => draft[key] === null || typeof draft[key] === 'string')
+    && lists.every((key) => Array.isArray(draft[key]) && draft[key].length <= (key === 'responsibilities' ? 30 : 50)
+      && draft[key].every((item: unknown) => typeof item === 'string'))
+    && numbers.every((key) => draft[key] === null || (typeof draft[key] === 'number' && Number.isInteger(draft[key]) && draft[key] >= 0))
+    && (draft.minimum_years === null || draft.maximum_years === null || (draft.maximum_years as number) >= (draft.minimum_years as number))
+    && (draft.education_level === null || ['high_school', 'associate', 'bachelor', 'master', 'doctorate', 'other'].includes(draft.education_level as string));
 }
 
 export function importResumeSkills(
