@@ -11,6 +11,9 @@ from starlette.concurrency import run_in_threadpool
 
 from pathfinder_ai.api.app import create_app
 from pathfinder_ai.infrastructure.openai_ai_enrichment import OpenAIEnrichmentProvider
+from pathfinder_ai.infrastructure.openai_job_description_import import (
+    OpenAIJobDescriptionImportProvider,
+)
 from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
     SQLiteAnalysisRepository,
 )
@@ -48,6 +51,9 @@ def create_runtime_app() -> FastAPI:
     )
     app = create_app(
         ai_provider=OpenAIEnrichmentProvider(client, model),
+        job_description_import_provider=OpenAIJobDescriptionImportProvider(
+            client, model
+        ),
         analysis_repository=repository,
     )
     original_lifespan = app.router.lifespan_context
