@@ -1,4 +1,6 @@
 import { AnalysisResults } from '../analysis/AnalysisResults';
+import { useState } from 'react';
+import { ApiError } from '../../api/pathfinder';
 import { SavedAnalysisDetail as SavedDetail } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { savedAnalysisDetailToAnalysisResponse } from './mapping';
@@ -6,6 +8,7 @@ import { savedAnalysisDetailToAnalysisResponse } from './mapping';
 interface Props {
   detail: SavedDetail;
   onBack: () => void;
+  onDelete: (analysisId: string) => Promise<void>;
 }
 
 function TextList({ values, empty }: { values: string[]; empty: string }) {
@@ -14,9 +17,34 @@ function TextList({ values, empty }: { values: string[]; empty: string }) {
     : <p className="neutral-state">{empty}</p>;
 }
 
-export function SavedAnalysisDetail({ detail, onBack }: Props) {
+function deletionErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'analysis_not_found') {
+    return 'This saved analysis no longer exists.';
+  }
+  if (error instanceof ApiError && error.code === 'persistence_unavailable') {
+    return 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.';
+  }
+  return 'Pathfinder could not delete this saved analysis. Please try again.';
+}
+
+export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await onDelete(detail.analysis_id);
+    } catch (error) {
+      setDeleteError(deletionErrorMessage(error));
+      setDeleting(false);
+    }
+  };
 
   return (
     <article className="saved-detail">
@@ -101,6 +129,56 @@ export function SavedAnalysisDetail({ detail, onBack }: Props) {
         results={savedAnalysisDetailToAnalysisResponse(detail)}
         legacyLearningRecommendations={detail.learning_recommendations === null}
       />
+
+      <section className="delete-saved-analysis" aria-labelledby="delete-saved-analysis-title">
+        <h3 id="delete-saved-analysis-title">Delete saved analysis</h3>
+        <p>Remove this individual snapshot from Pathfinder's configured history.</p>
+        <button
+          type="button"
+          className="danger-btn"
+          onClick={() => { setConfirmingDelete(true); setDeleteError(null); }}
+        >
+          Delete saved analysis
+        </button>
+
+        {confirmingDelete && (
+          <div
+            className="delete-confirmation"
+            role="alertdialog"
+            aria-labelledby="delete-confirmation-title"
+            aria-describedby="delete-confirmation-description delete-confirmation-caveat"
+          >
+            <h4 id="delete-confirmation-title">Delete this saved analysis?</h4>
+            <p id="delete-confirmation-description">
+              This removes this snapshot from Pathfinder's configured analysis history. This action
+              cannot be undone in Pathfinder.
+            </p>
+            <p id="delete-confirmation-caveat">
+              This is not a guaranteed secure erase of database files, backups, or filesystem snapshots.
+            </p>
+            {deleting && <p role="status">Deleting saved analysis…</p>}
+            {deleteError && <p className="error-message" role="alert">{deleteError}</p>}
+            <div className="delete-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={deleting}
+                onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-btn"
+                disabled={deleting}
+                onClick={() => void confirmDelete()}
+              >
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </article>
   );
 }

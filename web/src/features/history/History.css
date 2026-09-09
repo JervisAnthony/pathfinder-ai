@@ -72,6 +72,12 @@
   padding: 1.25rem;
 }
 
+.history-privacy-copy {
+  color: #5b6470;
+  font-size: 0.9rem;
+  margin: -0.75rem 0 1.5rem;
+}
+
 .secondary-btn,
 .pagination button {
   background: #fff;
@@ -123,6 +129,48 @@
 
 .snapshot-grid dd {
   margin: 0 0 0.7rem;
+}
+
+.delete-saved-analysis {
+  background: #fff8f7;
+  border: 1px solid #e5aaa3;
+  border-radius: 8px;
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+}
+
+.delete-confirmation {
+  background: #fff;
+  border: 2px solid #a5281b;
+  border-radius: 8px;
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.delete-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.danger-btn {
+  background: #a5281b;
+  border: 1px solid #7d1e15;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  padding: 0.55rem 0.9rem;
+}
+
+.danger-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.danger-btn:focus-visible,
+.delete-confirmation .secondary-btn:focus-visible {
+  outline: 3px solid rgba(0, 102, 204, 0.35);
+  outline-offset: 2px;
 }
 
 @media (max-width: 700px) {

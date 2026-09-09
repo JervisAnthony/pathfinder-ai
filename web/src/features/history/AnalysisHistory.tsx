@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, getAnalysisHistory, getSavedAnalysis } from '../../api/pathfinder';
+import {
+  ApiError,
+  deleteSavedAnalysis,
+  getAnalysisHistory,
+  getSavedAnalysis,
+} from '../../api/pathfinder';
 import { SavedAnalysisDetail, SavedAnalysisSummary } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
@@ -56,8 +61,25 @@ export function AnalysisHistory() {
     }
   };
 
+  const deleteDetail = async (analysisId: string) => {
+    await deleteSavedAnalysis(analysisId);
+    setDetail(null);
+    setDetailError(null);
+    if (offset > 0 && items.length === 1) {
+      setOffset(Math.max(0, offset - PAGE_SIZE));
+    } else {
+      await loadHistory();
+    }
+  };
+
   if (detail) {
-    return <SavedDetailView detail={detail} onBack={() => setDetail(null)} />;
+    return (
+      <SavedDetailView
+        detail={detail}
+        onBack={() => setDetail(null)}
+        onDelete={deleteDetail}
+      />
+    );
   }
 
   return (
@@ -71,6 +93,11 @@ export function AnalysisHistory() {
           Refresh
         </button>
       </div>
+
+      <p className="history-privacy-copy">
+        Saved analyses remain in configured persistence until deleted. Deletion removes one selected
+        snapshot from Pathfinder history; it is not a secure filesystem wipe.
+      </p>
 
       {loading && <p role="status">Loading saved analyses…</p>}
       {!loading && error && <div className="history-message error-message" role="alert">{error}</div>}
