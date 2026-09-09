@@ -25,7 +25,7 @@ Pathfinder AI now supports:
 - optional AI-assisted job-description drafting with explicit preview and Apply
 - optional AI-assisted Candidate Profile drafting from text or PDF/DOCX with explicit preview and Apply
 - explicit opt-in SQLite persistence for complete analysis snapshots
-- a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
+- a React/TypeScript/Vite frontend for submitting analyses, browsing saved history, and deleting individual snapshots
 - deterministic role-relevant skill import from pasted résumé text
 - deterministic role-relevant skill import from PDF and DOCX résumé files
 
@@ -57,7 +57,7 @@ Pathfinder AI now supports:
 - The browser does not persist candidate data in local storage, session storage, or IndexedDB.
 - Saving and AI enrichment are independent explicit choices; both default to off. AI opt-in is available only when the server reports it configured.
 - The History view reads server-backed SQLite snapshots and never recomputes historical results.
-- Saved history is read-only; editing and deletion are not available.
+- Saved history snapshots cannot be edited. An individual snapshot can be deleted from its detail view after explicit confirmation.
 - Learning recommendations are derived only from the supplied role comparison and its deterministic gap analysis.
 - The UI does not link to course marketplaces or claim that suggested topics are verified third-party listings.
 - Résumé text remains editable, and only exact target-skill matches are merged into the editable Candidate Skills field.
@@ -89,6 +89,7 @@ Endpoints:
 - `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
 - `GET /api/v1/analyses/{analysis_id}`
+- `DELETE /api/v1/analyses/{analysis_id}`
 
 The `POST /api/v1/analysis` endpoint receives typed candidate and job information and returns deterministic explanations, interview preparation, and targeted learning recommendations. It accepts an `include_ai_enrichment: bool` flag to optionally trigger generative analysis if a provider is injected.
 
@@ -193,6 +194,32 @@ python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 
 
 The configured database contains sensitive candidate and job snapshots. Use it
 only on a trusted local installation and protect the database file appropriately.
+
+### Saved analysis deletion and privacy
+
+Pathfinder lets a user delete one saved-analysis snapshot at a time from its
+History detail view. The Web flow requires explicit confirmation before calling
+`DELETE /api/v1/analyses/{analysis_id}`. A successful deletion returns HTTP 204
+with no response body. The deleted UUID then disappears from the history list
+and detail APIs. An unknown or already-deleted UUID returns 404; a server without
+configured persistence returns 503.
+
+Deletion removes only the selected `SavedAnalysis` row from Pathfinder's
+configured persistence. It does not affect unrelated saved analyses, an original
+résumé file, pasted résumé source text, a raw job posting, browser downloads,
+source files outside Pathfinder, or records held by OpenAI or another external
+provider. Pathfinder already avoids deliberately persisting most raw import
+source material.
+
+This is logical deletion from normal Pathfinder application access, not a
+cryptographic or forensic secure erase. SQLite free pages, filesystem snapshots,
+backups, storage replicas, or external backup systems may retain historical bytes
+outside Pathfinder's normal access. This feature does not run `VACUUM`, enable
+SQLite secure-delete behavior, or manage storage-layer backups.
+
+Deletion is permanent within Pathfinder and has no undo, trash, or restore flow.
+There is no bulk delete, automated retention, or automatic expiration. The
+SQLite schema and version-2 saved-analysis payload remain unchanged.
 
 ## Optional OpenAI AI Enrichment
 

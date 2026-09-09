@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`494589713e3ed79b5d10d2642a6935318ba04730`
+`6c3a2a7335ee4c9202cf188675a198cc1fa2962e`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 16 — AI-Assisted Job Description Import**
+**Commit 17 — AI-Assisted Candidate Profile Import**
 
 ## Completed MVP-1 Roadmap
 
@@ -40,24 +40,24 @@ These milestones must not be replayed or rebuilt.
 - Commit 14 — Deterministic Resume File Skill Import — complete (PR #18 merged)
 - Commit 15 — Optional OpenAI AI Enrichment — complete (PR #19 merged)
 - Commit 16 — AI-Assisted Job Description Import — complete (PR #20 merged)
+- Commit 17 — AI-Assisted Candidate Profile Import — complete (PR #21 merged)
 
 ## Post-MVP Active Work
 
-**Commit 17 — AI-Assisted Candidate Profile Import**
+**Commit 18 — Saved Analysis Deletion & Privacy Controls**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #21 — Add AI-assisted candidate profile import**
+None
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/21
-
-This authorized post-MVP milestone adds optional AI-assisted Candidate Profile
-drafts from pasted résumé text and supported PDF/DOCX files. Drafts require
-explicit human review and Apply before entering editable Candidate Profile
-fields. Candidate Preferences are excluded. Draft generation does not run
-analysis or save history. Deterministic analysis remains unchanged.
+This authorized post-MVP milestone adds explicit deletion of one selected saved
+analysis from configured persistence. The Web history detail view requires
+confirmation and states that logical deletion is not guaranteed secure erasure
+of database files, backups, or filesystem snapshots. No bulk deletion, undo,
+retention automation, schema migration, deterministic recomputation, or AI work
+is introduced.
 
 ## Existing Capabilities
 
@@ -72,7 +72,7 @@ The repository already contains:
 - provider-neutral optional AI enrichment
 - typed FastAPI analysis endpoints and error contracts
 - version-2 SQLite persistence for complete analysis snapshots
-- saved-analysis list and detail API endpoints
+- saved-analysis list, detail, and individual delete API endpoints
 - an explicit local SQLite persistence runtime
 - a React/TypeScript/Vite web experience for new and saved analyses
 - deterministic role-relevant skill import from pasted résumé text
@@ -80,8 +80,9 @@ The repository already contains:
 - explicit optional OpenAI enrichment with server-side configuration
 - capability discovery and default-off Web AI opt-in
 - optional AI-assisted job-description drafting
-- optional AI-assisted Candidate Profile drafting on the active branch
+- optional AI-assisted Candidate Profile drafting
 - explicit draft review/apply workflows
+- confirmation-gated deletion of individual saved-analysis snapshots
 
 ## Architectural Boundary
 
