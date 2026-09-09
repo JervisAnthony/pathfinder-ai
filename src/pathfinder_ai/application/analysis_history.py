@@ -77,6 +77,10 @@ class AnalysisRepository(Protocol):
         """Retrieve a complete analysis snapshot by ID."""
         ...
 
+    def delete(self, analysis_id: uuid.UUID) -> bool:
+        """Delete one analysis by ID and report whether it existed."""
+        ...
+
     def list_recent(
         self, *, limit: int, offset: int
     ) -> tuple[SavedAnalysisSummary, ...]:
@@ -136,6 +140,10 @@ class AnalysisHistoryService:
         Retrieve a specific saved analysis.
         """
         return self._repository.get(analysis_id)
+
+    def delete_analysis(self, analysis_id: uuid.UUID) -> bool:
+        """Delete a specific saved analysis without recomputing it."""
+        return self._repository.delete(analysis_id)
 
     def list_history(
         self, limit: int = 20, offset: int = 0

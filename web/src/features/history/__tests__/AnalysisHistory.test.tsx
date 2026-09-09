@@ -1,6 +1,12 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { analyzeCandidateJob, ApiError, getAnalysisHistory, getSavedAnalysis } from '../../../api/pathfinder';
+import {
+  analyzeCandidateJob,
+  ApiError,
+  deleteSavedAnalysis,
+  getAnalysisHistory,
+  getSavedAnalysis,
+} from '../../../api/pathfinder';
 import { SavedAnalysisDetail, SavedAnalysisSummary } from '../../../types/api';
 import { AnalysisHistory } from '../AnalysisHistory';
 import { formatSavedTimestamp } from '../formatting';
@@ -10,6 +16,7 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(),
   getSavedAnalysis: vi.fn(),
+  deleteSavedAnalysis: vi.fn(),
   analyzeCandidateJob: vi.fn(),
 }));
 
@@ -161,6 +168,89 @@ describe('AnalysisHistory', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '← Back to History' }));
     expect(screen.getByRole('heading', { name: 'Analysis History' })).toBeInTheDocument();
+  });
+
+  it('confirms, cancels, and deletes exactly once before refreshing history', async () => {
+    vi.mocked(getAnalysisHistory)
+      .mockResolvedValueOnce({ items: [summary] })
+      .mockResolvedValue({ items: [] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    let resolveDelete!: () => void;
+    vi.mocked(deleteSavedAnalysis).mockReturnValue(
+      new Promise<void>((resolve) => { resolveDelete = resolve; }),
+    );
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    expect(deleteSavedAnalysis).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Delete this saved analysis?');
+    expect(dialog).toHaveTextContent('cannot be undone in Pathfinder');
+    expect(dialog).toHaveTextContent('not a guaranteed secure erase');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(deleteSavedAnalysis).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    const permanent = screen.getByRole('button', { name: 'Delete permanently' });
+    fireEvent.click(permanent);
+    expect(await screen.findByRole('status')).toHaveTextContent('Deleting saved analysis');
+    expect(permanent).toBeDisabled();
+    fireEvent.click(permanent);
+    expect(deleteSavedAnalysis).toHaveBeenCalledTimes(1);
+    expect(deleteSavedAnalysis).toHaveBeenCalledWith(summary.analysis_id);
+    resolveDelete();
+
+    expect(await screen.findByText('No saved analyses yet.')).toBeInTheDocument();
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0);
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new ApiError('private', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('private', 503, 'persistence_unavailable'), 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'],
+    [new Error('private network'), 'Pathfinder could not delete this saved analysis. Please try again.'],
+  ])('preserves detail and shows a safe deletion failure', async (failure, message) => {
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(deleteSavedAnalysis).mockRejectedValueOnce(failure);
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '← Back to History' })).toBeInTheDocument();
+    expect(screen.getByText('<script>alert("no")</script>')).toBeInTheDocument();
+    expect(document.querySelector('script')).toBeNull();
+  });
+
+  it('returns to the previous page after deleting its only item', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      ...summary,
+      analysis_id: `${summary.analysis_id}-${index}`,
+      job_title: `Role ${index}`,
+    }));
+    vi.mocked(getAnalysisHistory)
+      .mockResolvedValueOnce({ items: firstPage })
+      .mockResolvedValueOnce({ items: [summary] })
+      .mockResolvedValue({ items: firstPage });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(deleteSavedAnalysis).mockResolvedValue();
+    render(<AnalysisHistory />);
+    await screen.findByText('Role 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+
+    expect(await screen.findByText('Page 1')).toBeInTheDocument();
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0);
   });
 
   it('handles legacy recommendations and detail not found', async () => {

@@ -41,12 +41,17 @@ class FakeAIProvider(AIEnrichmentProvider):
 class FakeRepository(AnalysisRepository):
     def __init__(self) -> None:
         self.saved: dict[uuid.UUID, SavedAnalysis] = {}
+        self.deleted_ids: list[uuid.UUID] = []
 
     def save(self, analysis: SavedAnalysis) -> None:
         self.saved[analysis.analysis_id] = analysis
 
     def get(self, analysis_id: uuid.UUID) -> SavedAnalysis | None:
         return self.saved.get(analysis_id)
+
+    def delete(self, analysis_id: uuid.UUID) -> bool:
+        self.deleted_ids.append(analysis_id)
+        return self.saved.pop(analysis_id, None) is not None
 
     def list_recent(
         self, *, limit: int, offset: int
@@ -248,6 +253,82 @@ def test_history_detail_persistence_unavailable() -> None:
 
     response = client.get(f"/api/v1/analyses/{uuid.uuid4()}")
     assert response.status_code == 503
+
+
+def test_delete_analysis_isolated_no_content_and_not_recomputed(
+    valid_payload: dict[str, Any],
+    fake_repo: FakeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = FakeAIProvider()
+    client = TestClient(create_app(analysis_repository=fake_repo, ai_provider=provider))
+    valid_payload["save_analysis"] = True
+    first = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+    second = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+
+    def forbidden_explain(self: Any, candidate: Any, job: Any) -> None:
+        raise AssertionError("Deletion must not run deterministic analysis")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", forbidden_explain)
+
+    response = client.delete(f"/api/v1/analyses/{first}")
+
+    assert response.status_code == 204
+    assert response.content == b""
+    assert fake_repo.deleted_ids == [uuid.UUID(first)]
+    assert provider.requests == []
+    assert client.get(f"/api/v1/analyses/{first}").status_code == 404
+    history_ids = {
+        item["analysis_id"] for item in client.get("/api/v1/analyses").json()["items"]
+    }
+    assert history_ids == {second}
+    assert client.get(f"/api/v1/analyses/{second}").status_code == 200
+
+    repeated = client.delete(f"/api/v1/analyses/{first}")
+    assert repeated.status_code == 404
+    assert repeated.json()["error"]["code"] == "analysis_not_found"
+    assert fake_repo.deleted_ids == [uuid.UUID(first), uuid.UUID(first)]
+
+
+def test_delete_analysis_unknown_and_persistence_unavailable(
+    fake_repo: FakeRepository,
+) -> None:
+    unknown_id = uuid.uuid4()
+    unknown = TestClient(create_app(analysis_repository=fake_repo)).delete(
+        f"/api/v1/analyses/{unknown_id}"
+    )
+    unavailable = TestClient(create_app()).delete(f"/api/v1/analyses/{unknown_id}")
+
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "analysis_not_found"
+    assert unavailable.status_code == 503
+    assert unavailable.json()["error"]["code"] == "persistence_unavailable"
+    assert str(unknown_id) not in unknown.text
+    assert str(unknown_id) not in unavailable.text
+
+
+def test_delete_analysis_invalid_uuid_is_safe(fake_repo: FakeRepository) -> None:
+    response = TestClient(create_app(analysis_repository=fake_repo)).delete(
+        "/api/v1/analyses/not-a-uuid"
+    )
+
+    _assert_validation_error(response, "analysis_id")
+    assert fake_repo.deleted_ids == []
+
+
+def test_openapi_exposes_delete_analysis_contract() -> None:
+    operation = (
+        TestClient(create_app())
+        .get("/openapi.json")
+        .json()["paths"]["/api/v1/analyses/{analysis_id}"]["delete"]
+    )
+
+    assert set(operation["responses"]) >= {"204", "404", "422", "503"}
+    assert "content" not in operation["responses"]["204"]
 
 
 @pytest.mark.parametrize(

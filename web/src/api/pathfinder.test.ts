@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
   ApiError,
+  deleteSavedAnalysis,
   getAnalysisHistory,
   getSavedAnalysis,
   importResumeSkills,
@@ -182,6 +183,41 @@ describe('saved analysis API', () => {
 
     await expect(getSavedAnalysis('id/with spaces')).resolves.toEqual(savedDetail);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%2Fwith%20spaces', undefined);
+  });
+
+  it('deletes an encoded saved analysis without decoding the 204 response', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(null, { status: 204 }),
+    );
+
+    await expect(deleteSavedAnalysis('id/with spaces')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%2Fwith%20spaces', {
+      method: 'DELETE',
+    });
+  });
+
+  it.each([
+    [404, 'analysis_not_found'],
+    [503, 'persistence_unavailable'],
+    [500, 'internal_server_error'],
+  ])('retains delete API errors for HTTP %i', async (status, code) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      errorResponse(status, code, 'Private backend message'),
+    );
+
+    await expect(deleteSavedAnalysis(savedDetail.analysis_id)).rejects.toMatchObject({
+      status,
+      code,
+    });
+  });
+
+  it('wraps delete network failures safely', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('private network detail'));
+
+    await expect(deleteSavedAnalysis(savedDetail.analysis_id)).rejects.toMatchObject({
+      message: 'Unable to reach Pathfinder. Check your connection and try again.',
+      status: undefined,
+    });
   });
 
   it('retains not-found and persistence errors', async () => {

@@ -385,6 +385,49 @@ def test_sqlite_repository_get_not_found(tmp_path: Path) -> None:
     assert repo.get(uuid.uuid4()) is None
 
 
+def test_sqlite_repository_deletes_one_record_and_persists_absence(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    db_path = tmp_path / "delete.db"
+    repository = SQLiteAnalysisRepository(db_path)
+    survivor = replace(sample_analysis, analysis_id=uuid.uuid4())
+    repository.save(sample_analysis)
+    repository.save(survivor)
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        schema_before = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master "
+            "WHERE name IN ('saved_analyses', 'idx_saved_analyses_created_at') "
+            "ORDER BY type, name"
+        ).fetchall()
+
+    assert repository.delete(sample_analysis.analysis_id) is True
+    assert repository.get(sample_analysis.analysis_id) is None
+    assert repository.get(survivor.analysis_id) == survivor
+    assert [
+        summary.analysis_id for summary in repository.list_recent(limit=10, offset=0)
+    ] == [survivor.analysis_id]
+    assert repository.delete(uuid.uuid4()) is False
+
+    reopened = SQLiteAnalysisRepository(db_path)
+    assert reopened.get(sample_analysis.analysis_id) is None
+    assert reopened.get(survivor.analysis_id) == survivor
+
+    with closing(sqlite3.connect(db_path)) as connection:
+        surviving_version = connection.execute(
+            "SELECT payload_version FROM saved_analyses WHERE analysis_id = ?",
+            (str(survivor.analysis_id),),
+        ).fetchone()[0]
+        schema_after = connection.execute(
+            "SELECT type, name, sql FROM sqlite_master "
+            "WHERE name IN ('saved_analyses', 'idx_saved_analyses_created_at') "
+            "ORDER BY type, name"
+        ).fetchall()
+
+    assert surviving_version == CURRENT_PAYLOAD_VERSION == 2
+    assert schema_after == schema_before
+
+
 def test_unsupported_payload_version() -> None:
     with pytest.raises(ValueError, match="Unsupported payload version: 99"):
         decode_analysis("{}", 99)
