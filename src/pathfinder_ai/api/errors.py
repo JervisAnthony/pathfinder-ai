@@ -89,6 +89,32 @@ class JobDescriptionImportUnavailableError(Exception):
     """Job drafting was requested without an injected provider."""
 
 
+class CandidateProfileImportUnavailableError(Exception):
+    """Candidate Profile drafting was requested without an injected provider."""
+
+
+async def candidate_profile_import_unavailable_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    del request, exc
+    return create_error_response(
+        503,
+        "candidate_profile_import_unavailable",
+        "Candidate Profile import is not configured on this Pathfinder server.",
+    )
+
+
+async def candidate_profile_import_error_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    del request, exc
+    return create_error_response(
+        502,
+        "candidate_profile_import_error",
+        "Candidate Profile import could not be completed.",
+    )
+
+
 async def job_description_import_unavailable_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:

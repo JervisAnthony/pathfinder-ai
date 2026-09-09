@@ -3,12 +3,23 @@ Pydantic v2 schemas for the FastAPI analysis API and domain mapping functions.
 """
 
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 from typing import Self, overload
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
+from pathfinder_ai.application.candidate_profile_import import (
+    MAX_CANDIDATE_DRAFT_CERTIFICATIONS,
+    MAX_CANDIDATE_DRAFT_EDUCATION,
+    MAX_CANDIDATE_DRAFT_ENTRY_SKILLS,
+    MAX_CANDIDATE_DRAFT_EXPERIENCE,
+    MAX_CANDIDATE_DRAFT_PROJECTS,
+    MAX_CANDIDATE_DRAFT_SKILLS,
+    CandidateProfileDraft,
+    validate_resume_text,
+)
 from pathfinder_ai.application.interview_preparation import (
     InterviewPreparation,
 )
@@ -57,7 +68,66 @@ class BaseStrictModel(BaseModel):
 class PathfinderCapabilitiesSchema(BaseStrictModel):
     ai_enrichment_available: bool
     job_description_import_available: bool
+    candidate_profile_import_available: bool
     persistence_available: bool
+
+
+class CandidateProfileDraftRequestSchema(BaseStrictModel):
+    raw_resume_text: str = Field(max_length=MAX_RESUME_TEXT_LENGTH)
+
+    @field_validator("raw_resume_text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        return validate_resume_text(value)
+
+
+class CandidateExperienceDraftSchema(BaseStrictModel):
+    role_title: str
+    company_name: str | None
+    duration_months: int | None
+    description: str | None
+    skills: tuple[str, ...] = Field(max_length=MAX_CANDIDATE_DRAFT_ENTRY_SKILLS)
+
+
+class CandidateEducationDraftSchema(BaseStrictModel):
+    level: EducationLevel | None
+    field_of_study: str | None
+    institution: str | None
+    description: str | None
+
+
+class CandidateProjectDraftSchema(BaseStrictModel):
+    name: str
+    description: str | None
+    skills: tuple[str, ...] = Field(max_length=MAX_CANDIDATE_DRAFT_ENTRY_SKILLS)
+
+
+class CandidateCertificationDraftSchema(BaseStrictModel):
+    name: str
+    issuer: str | None
+    description: str | None
+
+
+class CandidateProfileDraftResponseSchema(BaseStrictModel):
+    skills: tuple[str, ...] = Field(max_length=MAX_CANDIDATE_DRAFT_SKILLS)
+    experience: tuple[CandidateExperienceDraftSchema, ...] = Field(
+        max_length=MAX_CANDIDATE_DRAFT_EXPERIENCE
+    )
+    education: tuple[CandidateEducationDraftSchema, ...] = Field(
+        max_length=MAX_CANDIDATE_DRAFT_EDUCATION
+    )
+    projects: tuple[CandidateProjectDraftSchema, ...] = Field(
+        max_length=MAX_CANDIDATE_DRAFT_PROJECTS
+    )
+    certifications: tuple[CandidateCertificationDraftSchema, ...] = Field(
+        max_length=MAX_CANDIDATE_DRAFT_CERTIFICATIONS
+    )
+
+    @classmethod
+    def from_draft(
+        cls, draft: CandidateProfileDraft
+    ) -> "CandidateProfileDraftResponseSchema":
+        return cls(**asdict(draft))
 
 
 class JobDescriptionDraftRequestSchema(BaseStrictModel):

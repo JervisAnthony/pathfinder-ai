@@ -178,6 +178,7 @@ def test_independent_runtime_adapters_and_fresh_clients(
             assert client.get("/api/v1/capabilities").json() == {
                 "ai_enrichment_available": ai,
                 "job_description_import_available": ai,
+                "candidate_profile_import_available": ai,
                 "persistence_available": persistence,
             }
             payload = _valid_payload()
@@ -186,9 +187,16 @@ def test_independent_runtime_adapters_and_fresh_clients(
         if ai:
             assert first_app.state.ai_provider is not second_app.state.ai_provider
             assert first_app.state.job_description_import_provider._client is clients[0]
+            assert (
+                first_app.state.candidate_profile_import_provider._client is clients[0]
+            )
             assert first_app.state.ai_provider._client is clients[0]
             assert (
                 first_app.state.job_description_import_provider._model
+                == "synthetic-configured-model"
+            )
+            assert (
+                first_app.state.candidate_profile_import_provider._model
                 == "synthetic-configured-model"
             )
             for client in clients:
@@ -221,6 +229,7 @@ def test_create_app_ignores_environment_and_runtime_treats_blank_as_unset(monkey
         assert client.get("/api/v1/capabilities").json() == {
             "ai_enrichment_available": False,
             "job_description_import_available": False,
+            "candidate_profile_import_available": False,
             "persistence_available": False,
         }
     monkeypatch.delenv("PATHFINDER_SQLITE_PATH")
