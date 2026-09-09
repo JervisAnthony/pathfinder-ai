@@ -99,7 +99,47 @@ export interface AnalysisRequest {
 export interface PathfinderCapabilities {
   ai_enrichment_available: boolean;
   job_description_import_available: boolean;
+  candidate_profile_import_available: boolean;
   persistence_available: boolean;
+}
+
+export interface CandidateExperienceDraft {
+  role_title: string;
+  company_name: string | null;
+  duration_months: number | null;
+  description: string | null;
+  skills: string[];
+}
+
+export interface CandidateEducationDraft {
+  level: EducationLevel | null;
+  field_of_study: string | null;
+  institution: string | null;
+  description: string | null;
+}
+
+export interface CandidateProjectDraft {
+  name: string;
+  description: string | null;
+  skills: string[];
+}
+
+export interface CandidateCertificationDraft {
+  name: string;
+  issuer: string | null;
+  description: string | null;
+}
+
+export interface CandidateProfileDraftResponse {
+  skills: string[];
+  experience: CandidateExperienceDraft[];
+  education: CandidateEducationDraft[];
+  projects: CandidateProjectDraft[];
+  certifications: CandidateCertificationDraft[];
+}
+
+export interface CandidateProfileDraftRequest {
+  raw_resume_text: string;
 }
 
 export interface JobDescriptionDraftRequest {

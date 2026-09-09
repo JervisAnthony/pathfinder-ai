@@ -1,6 +1,17 @@
 import React, { useState } from 'react';
 import { ApiError, importResumeSkills } from '../../api/pathfinder';
-import { AnalysisRequest, EducationLevel, WorkMode, JobDescriptionDraftResponse } from '../../types/api';
+import { AnalysisRequest, EducationLevel, WorkMode, JobDescriptionDraftResponse, CandidateProfileDraftResponse } from '../../types/api';
+import { CandidateProfileImport } from './CandidateProfileImport';
+import {
+  CertificationForm,
+  EducationForm,
+  ExperienceForm,
+  ProjectForm,
+  mergeCandidateCertifications,
+  mergeCandidateEducations,
+  mergeCandidateExperiences,
+  mergeCandidateProjects,
+} from './candidateDraftMerge';
 import { JobDescriptionImport } from './JobDescriptionImport';
 import { mergeDraftEntries, mergeDraftSkills } from './jobDraftMerge';
 import { commaSeparatedSkills, mergeSkillText, newlineResponsibilities } from './utils';
@@ -14,12 +25,8 @@ interface Props {
   aiEnrichmentAvailable?: boolean;
   aiAvailabilityMessage?: string;
   jobDescriptionImportAvailable?: boolean;
+  candidateProfileImportAvailable?: boolean;
 }
-
-interface ExperienceForm { role_title: string; company_name: string; duration_months: string; description: string; skills: string }
-interface EducationForm { level: EducationLevel; field_of_study: string; institution: string; description: string }
-interface ProjectForm { name: string; description: string; skills: string }
-interface CertificationForm { name: string; issuer: string; description: string }
 
 const educationLevels: Array<{ value: EducationLevel; label: string }> = [
   { value: 'high_school', label: 'High School' },
@@ -44,7 +51,7 @@ function separatedText(value: string): string[] {
   return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable = false, aiAvailabilityMessage, jobDescriptionImportAvailable = false }: Props) {
+export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable = false, aiAvailabilityMessage, jobDescriptionImportAvailable = false, candidateProfileImportAvailable = false }: Props) {
   const [candidateSkills, setCandidateSkills] = useState('');
   const [experiences, setExperiences] = useState<ExperienceForm[]>([]);
   const [educations, setEducations] = useState<EducationForm[]>([]);
@@ -87,6 +94,14 @@ export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable
     setJobResponsibilities((current) => mergeDraftEntries(current.split('\n'), draft.responsibilities).join('\n'));
     const skills = mergeDraftSkills(jobRequiredSkills, jobPreferredSkills, draft);
     setJobRequiredSkills(skills.required); setJobPreferredSkills(skills.preferred);
+  };
+
+  const applyCandidateDraft = (draft: CandidateProfileDraftResponse) => {
+    setCandidateSkills((current) => mergeSkillText(current, draft.skills.map((name) => ({ name }))));
+    setExperiences((current) => mergeCandidateExperiences(current, draft.experience));
+    setEducations((current) => mergeCandidateEducations(current, draft.education));
+    setProjects((current) => mergeCandidateProjects(current, draft.projects));
+    setCertifications((current) => mergeCandidateCertifications(current, draft.certifications));
   };
 
   const updateItem = <T,>(items: T[], setItems: React.Dispatch<React.SetStateAction<T[]>>, index: number, update: Partial<T>) => {
@@ -237,6 +252,7 @@ export function AnalysisForm({ onSubmit, isLoading, error, aiEnrichmentAvailable
       <div className="form-columns">
         <div className="form-column">
           <h2>Candidate Profile</h2>
+          <CandidateProfileImport available={candidateProfileImportAvailable} onApply={applyCandidateDraft} />
           <label htmlFor="candidate-skills">Skills (comma-separated)</label>
           <textarea id="candidate-skills" value={candidateSkills} onChange={(event) => setCandidateSkills(event.target.value)} rows={3} />
 
