@@ -12,17 +12,24 @@ from pathfinder_ai.application.analysis_history import AnalysisRepository
 
 @pytest.mark.parametrize("ai", [False, True])
 @pytest.mark.parametrize("job_import", [False, True])
+@pytest.mark.parametrize("profile_import", [False, True])
 @pytest.mark.parametrize("persistence", [False, True])
-def test_capabilities_only_report_configuration(ai, job_import, persistence):
+def test_capabilities_only_report_configuration(
+    ai, job_import, profile_import, persistence
+):
     provider = Mock(spec=AIEnrichmentProvider) if ai else None
     repository = Mock(spec=AnalysisRepository) if persistence else None
     importer = Mock() if job_import else None
-    with TestClient(create_app(provider, repository, importer)) as client:
+    profile_importer = Mock() if profile_import else None
+    with TestClient(
+        create_app(provider, repository, importer, profile_importer)
+    ) as client:
         response = client.get("/api/v1/capabilities")
     assert response.status_code == 200
     assert response.json() == {
         "ai_enrichment_available": ai,
         "job_description_import_available": job_import,
+        "candidate_profile_import_available": profile_import,
         "persistence_available": persistence,
     }
     if provider is not None:
@@ -31,6 +38,8 @@ def test_capabilities_only_report_configuration(ai, job_import, persistence):
         assert repository.mock_calls == []
     if importer is not None:
         assert importer.mock_calls == []
+    if profile_importer is not None:
+        assert profile_importer.mock_calls == []
 
 
 def test_capabilities_openapi_is_typed():
@@ -45,6 +54,7 @@ def test_capabilities_openapi_is_typed():
     assert set(properties) == {
         "ai_enrichment_available",
         "job_description_import_available",
+        "candidate_profile_import_available",
         "persistence_available",
     }
     assert all(field["type"] == "boolean" for field in properties.values())

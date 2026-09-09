@@ -26,7 +26,7 @@ const submit = () => fireEvent.click(screen.getByRole('button', { name: 'Analyze
 
 describe('optional AI enrichment', () => {
   beforeEach(() => {
-    vi.mocked(getCapabilities).mockReset().mockResolvedValue({ ai_enrichment_available: true, job_description_import_available: true, persistence_available: true });
+    vi.mocked(getCapabilities).mockReset().mockResolvedValue({ ai_enrichment_available: true, job_description_import_available: true, candidate_profile_import_available: true, persistence_available: true });
     vi.mocked(analyzeCandidateJob).mockReset().mockResolvedValue(result);
   });
 
@@ -45,7 +45,7 @@ describe('optional AI enrichment', () => {
   });
 
   it('keeps AI unavailable when not configured', async () => {
-    vi.mocked(getCapabilities).mockResolvedValue({ ai_enrichment_available: false, job_description_import_available: false, persistence_available: true });
+    vi.mocked(getCapabilities).mockResolvedValue({ ai_enrichment_available: false, job_description_import_available: false, candidate_profile_import_available: false, persistence_available: true });
     render(<App />);
     expect(await screen.findByText('AI enrichment is not configured on this Pathfinder server.')).toBeInTheDocument();
     expect(aiControl()).toBeDisabled(); expect(aiControl()).not.toBeChecked();

@@ -10,6 +10,8 @@ import {
   PathfinderCapabilities,
   JobDescriptionDraftRequest,
   JobDescriptionDraftResponse,
+  CandidateProfileDraftResponse,
+  CandidateProfileDraftRequest,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -95,14 +97,96 @@ export async function getCapabilities(): Promise<PathfinderCapabilities> {
   if (typeof value !== 'object' || value === null
     || !('ai_enrichment_available' in value) || typeof value.ai_enrichment_available !== 'boolean'
     || !('job_description_import_available' in value) || typeof value.job_description_import_available !== 'boolean'
+    || !('candidate_profile_import_available' in value) || typeof value.candidate_profile_import_available !== 'boolean'
     || !('persistence_available' in value) || typeof value.persistence_available !== 'boolean') {
     throw new ApiError('Pathfinder returned an invalid capabilities response.');
   }
   return {
     ai_enrichment_available: value.ai_enrichment_available,
     job_description_import_available: value.job_description_import_available,
+    candidate_profile_import_available: value.candidate_profile_import_available,
     persistence_available: value.persistence_available,
   };
+}
+
+const educationLevels = ['high_school', 'associate', 'bachelor', 'master', 'doctorate', 'other'];
+
+function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every((key) => key in value);
+}
+
+function nullableString(value: unknown): boolean {
+  return value === null || typeof value === 'string';
+}
+
+function stringList(value: unknown, limit: number): value is string[] {
+  return Array.isArray(value) && value.length <= limit
+    && value.every((item) => typeof item === 'string');
+}
+
+function isCandidateProfileDraft(value: unknown): value is CandidateProfileDraftResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const draft = value as Record<string, unknown>;
+  if (!exactKeys(draft, ['skills', 'experience', 'education', 'projects', 'certifications'])
+    || !stringList(draft.skills, 100)
+    || !Array.isArray(draft.experience) || draft.experience.length > 20
+    || !Array.isArray(draft.education) || draft.education.length > 10
+    || !Array.isArray(draft.projects) || draft.projects.length > 20
+    || !Array.isArray(draft.certifications) || draft.certifications.length > 20
+    || !(draft.skills.length || draft.experience.length || draft.education.length
+      || draft.projects.length || draft.certifications.length)) return false;
+  return draft.experience.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const entry = item as Record<string, unknown>;
+    return exactKeys(entry, ['role_title', 'company_name', 'duration_months', 'description', 'skills'])
+      && typeof entry.role_title === 'string' && Boolean(entry.role_title.trim())
+      && nullableString(entry.company_name)
+      && nullableString(entry.description) && stringList(entry.skills, 30)
+      && (entry.duration_months === null || (typeof entry.duration_months === 'number'
+        && Number.isInteger(entry.duration_months) && entry.duration_months > 0));
+  }) && draft.education.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const entry = item as Record<string, unknown>;
+    return exactKeys(entry, ['level', 'field_of_study', 'institution', 'description'])
+      && (entry.level === null || educationLevels.includes(entry.level as string))
+      && nullableString(entry.field_of_study) && nullableString(entry.institution)
+      && nullableString(entry.description);
+  }) && draft.projects.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const entry = item as Record<string, unknown>;
+    return exactKeys(entry, ['name', 'description', 'skills'])
+      && typeof entry.name === 'string' && Boolean(entry.name.trim())
+      && nullableString(entry.description)
+      && stringList(entry.skills, 30);
+  }) && draft.certifications.every((item: unknown) => {
+    if (typeof item !== 'object' || item === null) return false;
+    const entry = item as Record<string, unknown>;
+    return exactKeys(entry, ['name', 'issuer', 'description'])
+      && typeof entry.name === 'string' && Boolean(entry.name.trim())
+      && nullableString(entry.issuer)
+      && nullableString(entry.description);
+  });
+}
+
+async function candidateDraftRequest(input: RequestInfo | URL, init: RequestInit): Promise<CandidateProfileDraftResponse> {
+  const value = await requestJson<unknown>(input, init);
+  if (!isCandidateProfileDraft(value)) {
+    throw new ApiError('Pathfinder returned an invalid Candidate Profile draft.');
+  }
+  return value;
+}
+
+export function createCandidateProfileDraft(request: CandidateProfileDraftRequest): Promise<CandidateProfileDraftResponse> {
+  return candidateDraftRequest('/api/v1/candidate-profile/draft', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+}
+
+export function createCandidateProfileFileDraft(file: File): Promise<CandidateProfileDraftResponse> {
+  const body = new FormData();
+  body.append('file', file);
+  return candidateDraftRequest('/api/v1/candidate-profile/file-draft', { method: 'POST', body });
 }
 
 export async function createJobDescriptionDraft(request: JobDescriptionDraftRequest): Promise<JobDescriptionDraftResponse> {
