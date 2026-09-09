@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-08
+Last updated: 2026-09-09
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`a3e0be53dd9053b4366e3766caada324df83a1a3`
+`494589713e3ed79b5d10d2642a6935318ba04730`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 15 — Optional OpenAI AI Enrichment**
+**Commit 16 — AI-Assisted Job Description Import**
 
 ## Completed MVP-1 Roadmap
 
@@ -39,22 +39,22 @@ These milestones must not be replayed or rebuilt.
 - Commit 13 — Deterministic Resume Skill Import — complete (PR #17 merged)
 - Commit 14 — Deterministic Resume File Skill Import — complete (PR #18 merged)
 - Commit 15 — Optional OpenAI AI Enrichment — complete (PR #19 merged)
+- Commit 16 — AI-Assisted Job Description Import — complete (PR #20 merged)
 
 ## Post-MVP Active Work
 
-**Commit 16 — AI-Assisted Job Description Import**
+**Commit 17 — AI-Assisted Candidate Profile Import**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #20 — Add AI-assisted job description import**
+**None**
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/20
-
-This authorized post-MVP milestone adds optional AI-assisted structured drafts
-from supplied job-posting text. Drafts require explicit human review and Apply
-before entering editable Target Job fields. Draft generation does not run
+This authorized post-MVP milestone adds optional AI-assisted Candidate Profile
+drafts from pasted résumé text and supported PDF/DOCX files. Drafts require
+explicit human review and Apply before entering editable Candidate Profile
+fields. Candidate Preferences are excluded. Draft generation does not run
 analysis or save history. Deterministic analysis remains unchanged.
 
 ## Existing Capabilities
@@ -77,8 +77,9 @@ The repository already contains:
 - deterministic PDF/DOCX résumé file skill import
 - explicit optional OpenAI enrichment with server-side configuration
 - capability discovery and default-off Web AI opt-in
-- optional AI-assisted job-description drafting on the active branch
-- explicit draft review/apply workflow on the active branch
+- optional AI-assisted job-description drafting
+- optional AI-assisted Candidate Profile drafting on the active branch
+- explicit draft review/apply workflows
 
 ## Architectural Boundary
 
@@ -94,7 +95,9 @@ remain deterministic and independent of:
 
 AI enrichment remains separate from deterministic scoring and recommendations.
 Résumé skill import is also deterministic and independent of LLMs, persistence,
-and external services.
+and external services. AI-assisted Candidate Profile drafting is a distinct,
+explicit external-processing workflow and remains outside the domain boundary
+until the user applies reviewed fields.
 
 ## Next Post-MVP Milestone
 

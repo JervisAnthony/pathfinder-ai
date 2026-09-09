@@ -23,6 +23,7 @@ Pathfinder AI now supports:
 - provider-neutral optional AI enrichment abstraction
 - an explicitly configured OpenAI enrichment adapter with Web opt-in
 - optional AI-assisted job-description drafting with explicit preview and Apply
+- optional AI-assisted Candidate Profile drafting from text or PDF/DOCX with explicit preview and Apply
 - explicit opt-in SQLite persistence for complete analysis snapshots
 - a React/TypeScript/Vite frontend for submitting analyses and browsing read-only saved history
 - deterministic role-relevant skill import from pasted résumé text
@@ -34,7 +35,7 @@ Pathfinder AI now supports:
 - pasted résumé text can be compared only with supplied target required and preferred skills
 - résumé skill import uses deterministic exact phrase matching and does not infer synonyms
 - users review and edit imported skills before analysis
-- PDF/DOCX text extraction is used only for exact target-skill import; no general-purpose résumé parsing, OCR, or ATS simulation is supported
+- PDF/DOCX text extraction supports exact target-skill import and optional AI-assisted Candidate Profile drafting; no general-purpose or authoritative résumé parser, OCR, or ATS simulation is provided
 - no fuzzy/semantic matching is performed
 - no hiring probability is produced
 - explanation results are deterministic
@@ -64,7 +65,14 @@ Pathfinder AI now supports:
 
 > **Privacy:** Saved analysis history may contain candidate profile information and should be treated as sensitive local application data. Pathfinder does not currently provide authentication, authorization, encryption at rest, account isolation, or multi-user isolation.
 
-> **Résumé privacy:** Pasted résumé text may contain sensitive personal information. The web client sends it to the configured Pathfinder backend only for the skill-import request. Pathfinder does not include the raw text in `SavedAnalysis`, analysis-history payloads, or browser storage. Administrators of the configured server or network may still be able to observe request traffic.
+> **Résumé privacy:** Pasted résumé text may contain sensitive personal information. For deterministic skill import, the web client sends it only to the configured Pathfinder backend for that request. Pathfinder does not include the raw text in `SavedAnalysis`, analysis-history payloads, or browser storage. Administrators of the configured server or network may still be able to observe request traffic.
+
+The deterministic résumé skill-import workflow is AI-free. The separate
+AI-assisted Candidate Profile workflow sends raw pasted résumé text, or extracted
+PDF/DOCX text, from the Pathfinder backend to the configured OpenAI provider only
+after the user explicitly requests a draft. The raw source can include identity,
+contact, employment, education, and other personal information even though those
+identity and contact fields are excluded from the structured draft.
 
 ## API Surface & Persistence
 
@@ -75,6 +83,8 @@ Endpoints:
 - `GET /api/v1/capabilities`
 - `POST /api/v1/analysis`
 - `POST /api/v1/job-description/draft`
+- `POST /api/v1/candidate-profile/draft`
+- `POST /api/v1/candidate-profile/file-draft`
 - `POST /api/v1/resume/skill-import`
 - `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
@@ -222,7 +232,8 @@ persistence only, AI only, and both together are supported. Plain `create_app()`
 remains environment-independent and has no provider or persistence unless injected.
 
 `GET /api/v1/capabilities` returns only `ai_enrichment_available`,
-`job_description_import_available`, and `persistence_available` booleans. It describes configured adapters, without
+`job_description_import_available`, `candidate_profile_import_available`, and
+`persistence_available` booleans. It describes configured adapters, without
 contacting OpenAI or verifying keys, models, quota, balance, or network health.
 The Web client loads it when the app initializes. Failure leaves deterministic
 analysis available and AI unavailable; the client does not poll. The checkbox
@@ -306,11 +317,11 @@ refusal, parse failure, or incompatible models fail safely with 502
 `job_description_import_unavailable`. Invalid requests return safe 422 errors.
 
 The existing `PATHFINDER_OPENAI_API_KEY` and `PATHFINDER_OPENAI_MODEL` configuration
-enables both AI capabilities. There is no new setting or default model. Runtime
-shares one SDK client and shutdown lifecycle across both adapters, retaining the
+enables all three AI capabilities. There is no new setting or default model. Runtime
+shares one SDK client and shutdown lifecycle across all three adapters, retaining the
 30-second timeout and disabled automatic retries. Draft calls run in a thread
 pool. Plain `create_app()` remains environment-independent; each provider can be
-injected separately. Persistence remains independent of both AI capabilities.
+injected separately. Persistence remains independent of all three AI capabilities.
 
 The adapter uses `client.responses.parse(..., text_format=...)` with an internal
 Pydantic schema that forbids extra fields, then maps the parsed result into the
@@ -337,6 +348,76 @@ Saving stores the reviewed structured job through the existing version-2
 snapshot format; history never regenerates drafts or analysis. There is no
 persistence migration, new Python dependency, or frontend dependency. Tests use
 synthetic data and fake providers; no live or paid API request is required.
+
+## AI-Assisted Candidate Profile Import
+
+Pathfinder supports optional AI-assisted drafting of the structured Candidate
+Profile fields used by the application, but does not provide a general-purpose
+or authoritative résumé parser. In the Candidate Profile form, the user supplies
+either distinct AI résumé text or a separately selected PDF/DOCX file, explicitly
+chooses **Create Profile Draft from Text** or **Create Profile Draft from File**,
+reviews the resulting preview, and then chooses **Apply Draft to Candidate
+Profile**. Generation alone does not change the form, run deterministic analysis,
+enable downstream AI enrichment, or save history. Applied fields remain editable.
+
+The provider-neutral application contract returns an immutable,
+`CandidateProfileDraft` containing only skills, work experience, education,
+projects, and certifications. It excludes Candidate Preferences and personal
+identity/contact fields. Target titles, preferred locations, and acceptable work
+modes remain manually controlled. Education evidence that cannot safely map to
+an existing `EducationLevel` stays visible in the preview with `level=null` and
+is not applied automatically. Apply preserves existing form values, appends new
+records after them, uses conservative full-record deduplication, and merges skills
+in existing order with case/whitespace-insensitive deduplication.
+
+`POST /api/v1/candidate-profile/draft` accepts only `raw_resume_text`, which must
+contain 1 to 200,000 characters. `POST /api/v1/candidate-profile/file-draft`
+accepts one multipart `file`. Both return a
+strict typed Candidate Profile draft without raw source, filename, provider,
+model, request ID, token usage, or arbitrary metadata. Provider absence returns
+503 `candidate_profile_import_unavailable`; provider/refusal/parse/output failure
+returns 502 `candidate_profile_import_error`; invalid text and document failures
+use the existing safe validation and résumé-file error contracts.
+
+The file workflow receives a PDF/DOCX through the Pathfinder backend, reads at
+most 10 MiB + 1 byte, and reuses the existing bounded document extractor: PDF
+signature and encryption checks, 100-page limit, 200,000-character extracted-text
+limit, and DOCX ZIP/XML safeguards described above. The resulting transient text
+is sent to OpenAI only after the user requests AI drafting. Pathfinder does not
+deliberately send raw file bytes to OpenAI. There is no OCR, image résumé support,
+or legacy DOC support. Framework multipart spooling may still occur before route
+entry under the caveat described in the file-import section.
+
+**External processing and privacy:** AI-assisted Candidate Profile drafting sends
+raw pasted résumé text, or extracted PDF/DOCX text, to the configured OpenAI
+provider. Source content may include name, contact information, employment,
+education, and other personal information even though the strict structured schema
+does not contain identity/contact fields. Generated fields may be inaccurate and
+require human review. Requests use `store=False`, but provider/account data
+policies still apply; Pathfinder does not claim universal zero retention. Raw
+source, file bytes, extracted text, unapplied drafts, prompts, model configuration,
+and provider response metadata are not deliberately logged, placed in browser
+storage, or added to saved analysis. Saving after Apply stores only the final
+reviewed Candidate Profile through the unchanged version-2 persistence format.
+
+The OpenAI adapter uses the configured `PATHFINDER_OPENAI_MODEL` and
+`client.responses.parse(..., text_format=...)` with an internal Pydantic schema
+that forbids extra fields. Each stateless request uses `store=False`,
+`max_output_tokens=3500`, no tools, web/file search, functions, conversation, or
+previous response ID. High-level extraction rules remain separate from untrusted
+résumé input and forbid invented evidence, inferred skill aliases, preferences,
+scoring, employability judgments, and hiring/job recommendations. This structure
+contains available actions and output fields but cannot guarantee perfect prompt
+injection resistance or factual accuracy. Synchronous extraction/provider work
+runs in thread pools. The runtime shares one configured SDK client and one close
+lifecycle across enrichment, job drafting, and Candidate Profile drafting.
+
+The existing deterministic résumé text/file skill import remains separate and
+AI-free: it compares exact target-job skill phrases without sending résumé content
+to OpenAI. Candidate drafting and downstream enrichment are independent explicit
+actions. Deterministic scoring, explanations, interview preparation, learning
+recommendations, persistence schema, and version-2 payload remain unchanged. No
+Python or frontend dependency was added for this feature.
 
 ## Frontend Local Setup
 
