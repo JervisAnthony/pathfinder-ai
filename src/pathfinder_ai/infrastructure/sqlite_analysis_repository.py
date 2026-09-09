@@ -114,6 +114,16 @@ class SQLiteAnalysisRepository(AnalysisRepository):
 
         return decode_analysis(row["payload_json"], row["payload_version"])
 
+    def delete(self, analysis_id: uuid.UUID) -> bool:
+        """Delete one analysis by ID and report whether it existed."""
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM saved_analyses WHERE analysis_id = ?",
+                (str(analysis_id),),
+            )
+            conn.commit()
+            return bool(cursor.rowcount == 1)
+
     def list_recent(
         self, *, limit: int, offset: int
     ) -> tuple[SavedAnalysisSummary, ...]:

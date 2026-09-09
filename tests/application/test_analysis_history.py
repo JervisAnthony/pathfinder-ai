@@ -29,12 +29,17 @@ from pathfinder_ai.domain.skill import Skill
 class FakeRepository(AnalysisRepository):
     def __init__(self) -> None:
         self.saved: dict[uuid.UUID, SavedAnalysis] = {}
+        self.deleted_ids: list[uuid.UUID] = []
 
     def save(self, analysis: SavedAnalysis) -> None:
         self.saved[analysis.analysis_id] = analysis
 
     def get(self, analysis_id: uuid.UUID) -> SavedAnalysis | None:
         return self.saved.get(analysis_id)
+
+    def delete(self, analysis_id: uuid.UUID) -> bool:
+        self.deleted_ids.append(analysis_id)
+        return self.saved.pop(analysis_id, None) is not None
 
     def list_recent(
         self, *, limit: int, offset: int
@@ -199,6 +204,33 @@ def test_list_history_pagination(fake_repo: FakeRepository) -> None:
     assert len(service.list_history(limit=2)) == 2
     assert len(service.list_history(limit=2, offset=2)) == 2
     assert len(service.list_history(limit=2, offset=4)) == 1
+
+
+def test_delete_analysis_removes_only_selected_snapshot(
+    fake_repo: FakeRepository,
+) -> None:
+    service = AnalysisHistoryService(repository=fake_repo)
+    profile, job, explanation, preparation = _minimal_analysis_parts()
+    deleted = service.save_analysis(profile, job, explanation, preparation)
+    survivor = service.save_analysis(profile, job, explanation, preparation)
+
+    assert service.delete_analysis(deleted.analysis_id) is True
+    assert fake_repo.deleted_ids == [deleted.analysis_id]
+    assert service.get_analysis(deleted.analysis_id) is None
+    assert service.get_analysis(survivor.analysis_id) == survivor
+    assert [item.analysis_id for item in service.list_history()] == [
+        survivor.analysis_id
+    ]
+
+
+def test_delete_analysis_returns_false_for_unknown_id(
+    fake_repo: FakeRepository,
+) -> None:
+    service = AnalysisHistoryService(repository=fake_repo)
+    unknown_id = uuid.uuid4()
+
+    assert service.delete_analysis(unknown_id) is False
+    assert fake_repo.deleted_ids == [unknown_id]
 
 
 def test_fake_repository_preserves_none_and_zero_scores(
