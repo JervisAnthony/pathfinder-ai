@@ -46,11 +46,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 18 — Saved Analysis Deletion & Privacy Controls**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #22 — Add saved analysis deletion and privacy controls**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/22
 
 This authorized post-MVP milestone adds explicit deletion of one selected saved
 analysis from configured persistence. The Web history detail view requires
