@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -256,3 +256,34 @@ async def get_analysis(
         ),
         ai_enrichment=map_ai_enrichment_to_schema(analysis.ai_enrichment),
     )
+
+
+@router.delete(
+    "/analyses/{analysis_id}",
+    status_code=204,
+    responses={
+        404: {
+            "model": ErrorResponseSchema,
+            "description": "Analysis not found.",
+        },
+        422: {
+            "model": ErrorResponseSchema,
+            "description": "Analysis ID validation failed.",
+        },
+        503: {
+            "model": ErrorResponseSchema,
+            "description": "Persistence is unavailable.",
+        },
+    },
+)
+async def delete_analysis(analysis_id: uuid.UUID, request: Request) -> Response:
+    """Delete one saved analysis from configured persistence."""
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+
+    history_service = AnalysisHistoryService(repository=repository)
+    if not history_service.delete_analysis(analysis_id):
+        raise AnalysisNotFoundError()
+
+    return Response(status_code=204)
