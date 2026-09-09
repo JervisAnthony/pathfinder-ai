@@ -45,11 +45,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 17 — AI-Assisted Candidate Profile Import**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-**None**
+**PR #21 — Add AI-assisted candidate profile import**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/21
 
 This authorized post-MVP milestone adds optional AI-assisted Candidate Profile
 drafts from pasted résumé text and supported PDF/DOCX files. Drafts require
