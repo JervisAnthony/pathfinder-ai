@@ -47,7 +47,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 19 — Saved Analysis Search & Filters**
 
-Status: **Implementation validated; preparing pull request**
+Status: **PR under review**
+
+Active pull request:
+
+**PR #23 — Add saved analysis search and filters**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/23
 
 This authorized post-MVP milestone adds literal title/company search, optional
 AI-enrichment presence filtering, and inclusive score bounds to saved history.
