@@ -3,6 +3,7 @@
 import uuid
 from dataclasses import replace
 from datetime import UTC, datetime
+from string import punctuation
 
 import pytest
 
@@ -210,7 +211,8 @@ def test_untrusted_multiline_stored_ai_is_inert_and_unicode_survives(
     content = (
         "# heading\n[link](https://example.invalid)\n![image](x)\n"
         "<script>alert(1)</script>\n> blockquote\n`code`\n``` fenced\n"
-        "* emphasis\n_ emphasis\n- list\n\\ { } + . ! 株式会社 café &copy;"
+        "* emphasis\n_ emphasis\n- list\n\\ { } + . ! 株式会社 café &copy;\n"
+        "Setext heading\n===\nhttps://example.invalid"
     )
     analysis = replace(
         export_snapshot,
@@ -221,12 +223,14 @@ def test_untrusted_multiline_stored_ai_is_inert_and_unicode_survives(
     markdown = render_saved_analysis_markdown(analysis)
     assert "## AI Enrichment" in markdown
     assert "Provider: Synthetic \\[provider\\]" in markdown
-    assert "\\<script\\>alert\\(1\\)\\</script\\>" in markdown
-    assert "\\[link\\]\\(https://example\\.invalid\\)" in markdown
+    assert "\\<script\\>alert\\(1\\)\\<\\/script\\>" in markdown
+    assert "\\[link\\]\\(https\\:\\/\\/example\\.invalid\\)" in markdown
     assert "\\!\\[image\\]\\(x\\)" in markdown
     assert "\\`\\`\\` fenced" in markdown
     assert "\n  \\> blockquote" in markdown
-    assert "株式会社 café &amp;copy;" in markdown
+    assert "株式会社 café &amp;copy\\;" in markdown
+    assert "\n  \\=\\=\\=" in markdown
+    assert "https://example.invalid" not in markdown
     assert "<script>" not in markdown
     assert "\n# heading" not in markdown
     assert (
@@ -235,7 +239,7 @@ def test_untrusted_multiline_stored_ai_is_inert_and_unicode_survives(
     assert markdown == render_saved_analysis_markdown(analysis)
 
 
-@pytest.mark.parametrize("character", list("\\`*_{}[]()#+-.!><|~"))
+@pytest.mark.parametrize("character", [char for char in punctuation if char != "&"])
 def test_each_markdown_control_character_is_escaped_in_stored_role(
     export_snapshot: SavedAnalysis, character: str
 ) -> None:

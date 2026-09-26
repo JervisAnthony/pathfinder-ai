@@ -1,18 +1,20 @@
 """Deterministic, inert Markdown reports from existing saved snapshots."""
 
+from string import punctuation
+
 from pathfinder_ai.application.analysis_history import SavedAnalysis
 
 _MARKDOWN_ESCAPES = str.maketrans(
-    {character: f"\\{character}" for character in "\\`*_{}[]()#+-.!><|~"}
+    {
+        character: "&amp;" if character == "&" else f"\\{character}"
+        for character in punctuation
+    }
 )
 
 
 def _escape(value: str) -> str:
     """Keep stored values as text, including multiline and HTML-like content."""
-    return "\n  ".join(
-        line.replace("&", "&amp;").translate(_MARKDOWN_ESCAPES)
-        for line in value.splitlines()
-    )
+    return "\n  ".join(line.translate(_MARKDOWN_ESCAPES) for line in value.splitlines())
 
 
 def render_saved_analysis_markdown(analysis: SavedAnalysis) -> str:
