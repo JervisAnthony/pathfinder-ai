@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryFilter,
     AnalysisHistoryService,
     AnalysisRepository,
     SavedAnalysis,
@@ -30,6 +31,7 @@ class FakeRepository(AnalysisRepository):
     def __init__(self) -> None:
         self.saved: dict[uuid.UUID, SavedAnalysis] = {}
         self.deleted_ids: list[uuid.UUID] = []
+        self.last_history_filter: AnalysisHistoryFilter | None = None
 
     def save(self, analysis: SavedAnalysis) -> None:
         self.saved[analysis.analysis_id] = analysis
@@ -42,8 +44,13 @@ class FakeRepository(AnalysisRepository):
         return self.saved.pop(analysis_id, None) is not None
 
     def list_recent(
-        self, *, limit: int, offset: int
+        self,
+        *,
+        limit: int,
+        offset: int,
+        history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
+        self.last_history_filter = history_filter
         items = list(self.saved.values())
         items.sort(key=lambda x: (x.created_at, x.analysis_id), reverse=True)
         summaries = [
@@ -264,6 +271,44 @@ def test_list_history_invalid_pagination(fake_repo: FakeRepository) -> None:
 
     with pytest.raises(ValueError, match="Offset must be non-negative"):
         service.list_history(offset=-1)
+
+
+def test_history_filter_normalizes_query_and_service_forwards_it(
+    fake_repo: FakeRepository,
+) -> None:
+    history_filter = AnalysisHistoryFilter(query="  Senior\n  Platform\tEngineer  ")
+
+    AnalysisHistoryService(repository=fake_repo).list_history(
+        history_filter=history_filter
+    )
+
+    assert history_filter.query == "Senior Platform Engineer"
+    assert fake_repo.last_history_filter is history_filter
+
+
+def test_history_filter_treats_blank_query_as_inactive() -> None:
+    assert AnalysisHistoryFilter(query=" \n\t ").query is None
+
+
+@pytest.mark.parametrize(
+    ("values", "message"),
+    [
+        ({"query": "x" * 201}, "query must be at most 200 characters"),
+        ({"min_score": -0.1}, "min_score must be a finite value between 0 and 100"),
+        ({"max_score": 100.1}, "max_score must be a finite value between 0 and 100"),
+        ({"min_score": float("inf")}, "min_score must be a finite value"),
+        ({"max_score": float("nan")}, "max_score must be a finite value"),
+        (
+            {"min_score": 80.0, "max_score": 70.0},
+            "min_score must be less than or equal to max_score",
+        ),
+    ],
+)
+def test_history_filter_rejects_invalid_values(
+    values: dict[str, str | float], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        AnalysisHistoryFilter(**values)  # type: ignore[arg-type]
 
 
 def test_invalid_timezone_models() -> None:

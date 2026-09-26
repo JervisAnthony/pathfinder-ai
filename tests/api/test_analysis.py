@@ -14,6 +14,7 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentResult,
 )
 from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryFilter,
     AnalysisRepository,
     SavedAnalysis,
     SavedAnalysisSummary,
@@ -54,7 +55,11 @@ class FakeRepository(AnalysisRepository):
         return self.saved.pop(analysis_id, None) is not None
 
     def list_recent(
-        self, *, limit: int, offset: int
+        self,
+        *,
+        limit: int,
+        offset: int,
+        history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
         items = list(self.saved.values())
         items.sort(key=lambda x: (x.created_at, x.analysis_id), reverse=True)

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryFilter,
     AnalysisRepository,
     SavedAnalysis,
     SavedAnalysisSummary,
@@ -125,12 +126,45 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             return bool(cursor.rowcount == 1)
 
     def list_recent(
-        self, *, limit: int, offset: int
+        self,
+        *,
+        limit: int,
+        offset: int,
+        history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
         """List lightweight analysis summaries."""
+        predicates: list[str] = []
+        parameters: list[str | float | int] = []
+
+        if history_filter is not None:
+            if history_filter.query is not None:
+                escaped_query = (
+                    history_filter.query.replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_")
+                )
+                pattern = f"%{escaped_query}%"
+                predicates.append(
+                    "(LOWER(job_title) LIKE LOWER(?) ESCAPE '\\' "
+                    "OR LOWER(COALESCE(company_name, '')) LIKE LOWER(?) ESCAPE '\\')"
+                )
+                parameters.extend((pattern, pattern))
+            if history_filter.ai_enriched is not None:
+                predicates.append("ai_enriched = ?")
+                parameters.append(1 if history_filter.ai_enriched else 0)
+            if history_filter.min_score is not None:
+                predicates.append("score >= ?")
+                parameters.append(history_filter.min_score)
+            if history_filter.max_score is not None:
+                predicates.append("score <= ?")
+                parameters.append(history_filter.max_score)
+
+        where_clause = f"WHERE {' AND '.join(predicates)}" if predicates else ""
+        parameters.extend((limit, offset))
+
         with self._get_connection() as conn:
             cursor = conn.execute(
-                """
+                f"""
                 SELECT
                     analysis_id,
                     created_at,
@@ -139,10 +173,11 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                     score,
                     ai_enriched
                 FROM saved_analyses
+                {where_clause}
                 ORDER BY created_at DESC, analysis_id DESC
                 LIMIT ? OFFSET ?
                 """,
-                (limit, offset),
+                parameters,
             )
             rows = cursor.fetchall()
 
