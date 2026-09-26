@@ -4,6 +4,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
@@ -38,6 +39,7 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentService,
 )
 from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryFilter,
     AnalysisHistoryService,
     AnalysisRepository,
 )
@@ -172,7 +174,7 @@ async def analyze(
     responses={
         422: {
             "model": ErrorResponseSchema,
-            "description": "Pagination validation failed.",
+            "description": "Pagination or history filter validation failed.",
         },
         503: {
             "model": ErrorResponseSchema,
@@ -184,14 +186,32 @@ async def list_analyses(
     request: Request,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    query: str | None = None,
+    ai_enriched: bool | None = None,
+    min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
+    max_score: Annotated[float | None, Query(ge=0, le=100)] = None,
 ) -> AnalysisHistoryResponseSchema:
     """List recent saved analyses."""
+    try:
+        history_filter = AnalysisHistoryFilter(
+            query=query,
+            ai_enriched=ai_enriched,
+            min_score=min_score,
+            max_score=max_score,
+        )
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"loc": ("query",), "msg": str(exc), "type": "value_error"}]
+        ) from exc
+
     repository = getattr(request.app.state, "analysis_repository", None)
     if repository is None:
         raise PersistenceUnavailableError()
 
     history_service = AnalysisHistoryService(repository=repository)
-    summaries = history_service.list_history(limit=limit, offset=offset)
+    summaries = history_service.list_history(
+        limit=limit, offset=offset, history_filter=history_filter
+    )
 
     return AnalysisHistoryResponseSchema(
         items=[

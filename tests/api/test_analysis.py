@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -23,6 +24,9 @@ from pathfinder_ai.application.interview_preparation import InterviewPreparation
 from pathfinder_ai.application.learning_recommendations import LearningRecommendations
 from pathfinder_ai.domain import JobDescription, MatchExplanation
 from pathfinder_ai.domain.matching import DeterministicMatcher
+from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
+    SQLiteAnalysisRepository,
+)
 
 
 class FakeAIProvider(AIEnrichmentProvider):
@@ -686,3 +690,82 @@ def test_repository_is_not_called_when_persistence_is_not_requested(
 
     assert response.status_code == 200
     assert fake_repo.saved == {}
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"query": "x" * 201},
+        {"min_score": "-1"},
+        {"max_score": "101"},
+        {"min_score": "nan"},
+        {"max_score": "inf"},
+        {"min_score": "80", "max_score": "20"},
+        {"ai_enriched": "invalid"},
+    ],
+)
+def test_history_filters_reject_invalid_query_parameters(
+    params: dict[str, str], fake_repo: FakeRepository
+) -> None:
+    client = TestClient(create_app(analysis_repository=fake_repo))
+    response = client.get("/api/v1/analyses", params=params)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["details"][0]["loc"][0] == "query"
+
+
+def test_history_filters_sqlite_api_smoke(
+    valid_payload: dict[str, Any], tmp_path: Path
+) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "api-filters.db")
+    provider = FakeAIProvider()
+    client = TestClient(
+        create_app(analysis_repository=repository, ai_provider=provider)
+    )
+    valid_payload["save_analysis"] = True
+    valid_payload["job_description"]["title"]["title"] = (
+        "100% Data_Engineer \\ O'Connor 株式会社"
+    )
+    first = client.post("/api/v1/analysis", json=valid_payload).json()
+    first_id = first["saved_analysis"]["analysis_id"]
+    valid_payload["job_description"]["title"]["title"] = "Other Engineer"
+    valid_payload["include_ai_enrichment"] = True
+    second = client.post("/api/v1/analysis", json=valid_payload).json()
+    second_id = second["saved_analysis"]["analysis_id"]
+    for query in ("%", "_", "\\", "O'Connor", "株式会社", " data_engineer "):
+        response = client.get("/api/v1/analyses", params={"query": query})
+        assert response.status_code == 200
+        assert [item["analysis_id"] for item in response.json()["items"]] == [first_id]
+    assert client.get("/api/v1/analyses", params={"query": "' OR 1=1 --"}).json() == {
+        "items": []
+    }
+    score = first["score"]["value"]
+    assert (
+        client.get(
+            "/api/v1/analyses",
+            params={"ai_enriched": "false", "min_score": score, "max_score": score},
+        ).json()["items"][0]["analysis_id"]
+        == first_id
+    )
+    assert (
+        client.get("/api/v1/analyses", params={"ai_enriched": "true"}).json()["items"][
+            0
+        ]["analysis_id"]
+        == second_id
+    )
+    assert (
+        client.get(
+            "/api/v1/analyses", params={"query": "Engineer", "limit": 1, "offset": 1}
+        ).json()["items"][0]["analysis_id"]
+        == first_id
+    )
+    assert len(provider.requests) == 1
+    assert client.delete(f"/api/v1/analyses/{first_id}").status_code == 204
+    assert client.get("/api/v1/analyses", params={"query": "%"}).json() == {"items": []}
+    assert client.get(f"/api/v1/analyses/{second_id}").status_code == 200
+    assert (
+        TestClient(create_app())
+        .get("/api/v1/analyses", params={"query": "Engineer"})
+        .status_code
+        == 503
+    )
