@@ -237,14 +237,26 @@ export function importResumeFileSkills(
   return requestJson('/api/v1/resume/file-skill-import', { method: 'POST', body });
 }
 
+export interface AnalysisHistoryFilters {
+  query?: string;
+  ai_enriched?: boolean;
+  min_score?: number;
+  max_score?: number;
+}
+
 export function getAnalysisHistory(
   limit = 20,
   offset = 0,
+  filters: AnalysisHistoryFilters = {},
 ): Promise<AnalysisHistoryResponse> {
   const query = new URLSearchParams({
     limit: String(limit),
     offset: String(offset),
   });
+  if (filters.query) query.set('query', filters.query);
+  if (filters.ai_enriched !== undefined) query.set('ai_enriched', String(filters.ai_enriched));
+  if (filters.min_score !== undefined) query.set('min_score', String(filters.min_score));
+  if (filters.max_score !== undefined) query.set('max_score', String(filters.max_score));
   return requestJson(`/api/v1/analyses?${query.toString()}`);
 }
 

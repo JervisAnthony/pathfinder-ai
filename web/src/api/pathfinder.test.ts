@@ -264,4 +264,16 @@ describe('saved analysis API', () => {
       status: undefined,
     });
   });
+
+  it('encodes literal search and includes false and zero filter values', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: [] })),
+    );
+    const search = "100% Data_Engineer \\ O'Connor 株式会社 ' OR 1=1 --";
+    await getAnalysisHistory(20, 40, { query: search, ai_enriched: false, min_score: 0, max_score: 100 });
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      limit: '20', offset: '40', query: search, ai_enriched: 'false', min_score: '0', max_score: '100',
+    });
+  });
 });

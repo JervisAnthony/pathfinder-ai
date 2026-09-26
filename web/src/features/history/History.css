@@ -189,3 +189,21 @@
     grid-template-columns: 1fr;
   }
 }
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 1rem;
+  margin-block: 1rem;
+}
+
+.history-filters label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.history-filters input,
+.history-filters select {
+  padding: 0.5rem;
+  max-width: 100%;
+}
