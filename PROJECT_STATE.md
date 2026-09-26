@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-09
+Last updated: 2026-09-26
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`6c3a2a7335ee4c9202cf188675a198cc1fa2962e`
+`9361fb4d776032a3e3d42aa14c1b0407fe7d9c99`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 17 — AI-Assisted Candidate Profile Import**
+**Commit 18 — Saved Analysis Deletion & Privacy Controls**
 
 ## Completed MVP-1 Roadmap
 
@@ -41,25 +41,25 @@ These milestones must not be replayed or rebuilt.
 - Commit 15 — Optional OpenAI AI Enrichment — complete (PR #19 merged)
 - Commit 16 — AI-Assisted Job Description Import — complete (PR #20 merged)
 - Commit 17 — AI-Assisted Candidate Profile Import — complete (PR #21 merged)
+- Commit 18 — Saved Analysis Deletion & Privacy Controls — complete (PR #22 merged)
 
 ## Post-MVP Active Work
 
-**Commit 18 — Saved Analysis Deletion & Privacy Controls**
+**Commit 19 — Saved Analysis Search & Filters**
 
-Status: **PR under review**
+Status: **Implementation validated; preparing pull request**
 
-Active pull request:
+This authorized post-MVP milestone adds literal title/company search, optional
+AI-enrichment presence filtering, and inclusive score bounds to saved history.
+Filters compose before pagination and preserve the existing newest-first order.
+The Web history uses explicit Apply/Clear controls and retains applied filters
+through refresh, detail viewing, and individual deletion. Filters live only in
+component memory; no browser storage is used.
 
-**PR #22 — Add saved analysis deletion and privacy controls**
-
-https://github.com/JervisAnthony/pathfinder-ai/pull/22
-
-This authorized post-MVP milestone adds explicit deletion of one selected saved
-analysis from configured persistence. The Web history detail view requires
-confirmation and states that logical deletion is not guaranteed secure erasure
-of database files, backups, or filesystem snapshots. No bulk deletion, undo,
-retention automation, schema migration, deterministic recomputation, or AI work
-is introduced.
+Filtering reads summary metadata only. SQLite schema and version-2 snapshot
+payloads remain unchanged. Dependencies, deterministic analysis, and AI behavior
+remain unchanged. Individual deletion remains confirmation-gated logical deletion,
+not guaranteed secure erasure of database files, backups, or filesystem snapshots.
 
 ## Existing Capabilities
 
@@ -85,6 +85,7 @@ The repository already contains:
 - optional AI-assisted Candidate Profile drafting
 - explicit draft review/apply workflows
 - confirmation-gated deletion of individual saved-analysis snapshots
+- saved-history title/company search, AI presence filters, and inclusive score bounds
 
 ## Architectural Boundary
 
