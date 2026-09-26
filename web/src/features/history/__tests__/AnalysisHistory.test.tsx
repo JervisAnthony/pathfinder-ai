@@ -1,9 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
   ApiError,
   deleteSavedAnalysis,
+  downloadSavedAnalysis,
   getAnalysisHistory,
   getSavedAnalysis,
 } from '../../../api/pathfinder';
@@ -17,6 +18,7 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   getAnalysisHistory: vi.fn(),
   getSavedAnalysis: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
+  downloadSavedAnalysis: vi.fn(),
   analyzeCandidateJob: vi.fn(),
 }));
 
@@ -283,6 +285,101 @@ describe('history helpers', () => {
     expect(mapped.explanation).toBe(detail.explanation);
     expect(mapped.interview_preparation).toBe(detail.interview_preparation);
     expect(mapped.learning_recommendations).toBe(detail.learning_recommendations);
+  });
+});
+
+describe('saved analysis downloads', () => {
+  const createObjectURL = vi.fn(() => 'blob:stored-snapshot');
+  const revokeObjectURL = vi.fn();
+  let downloaded: Array<{ filename: string; href: string; connected: boolean }>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    downloaded = [];
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(downloadSavedAnalysis).mockResolvedValue(new Blob(['Stored snapshot']));
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloaded.push({ filename: this.download, href: this.href, connected: this.isConnected });
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  async function openDetail() {
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+  }
+
+  it.each([
+    ['json', 'JSON', 'json'], ['markdown', 'Markdown', 'md'],
+  ] as const)('downloads %s explicitly with a UUID filename and revokes the object URL', async (format, label, extension) => {
+    await openDetail();
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download Markdown' })).toBeInTheDocument();
+    expect(downloadSavedAnalysis).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: `Download ${label}` }));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:stored-snapshot'));
+    expect(downloadSavedAnalysis).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, format);
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(downloaded).toEqual([{ filename: `pathfinder-analysis-${summary.analysis_id}.${extension}`, href: 'blob:stored-snapshot', connected: true }]);
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByText('<script>alert("no")</script>')).toBeInTheDocument();
+    expect(document.querySelector('script')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete saved analysis' })).toBeEnabled();
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    expect(deleteSavedAnalysis).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    expect(screen.getByRole('heading', { name: 'Analysis History' })).toBeInTheDocument();
+  });
+
+  it('shows accessible progress and prevents duplicate same-format requests', async () => {
+    let resolveDownload!: (value: Blob) => void;
+    vi.mocked(downloadSavedAnalysis).mockReturnValueOnce(new Promise((resolve) => { resolveDownload = resolve; }));
+    await openDetail();
+    const button = screen.getByRole('button', { name: 'Download JSON' });
+    fireEvent.click(button);
+    expect(screen.getByRole('status')).toHaveTextContent('Preparing JSON export');
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(downloadSavedAnalysis).toHaveBeenCalledTimes(1);
+    resolveDownload(new Blob(['Stored JSON']));
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    [new ApiError('private', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('private', 503, 'persistence_unavailable'), 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'],
+    [new Error('private'), 'Pathfinder could not export this saved analysis. Please try again.'],
+  ])('keeps detail and avoids partial downloads on safe export failures', async (failure, message) => {
+    vi.mocked(downloadSavedAnalysis).mockRejectedValueOnce(failure);
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Download Markdown' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message as string);
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download Markdown' })).toBeEnabled();
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(downloaded).toEqual([]);
+  });
+
+  it('revokes the object URL and removes the anchor even if triggering download fails', async () => {
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => { throw new Error('download blocked'); });
+    await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Download JSON' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Pathfinder could not export');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:stored-snapshot');
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
   });
 });
 

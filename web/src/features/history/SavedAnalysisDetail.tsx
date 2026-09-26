@@ -1,6 +1,7 @@
 import { AnalysisResults } from '../analysis/AnalysisResults';
-import { useState } from 'react';
-import { ApiError } from '../../api/pathfinder';
+import { useRef, useState } from 'react';
+import { ApiError, downloadSavedAnalysis } from '../../api/pathfinder';
+import type { SavedAnalysisExportFormat } from '../../api/pathfinder';
 import { SavedAnalysisDetail as SavedDetail } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { savedAnalysisDetailToAnalysisResponse } from './mapping';
@@ -27,12 +28,51 @@ function deletionErrorMessage(error: unknown): string {
   return 'Pathfinder could not delete this saved analysis. Please try again.';
 }
 
+function exportErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'analysis_not_found') {
+    return 'This saved analysis no longer exists.';
+  }
+  if (error instanceof ApiError && error.code === 'persistence_unavailable') {
+    return 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.';
+  }
+  return 'Pathfinder could not export this saved analysis. Please try again.';
+}
+
 export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState({ json: false, markdown: false });
+  const exportRequests = useRef(new Set<SavedAnalysisExportFormat>());
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const download = async (format: SavedAnalysisExportFormat) => {
+    if (exportRequests.current.has(format)) return;
+    exportRequests.current.add(format);
+    setExporting((current) => ({ ...current, [format]: true }));
+    setExportError(null);
+    try {
+      const blob = await downloadSavedAnalysis(detail.analysis_id, format);
+      const anchor = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      try {
+        anchor.href = url;
+        anchor.download = `pathfinder-analysis-${detail.analysis_id}.${format === 'json' ? 'json' : 'md'}`;
+        document.body.appendChild(anchor);
+        anchor.click();
+      } finally {
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      setExportError(exportErrorMessage(error));
+    } finally {
+      exportRequests.current.delete(format);
+      setExporting((current) => ({ ...current, [format]: false }));
+    }
+  };
 
   const confirmDelete = async () => {
     if (deleting) return;
@@ -60,6 +100,18 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
           <span>Analysis ID: {detail.analysis_id}</span>
         </div>
       </header>
+
+      <section className="saved-export" aria-labelledby="saved-export-title">
+        <h3 id="saved-export-title">Download saved analysis</h3>
+        <p>Exports contain stored candidate and job information. Protect downloaded files when sharing or saving them.</p>
+        <div className="export-actions">
+          <button type="button" className="secondary-btn" disabled={exporting.json} onClick={() => void download('json')}>Download JSON</button>
+          <button type="button" className="secondary-btn" disabled={exporting.markdown} onClick={() => void download('markdown')}>Download Markdown</button>
+        </div>
+        {exporting.json && <p role="status">Preparing JSON export…</p>}
+        {exporting.markdown && <p role="status">Preparing Markdown export…</p>}
+        {exportError && <p role="alert" className="error-message">{exportError}</p>}
+      </section>
 
       <div className="snapshot-grid">
         <section>

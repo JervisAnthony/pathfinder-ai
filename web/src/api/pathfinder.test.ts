@@ -3,6 +3,7 @@ import {
   analyzeCandidateJob,
   ApiError,
   deleteSavedAnalysis,
+  downloadSavedAnalysis,
   getAnalysisHistory,
   getSavedAnalysis,
   importResumeSkills,
@@ -90,6 +91,56 @@ describe('analyzeCandidateJob', () => {
       status: undefined,
       code: undefined,
       details: null,
+    });
+  });
+});
+
+describe('downloadSavedAnalysis', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(['json', 'markdown'] as const)('fetches the %s attachment as a Blob with GET only', async (format) => {
+    const response = new Response('Stored snapshot 株式会社');
+    const blobRead = vi.spyOn(response, 'blob');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    const blob = await downloadSavedAnalysis('id/with ? separators', format);
+    const content = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsText(blob);
+    });
+    expect(content).toBe('Stored snapshot 株式会社');
+    expect(blobRead).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/analyses/id%2Fwith%20%3F%20separators/export?format=${format}`,
+      { method: 'GET', cache: 'no-store' },
+    );
+  });
+
+  it.each([
+    [404, 'analysis_not_found'], [503, 'persistence_unavailable'], [422, 'validation_error'],
+  ])('preserves the safe error envelope for HTTP %i without reading a Blob', async (status, code) => {
+    const response = errorResponse(status as number, code as string, 'Safe failure');
+    const blobRead = vi.spyOn(response, 'blob');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    await expect(downloadSavedAnalysis('saved-id', 'json')).rejects.toMatchObject({ status, code });
+    expect(blobRead).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [new Response('<html>private</html>', { status: 500 }), 'unreadable'],
+    [new Response(JSON.stringify({ private: 'wrong shape' }), { status: 500 }), 'invalid'],
+  ])('rejects malformed failures safely', async (response, description) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response as Response);
+    await expect(downloadSavedAnalysis('saved-id', 'markdown')).rejects.toMatchObject({
+      status: 500, message: `Pathfinder returned an ${description} error response.`,
+    });
+  });
+
+  it('wraps network failures safely', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('private network details'));
+    await expect(downloadSavedAnalysis('saved-id', 'json')).rejects.toMatchObject({
+      message: 'Unable to reach Pathfinder. Check your connection and try again.',
     });
   });
 });

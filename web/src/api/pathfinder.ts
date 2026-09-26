@@ -264,6 +264,37 @@ export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetai
   return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}`);
 }
 
+export type SavedAnalysisExportFormat = 'json' | 'markdown';
+
+export async function downloadSavedAnalysis(
+  analysisId: string,
+  format: SavedAnalysisExportFormat,
+): Promise<Blob> {
+  try {
+    const response = await fetch(
+      `/api/v1/analyses/${encodeURIComponent(analysisId)}/export?format=${format}`,
+      { method: 'GET', cache: 'no-store' },
+    );
+    if (!response.ok) {
+      let errorData: unknown;
+      try {
+        errorData = await response.json();
+      } catch {
+        throw new ApiError('Pathfinder returned an unreadable error response.', response.status);
+      }
+      if (!isApiErrorResponse(errorData)) {
+        throw new ApiError('Pathfinder returned an invalid error response.', response.status);
+      }
+      const { code, message, details } = errorData.error;
+      throw new ApiError(message, response.status, code, details);
+    }
+    return await response.blob();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Unable to reach Pathfinder. Check your connection and try again.');
+  }
+}
+
 export async function deleteSavedAnalysis(analysisId: string): Promise<void> {
   try {
     const response = await fetch(`/api/v1/analyses/${encodeURIComponent(analysisId)}`, {
