@@ -14,14 +14,21 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentRequest,
     AIEnrichmentResult,
 )
+from pathfinder_ai.application.analysis_export import render_saved_analysis_markdown
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisRepository,
     SavedAnalysis,
     SavedAnalysisSummary,
 )
-from pathfinder_ai.application.interview_preparation import InterviewPreparation
-from pathfinder_ai.application.learning_recommendations import LearningRecommendations
+from pathfinder_ai.application.interview_preparation import (
+    DeterministicInterviewPreparer,
+    InterviewPreparation,
+)
+from pathfinder_ai.application.learning_recommendations import (
+    DeterministicLearningRecommender,
+    LearningRecommendations,
+)
 from pathfinder_ai.domain import JobDescription, MatchExplanation
 from pathfinder_ai.domain.matching import DeterministicMatcher
 from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
@@ -769,3 +776,147 @@ def test_history_filters_sqlite_api_smoke(
         .status_code
         == 503
     )
+
+
+@pytest.mark.parametrize("enriched", [False, True])
+def test_saved_export_smoke_is_read_only_equivalent_and_deterministic(
+    valid_payload: dict[str, Any],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    enriched: bool,
+) -> None:
+    database = tmp_path / "exports.db"
+    repository = SQLiteAnalysisRepository(database)
+    provider = FakeAIProvider()
+    client = TestClient(
+        create_app(analysis_repository=repository, ai_provider=provider)
+    )
+    valid_payload["save_analysis"] = True
+    valid_payload["include_ai_enrichment"] = enriched
+    valid_payload["job_description"]["title"]["title"] = (
+        'Role " / \\ \r\n X-Injected: yes 株式会社 <script>alert(1)</script>'
+    )
+    saved = client.post("/api/v1/analysis", json=valid_payload)
+    assert saved.status_code == 200
+    analysis_id = saved.json()["saved_analysis"]["analysis_id"]
+    snapshot = repository.get(uuid.UUID(analysis_id))
+    assert snapshot is not None
+    before = database.read_bytes()
+    provider_calls = len(provider.requests)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Export must not invoke analysis, providers, or writes")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", forbidden)
+    monkeypatch.setattr(DeterministicInterviewPreparer, "prepare", forbidden)
+    monkeypatch.setattr(DeterministicLearningRecommender, "recommend", forbidden)
+    monkeypatch.setattr(provider, "enrich", forbidden)
+    monkeypatch.setattr(repository, "save", forbidden)
+    monkeypatch.setattr(repository, "delete", forbidden)
+    for format, extension, mime in (
+        ("json", "json", "application/json"),
+        ("markdown", "md", "text/markdown"),
+    ):
+        response = client.get(
+            f"/api/v1/analyses/{analysis_id}/export", params={"format": format}
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == f"{mime}; charset=utf-8"
+        assert (
+            response.headers["content-disposition"]
+            == f'attachment; filename="pathfinder-analysis-{analysis_id}.{extension}"'
+        )
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["x-content-type-options"] == "nosniff"
+        assert "x-injected" not in response.headers
+        assert "株式会社" not in str(response.headers)
+        assert (
+            response.content
+            == client.get(
+                f"/api/v1/analyses/{analysis_id}/export", params={"format": format}
+            ).content
+        )
+        if format == "json":
+            assert (
+                response.json() == client.get(f"/api/v1/analyses/{analysis_id}").json()
+            )
+            assert set(response.json()) == {
+                "analysis_id",
+                "created_at",
+                "candidate_profile",
+                "job_description",
+                "score",
+                "explanation",
+                "interview_preparation",
+                "learning_recommendations",
+                "ai_enrichment",
+            }
+            assert "株式会社" in response.text
+        else:
+            assert response.text == render_saved_analysis_markdown(snapshot)
+            assert "<script>" not in response.text
+            assert ("## AI Enrichment" in response.text) == enriched
+    assert (
+        client.get(f"/api/v1/analyses/{analysis_id}/export").json()
+        == client.get(f"/api/v1/analyses/{analysis_id}").json()
+    )
+    assert len(provider.requests) == provider_calls
+    assert database.read_bytes() == before
+    assert repository.get(uuid.UUID(analysis_id)) == snapshot
+
+
+@pytest.mark.parametrize(
+    ("analysis_id", "format", "configured", "status", "code"),
+    [
+        (str(uuid.UUID(int=0)), "json", True, 404, "analysis_not_found"),
+        ("invalid-uuid", "json", True, 422, "validation_error"),
+        (str(uuid.UUID(int=0)), "pdf", True, 422, "validation_error"),
+        (str(uuid.UUID(int=0)), "markdown", False, 503, "persistence_unavailable"),
+    ],
+)
+def test_export_errors_are_safe(
+    fake_repo: FakeRepository,
+    analysis_id: str,
+    format: str,
+    configured: bool,
+    status: int,
+    code: str,
+) -> None:
+    client = TestClient(
+        create_app(analysis_repository=fake_repo if configured else None)
+    )
+    response = client.get(
+        f"/api/v1/analyses/{analysis_id}/export", params={"format": format}
+    )
+    assert response.status_code == status
+    assert response.json()["error"]["code"] == code
+    assert "content-disposition" not in response.headers
+    assert "candidate_profile" not in response.text
+    assert "payload_json" not in response.text
+    assert "Traceback" not in response.text
+
+
+def test_export_openapi_contract() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    operation = schema["paths"]["/api/v1/analyses/{analysis_id}/export"]["get"]
+    parameters = {parameter["name"]: parameter for parameter in operation["parameters"]}
+    assert parameters["format"]["schema"]["enum"] == ["json", "markdown"]
+    assert parameters["analysis_id"]["schema"]["format"] == "uuid"
+    responses = operation["responses"]
+    assert {"200", "404", "422", "503"}.issubset(responses)
+    assert {"application/json", "text/markdown"}.issubset(responses["200"]["content"])
+    assert "Content-Disposition" in responses["200"]["headers"]
+
+
+def test_export_after_deletion_returns_not_found(
+    valid_payload: dict[str, Any],
+    fake_repo: FakeRepository,
+) -> None:
+    client = TestClient(create_app(analysis_repository=fake_repo))
+    valid_payload["save_analysis"] = True
+    analysis_id = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+    assert client.get(f"/api/v1/analyses/{analysis_id}/export").status_code == 200
+    assert client.delete(f"/api/v1/analyses/{analysis_id}").status_code == 204
+    assert client.get(f"/api/v1/analyses/{analysis_id}/export").status_code == 404

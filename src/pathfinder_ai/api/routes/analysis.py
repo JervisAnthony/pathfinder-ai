@@ -1,7 +1,8 @@
 """FastAPI routes for Pathfinder AI analysis."""
 
+import json
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
@@ -38,10 +39,12 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentRequest,
     AIEnrichmentService,
 )
+from pathfinder_ai.application.analysis_export import render_saved_analysis_markdown
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
     AnalysisRepository,
+    SavedAnalysis,
 )
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
@@ -261,6 +264,11 @@ async def get_analysis(
     if analysis is None:
         raise AnalysisNotFoundError()
 
+    return _map_saved_analysis_detail(analysis)
+
+
+def _map_saved_analysis_detail(analysis: SavedAnalysis) -> SavedAnalysisDetailSchema:
+    """Share the public snapshot contract between detail and JSON export."""
     return SavedAnalysisDetailSchema(
         analysis_id=analysis.analysis_id,
         created_at=analysis.created_at,
@@ -275,6 +283,67 @@ async def get_analysis(
             analysis.learning_recommendations
         ),
         ai_enrichment=map_ai_enrichment_to_schema(analysis.ai_enrichment),
+    )
+
+
+@router.get(
+    "/analyses/{analysis_id}/export",
+    response_class=Response,
+    responses={
+        200: {
+            "model": SavedAnalysisDetailSchema,
+            "description": "Saved snapshot attachment in JSON or Markdown format.",
+            "content": {"text/markdown": {"schema": {"type": "string"}}},
+            "headers": {
+                "Content-Disposition": {"schema": {"type": "string"}},
+                "Cache-Control": {"schema": {"type": "string"}},
+                "X-Content-Type-Options": {"schema": {"type": "string"}},
+            },
+        },
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid UUID or format."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def export_analysis(
+    analysis_id: uuid.UUID,
+    request: Request,
+    format: Literal["json", "markdown"] = "json",
+) -> Response:
+    """Download an existing snapshot without writes, AI, or recomputation."""
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    analysis = AnalysisHistoryService(repository=repository).get_analysis(analysis_id)
+    if analysis is None:
+        raise AnalysisNotFoundError()
+
+    if format == "json":
+        content = (
+            json.dumps(
+                _map_saved_analysis_detail(analysis).model_dump(mode="json"),
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n"
+        )
+        extension = "json"
+        media_type = "application/json; charset=utf-8"
+    else:
+        content = render_saved_analysis_markdown(analysis)
+        extension = "md"
+        media_type = "text/markdown; charset=utf-8"
+
+    return Response(
+        content=content.encode("utf-8"),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="pathfinder-analysis-{analysis_id}.{extension}"'
+            ),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
