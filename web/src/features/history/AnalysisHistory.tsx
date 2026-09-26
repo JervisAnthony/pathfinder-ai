@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import {
   ApiError,
   deleteSavedAnalysis,
@@ -32,22 +33,64 @@ export function AnalysisHistory() {
   const [detail, setDetail] = useState<SavedAnalysisDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [ai, setAi] = useState('all');
+  const [minScore, setMinScore] = useState('');
+  const [maxScore, setMaxScore] = useState('');
+  const [filters, setFilters] = useState<AnalysisHistoryFilters>({});
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const historyRequest = useRef(0);
+  const filtered = Object.keys(filters).length > 0;
+
+  const applyFilters = (event: React.FormEvent) => {
+    event.preventDefault();
+    const normalized = query.trim().replace(/\s+/g, ' ');
+    const min = minScore === '' ? undefined : Number(minScore);
+    const max = maxScore === '' ? undefined : Number(maxScore);
+    if (normalized.length > 200 || [min, max].some((score) => score !== undefined
+      && (!Number.isFinite(score) || score < 0 || score > 100))
+      || (min !== undefined && max !== undefined && min > max)) {
+      setFilterError('Use a search of at most 200 characters and scores from 0 to 100, with minimum no greater than maximum.');
+      return;
+    }
+    setFilterError(null);
+    setOffset(0);
+    setFilters({
+      ...(normalized ? { query: normalized } : {}),
+      ...(ai === 'all' ? {} : { ai_enriched: ai === 'yes' }),
+      ...(min === undefined ? {} : { min_score: min }),
+      ...(max === undefined ? {} : { max_score: max }),
+    });
+  };
+
+  const clearFilters = () => {
+    setQuery(''); setAi('all'); setMinScore(''); setMaxScore('');
+    setFilterError(null); setOffset(0); setFilters({});
+  };
 
   const loadHistory = useCallback(async () => {
+    const requestId = ++historyRequest.current;
     setLoading(true);
     setError(null);
     try {
-      const response = await getAnalysisHistory(PAGE_SIZE, offset);
+      const response = await (Object.keys(filters).length
+        ? getAnalysisHistory(PAGE_SIZE, offset, filters)
+        : getAnalysisHistory(PAGE_SIZE, offset));
+      if (requestId !== historyRequest.current) return;
       setItems(response.items);
     } catch (caught) {
+      if (requestId !== historyRequest.current) return;
       setItems([]);
       setError(errorMessage(caught, 'history'));
     } finally {
-      setLoading(false);
+      if (requestId === historyRequest.current) setLoading(false);
     }
-  }, [offset]);
+  }, [offset, filters]);
 
-  useEffect(() => { void loadHistory(); }, [loadHistory]);
+  useEffect(() => {
+    void loadHistory();
+    return () => { historyRequest.current += 1; };
+  }, [loadHistory]);
 
   const openDetail = async (analysisId: string) => {
     setDetailLoading(true);
@@ -99,6 +142,29 @@ export function AnalysisHistory() {
         snapshot from Pathfinder history; it is not a secure filesystem wipe.
       </p>
 
+      <form className="history-filters" onSubmit={applyFilters}>
+        <label>Search job title or company
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} />
+        </label>
+        <label>AI enrichment
+          <select value={ai} onChange={(event) => setAi(event.target.value)}>
+            <option value="all">All analyses</option>
+            <option value="yes">With AI enrichment</option>
+            <option value="no">Without AI enrichment</option>
+          </select>
+        </label>
+        <label>Minimum score
+          <input type="number" min="0" max="100" step="any" value={minScore} onChange={(event) => setMinScore(event.target.value)} />
+        </label>
+        <label>Maximum score
+          <input type="number" min="0" max="100" step="any" value={maxScore} onChange={(event) => setMaxScore(event.target.value)} />
+        </label>
+        <button type="submit">Apply filters</button>
+        <button type="button" onClick={clearFilters}>Clear filters</button>
+      </form>
+      <p>Search matches saved job titles and company names. Score bounds include their endpoints; unscored analyses are excluded when a score filter is active.</p>
+      {filterError && <p role="alert">{filterError}</p>}
+
       {loading && <p role="status">Loading saved analyses…</p>}
       {!loading && error && <div className="history-message error-message" role="alert">{error}</div>}
       {detailLoading && <p role="status">Loading saved analysis…</p>}
@@ -106,8 +172,8 @@ export function AnalysisHistory() {
 
       {!loading && !error && items.length === 0 && (
         <div className="history-message">
-          <h3>No saved analyses yet.</h3>
-          <p>Run a new analysis and enable “Save this analysis to local history” to keep a snapshot here.</p>
+          <h3>{filtered ? 'No saved analyses match these filters.' : 'No saved analyses yet.'}</h3>
+          <p>{filtered ? 'Change or clear the filters to view more saved analyses.' : 'Run a new analysis and enable “Save this analysis to local history” to keep a snapshot here.'}</p>
         </div>
       )}
 

@@ -285,3 +285,79 @@ describe('history helpers', () => {
     expect(mapped.learning_recommendations).toBe(detail.learning_recommendations);
   });
 });
+
+describe('history filters', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [] });
+  });
+
+  it('applies normalized combined filters explicitly and clears them', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: "  100% Data_Engineer \\ O'Connor 株式会社  " } });
+    fireEvent.change(screen.getByLabelText('AI enrichment'), { target: { value: 'no' } });
+    fireEvent.change(screen.getByLabelText('Minimum score'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Maximum score'), { target: { value: '80' } });
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, {
+      query: "100% Data_Engineer \\ O'Connor 株式会社", ai_enriched: false, min_score: 0, max_score: 80,
+    }));
+    expect(await screen.findByText('No saved analyses match these filters.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledTimes(3));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0));
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('');
+    expect(await screen.findByText('No saved analyses yet.')).toBeInTheDocument();
+  });
+
+  it('resets pagination on apply and preserves filters through detail and deletion', async () => {
+    const fullPage = Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: String(index), job_title: `Role ${index}` }));
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: fullPage });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(deleteSavedAnalysis).mockResolvedValue();
+    render(<AnalysisHistory />);
+    await screen.findByText('Role 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'Role' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'Role' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Role 0/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    await screen.findByText('Role 0');
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'Role' });
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid score ranges and long searches without a request', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    fireEvent.change(screen.getByLabelText('Minimum score'), { target: { value: '80' } });
+    fireEvent.change(screen.getByLabelText('Maximum score'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('minimum no greater than maximum');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'x'.repeat(201) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('at most 200 characters');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older response after filters change', async () => {
+    let resolveOld!: (value: { items: SavedAnalysisSummary[] }) => void;
+    vi.mocked(getAnalysisHistory).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    render(<AnalysisHistory />);
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'new' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await screen.findByText('No saved analyses match these filters.');
+    resolveOld({ items: [summary] });
+    await waitFor(() => expect(screen.queryByText('Platform Engineer')).not.toBeInTheDocument());
+  });
+});

@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import isfinite
 from typing import Protocol
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
@@ -14,6 +15,49 @@ from pathfinder_ai.application.learning_recommendations import LearningRecommend
 from pathfinder_ai.domain.candidate_profile import CandidateProfile
 from pathfinder_ai.domain.explanation import MatchExplanation
 from pathfinder_ai.domain.job_description import JobDescription
+
+MAX_HISTORY_QUERY_LENGTH = 200
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisHistoryFilter:
+    """Optional deterministic criteria for saved-analysis history."""
+
+    query: str | None = None
+    ai_enriched: bool | None = None
+    min_score: float | None = None
+    max_score: float | None = None
+
+    def __post_init__(self) -> None:
+        normalized_query = (
+            " ".join(self.query.split()) if self.query is not None else None
+        )
+        if not normalized_query:
+            normalized_query = None
+        if (
+            normalized_query is not None
+            and len(normalized_query) > MAX_HISTORY_QUERY_LENGTH
+        ):
+            raise ValueError(
+                f"query must be at most {MAX_HISTORY_QUERY_LENGTH} characters"
+            )
+        object.__setattr__(self, "query", normalized_query)
+
+        for field_name, value in (
+            ("min_score", self.min_score),
+            ("max_score", self.max_score),
+        ):
+            if value is not None and (not isfinite(value) or value < 0 or value > 100):
+                raise ValueError(
+                    f"{field_name} must be a finite value between 0 and 100"
+                )
+
+        if (
+            self.min_score is not None
+            and self.max_score is not None
+            and self.min_score > self.max_score
+        ):
+            raise ValueError("min_score must be less than or equal to max_score")
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +126,11 @@ class AnalysisRepository(Protocol):
         ...
 
     def list_recent(
-        self, *, limit: int, offset: int
+        self,
+        *,
+        limit: int,
+        offset: int,
+        history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
         """List lightweight analysis summaries."""
         ...
@@ -146,7 +194,10 @@ class AnalysisHistoryService:
         return self._repository.delete(analysis_id)
 
     def list_history(
-        self, limit: int = 20, offset: int = 0
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
         """
         List lightweight history summaries with pagination.
@@ -156,4 +207,8 @@ class AnalysisHistoryService:
         if offset < 0:
             raise ValueError("Offset must be non-negative")
 
-        return self._repository.list_recent(limit=limit, offset=offset)
+        return self._repository.list_recent(
+            limit=limit,
+            offset=offset,
+            history_filter=history_filter,
+        )

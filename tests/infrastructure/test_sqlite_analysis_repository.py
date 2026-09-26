@@ -5,13 +5,16 @@ import sqlite3
 import uuid
 from contextlib import closing
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
-from pathfinder_ai.application.analysis_history import SavedAnalysis
+from pathfinder_ai.application.analysis_history import (
+    AnalysisHistoryFilter,
+    SavedAnalysis,
+)
 from pathfinder_ai.application.interview_preparation import (
     InterviewerQuestion,
     InterviewPreparation,
@@ -340,6 +343,230 @@ def test_sqlite_repository_list_recent(
     summaries_offset = repo.list_recent(limit=10, offset=1)
     assert len(summaries_offset) == 1
     assert summaries_offset[0].analysis_id == sample_analysis.analysis_id
+
+
+def _history_variant(
+    source: SavedAnalysis,
+    *,
+    title: str,
+    company: str | None,
+    score: float | None = 50.0,
+    ai_enriched: bool = False,
+    created_at: datetime,
+) -> SavedAnalysis:
+    company_info = CompanyInfo(name=company) if company is not None else None
+    return replace(
+        source,
+        analysis_id=uuid.uuid4(),
+        created_at=created_at,
+        job_description=replace(
+            source.job_description,
+            title=JobTitle(title=title),
+            company_info=company_info,
+        ),
+        match_explanation=replace(
+            source.match_explanation,
+            score=MatchScore(value=score),
+        ),
+        ai_enrichment=source.ai_enrichment if ai_enriched else None,
+    )
+
+
+def test_sqlite_history_text_search_is_normalized_case_insensitive_and_literal(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "search.db")
+    timestamp = datetime(2025, 1, 1, tzinfo=UTC)
+    platform = _history_variant(
+        sample_analysis,
+        title="Senior Platform Engineer",
+        company="Acme Systems",
+        created_at=timestamp,
+    )
+    special = _history_variant(
+        sample_analysis,
+        title="100% Data_Engineer",
+        company="O'Connor 株式会社",
+        created_at=timestamp + timedelta(seconds=1),
+    )
+    unrelated = _history_variant(
+        sample_analysis,
+        title="Product Designer",
+        company=None,
+        created_at=timestamp + timedelta(seconds=2),
+    )
+    for analysis in (platform, special, unrelated):
+        repository.save(analysis)
+
+    def matching_ids(query: str) -> list[uuid.UUID]:
+        return [
+            item.analysis_id
+            for item in repository.list_recent(
+                limit=10,
+                offset=0,
+                history_filter=AnalysisHistoryFilter(query=query),
+            )
+        ]
+
+    assert matching_ids("  PLATFORM\n engineer ") == [platform.analysis_id]
+    assert matching_ids("aCmE") == [platform.analysis_id]
+    assert matching_ids("%") == [special.analysis_id]
+    assert matching_ids("_") == [special.analysis_id]
+    assert matching_ids("O'Connor") == [special.analysis_id]
+    assert matching_ids("株式会社") == [special.analysis_id]
+    assert matching_ids(" ") == [
+        unrelated.analysis_id,
+        special.analysis_id,
+        platform.analysis_id,
+    ]
+
+
+def test_sqlite_history_ai_and_score_filters_are_inclusive_and_composable(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "filters.db")
+    timestamp = datetime(2025, 1, 1, tzinfo=UTC)
+    records = (
+        _history_variant(
+            sample_analysis,
+            title="Platform Zero",
+            company="Acme",
+            score=0.0,
+            created_at=timestamp,
+        ),
+        _history_variant(
+            sample_analysis,
+            title="Platform Lower",
+            company="Acme",
+            score=60.0,
+            ai_enriched=True,
+            created_at=timestamp + timedelta(seconds=1),
+        ),
+        _history_variant(
+            sample_analysis,
+            title="Platform Upper",
+            company="Acme",
+            score=80.0,
+            ai_enriched=True,
+            created_at=timestamp + timedelta(seconds=2),
+        ),
+        _history_variant(
+            sample_analysis,
+            title="Platform Unscored",
+            company="Acme",
+            score=None,
+            ai_enriched=True,
+            created_at=timestamp + timedelta(seconds=3),
+        ),
+        _history_variant(
+            sample_analysis,
+            title="Other High",
+            company="Elsewhere",
+            score=90.0,
+            created_at=timestamp + timedelta(seconds=4),
+        ),
+    )
+    for analysis in records:
+        repository.save(analysis)
+
+    def filtered(history_filter: AnalysisHistoryFilter) -> list[uuid.UUID]:
+        return [
+            item.analysis_id
+            for item in repository.list_recent(
+                limit=10, offset=0, history_filter=history_filter
+            )
+        ]
+
+    assert filtered(AnalysisHistoryFilter(ai_enriched=True)) == [
+        records[3].analysis_id,
+        records[2].analysis_id,
+        records[1].analysis_id,
+    ]
+    assert filtered(AnalysisHistoryFilter(ai_enriched=False)) == [
+        records[4].analysis_id,
+        records[0].analysis_id,
+    ]
+    assert filtered(AnalysisHistoryFilter(min_score=80.0)) == [
+        records[4].analysis_id,
+        records[2].analysis_id,
+    ]
+    assert filtered(AnalysisHistoryFilter(max_score=0.0)) == [records[0].analysis_id]
+    assert filtered(AnalysisHistoryFilter(min_score=60.0, max_score=80.0)) == [
+        records[2].analysis_id,
+        records[1].analysis_id,
+    ]
+    assert filtered(
+        AnalysisHistoryFilter(
+            query="platform", ai_enriched=True, min_score=60.0, max_score=80.0
+        )
+    ) == [records[2].analysis_id, records[1].analysis_id]
+
+    unfiltered = filtered(AnalysisHistoryFilter())
+    assert records[3].analysis_id in unfiltered
+    assert records[0].analysis_id in unfiltered
+
+
+def test_sqlite_history_filters_before_pagination_and_preserves_order(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "pagination.db")
+    timestamp = datetime(2025, 1, 1, tzinfo=UTC)
+    matches = [
+        _history_variant(
+            sample_analysis,
+            title=f"Platform Engineer {index}",
+            company="Acme",
+            created_at=timestamp + timedelta(seconds=index * 2),
+        )
+        for index in range(3)
+    ]
+    unrelated = [
+        _history_variant(
+            sample_analysis,
+            title=f"Designer {index}",
+            company="Elsewhere",
+            created_at=timestamp + timedelta(seconds=index * 2 + 1),
+        )
+        for index in range(3)
+    ]
+    for analysis in (*matches, *unrelated):
+        repository.save(analysis)
+
+    page = repository.list_recent(
+        limit=2,
+        offset=1,
+        history_filter=AnalysisHistoryFilter(query="platform"),
+    )
+
+    assert [item.analysis_id for item in page] == [
+        matches[1].analysis_id,
+        matches[0].analysis_id,
+    ]
+
+
+def test_sqlite_history_filter_reads_only_summary_metadata(
+    tmp_path: Path,
+    sample_analysis: SavedAnalysis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "summary-only.db")
+    repository.save(sample_analysis)
+
+    def forbidden_decode(*args: object, **kwargs: object) -> None:
+        raise AssertionError("History filtering must not decode or recompute payloads")
+
+    monkeypatch.setattr(
+        "pathfinder_ai.infrastructure.sqlite_analysis_repository.decode_analysis",
+        forbidden_decode,
+    )
+
+    summaries = repository.list_recent(
+        limit=10,
+        offset=0,
+        history_filter=AnalysisHistoryFilter(query="backend", ai_enriched=True),
+    )
+
+    assert [item.analysis_id for item in summaries] == [sample_analysis.analysis_id]
 
 
 def test_sqlite_preserves_none_and_zero_scores(

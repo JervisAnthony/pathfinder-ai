@@ -195,6 +195,30 @@ python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 
 The configured database contains sensitive candidate and job snapshots. Use it
 only on a trusted local installation and protect the database file appropriately.
 
+### Saved analysis search and filters
+
+`GET /api/v1/analyses` accepts optional `query`, `ai_enriched`, `min_score`, and
+`max_score` parameters alongside `limit` and `offset`. Search checks job title
+and company name as a literal substring, with whitespace trimmed and collapsed.
+Blank search is inactive; normalized search is limited to 200 characters.
+SQLite performs case-insensitive matching for ASCII; Unicode text is supported,
+but full Unicode case folding is not provided. `%`, `_`, backslash, apostrophes,
+and SQL-like input are literal text rather than search syntax.
+
+AI filtering checks whether enrichment was stored. Score bounds are inclusive,
+finite values from 0 to 100, with minimum no greater than maximum. Unscored rows
+remain visible without score bounds and are excluded when either bound is active.
+All active filters compose before pagination; newest-first ordering is unchanged.
+Invalid filters return the existing safe HTTP 422 validation envelope.
+
+History offers explicit **Apply filters** and **Clear filters** controls. Applying
+or clearing resets to page one; refresh, detail viewing, and deletion preserve
+applied filters. A filtered empty result is distinct from an empty history.
+Filter state stays in component memory and is cleared when History is unmounted;
+it is not saved in browser storage. Search only reads summary metadata and does
+not search candidate content, decode snapshots, recompute scores, or call AI.
+No schema migration, payload-version change, or new dependency is required.
+
 ### Saved analysis deletion and privacy
 
 Pathfinder lets a user delete one saved-analysis snapshot at a time from its
