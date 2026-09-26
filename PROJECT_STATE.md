@@ -48,11 +48,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 20 — Saved Analysis Export & Portability**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #24 — Add saved analysis export**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/24
 
 This authorized post-MVP milestone adds explicit JSON and Markdown downloads of
 one existing saved snapshot from its Web detail view. JSON reuses the public
