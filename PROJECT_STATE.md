@@ -49,11 +49,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 21 — Saved Analysis Comparison & Change View**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #25 — Add saved analysis comparison**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/25
 
 This authorized post-MVP milestone compares two existing stored snapshots through
 a pure immutable application result, a typed read-only API, and a detail-driven
