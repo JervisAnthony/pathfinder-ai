@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-26
+Last updated: 2026-09-27
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`9361fb4d776032a3e3d42aa14c1b0407fe7d9c99`
+`2646bbf2e3892b8c99a5d9566306b86d14f789f5`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 18 — Saved Analysis Deletion & Privacy Controls**
+**Commit 19 — Saved Analysis Search & Filters**
 
 ## Completed MVP-1 Roadmap
 
@@ -42,30 +42,34 @@ These milestones must not be replayed or rebuilt.
 - Commit 16 — AI-Assisted Job Description Import — complete (PR #20 merged)
 - Commit 17 — AI-Assisted Candidate Profile Import — complete (PR #21 merged)
 - Commit 18 — Saved Analysis Deletion & Privacy Controls — complete (PR #22 merged)
+- Commit 19 — Saved Analysis Search & Filters — complete (PR #23 merged)
 
 ## Post-MVP Active Work
 
-**Commit 19 — Saved Analysis Search & Filters**
+**Commit 20 — Saved Analysis Export & Portability**
 
 Status: **PR under review**
 
 Active pull request:
 
-**PR #23 — Add saved analysis search and filters**
+**PR #24 — Add saved analysis export**
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/23
+https://github.com/JervisAnthony/pathfinder-ai/pull/24
 
-This authorized post-MVP milestone adds literal title/company search, optional
-AI-enrichment presence filtering, and inclusive score bounds to saved history.
-Filters compose before pagination and preserve the existing newest-first order.
-The Web history uses explicit Apply/Clear controls and retains applied filters
-through refresh, detail viewing, and individual deletion. Filters live only in
-component memory; no browser storage is used.
+This authorized post-MVP milestone adds explicit JSON and Markdown downloads of
+one existing saved snapshot from its Web detail view. JSON reuses the public
+saved-detail contract. Markdown is rendered by a deterministic application module
+with centralized escaping of stored text, using only the saved timestamp/results.
 
-Filtering reads summary metadata only. SQLite schema and version-2 snapshot
-payloads remain unchanged. Dependencies, deterministic analysis, and AI behavior
-remain unchanged. Individual deletion remains confirmation-gated logical deletion,
-not guaranteed secure erasure of database files, backups, or filesystem snapshots.
+Exports do not recompute analysis, invoke AI or import/drafting workflows, mutate
+snapshots, write persistence, or store report files on the server. UUID-derived
+attachment filenames, no-store responses, and nosniff headers protect the download
+contract. Downloaded files may contain sensitive structured candidate/job data
+and become the user's responsibility outside Pathfinder.
+
+SQLite schema and version-2 snapshot payloads remain unchanged. No dependencies,
+browser storage, deterministic-core changes, AI behavior changes, or next-milestone
+scope are introduced. Existing history filters and individual deletion remain intact.
 
 ## Existing Capabilities
 
@@ -92,6 +96,7 @@ The repository already contains:
 - explicit draft review/apply workflows
 - confirmation-gated deletion of individual saved-analysis snapshots
 - saved-history title/company search, AI presence filters, and inclusive score bounds
+- explicit JSON and deterministic Markdown downloads of individual saved snapshots
 
 ## Architectural Boundary
 

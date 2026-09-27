@@ -195,6 +195,57 @@ python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 
 The configured database contains sensitive candidate and job snapshots. Use it
 only on a trusted local installation and protect the database file appropriately.
 
+### Saved analysis export and portability
+
+Open a saved analysis in History, inspect its detail, and explicitly choose
+**Download JSON** or **Download Markdown**. No download starts automatically.
+Downloads leave the detail visible and retain applied history filters. The existing
+confirmation-gated Delete action remains separate.
+
+`GET /api/v1/analyses/{analysis_id}/export?format=json` downloads the public
+saved-detail information as pretty-printed UTF-8 JSON. It includes the structured
+candidate/job data, stored score/explanation, interview preparation, learning
+recommendations, and any saved AI enrichment. The JSON data matches the normal
+saved-detail endpoint; it is not the internal persistence payload.
+
+Use `format=markdown` for a human-readable deterministic report. JSON is the
+default format. Markdown contains saved metadata, target role, match summary,
+available evidence/gaps and keyword coverage, stored interview guidance, available
+learning recommendations, and optional stored AI enrichment. Unknown scores say
+"Not scored" rather than zero. Stored text is escaped to keep Markdown syntax and
+HTML-like content inert. The report is application guidance, not a résumé, cover
+letter, ATS result, hiring probability, employer decision, or employment guarantee.
+
+Exports are available only from saved snapshots. They do not recompute analysis,
+invoke AI or import/drafting workflows, alter persistence, or create another
+snapshot. Repeated exports of the same snapshot produce the same content. Stored
+AI enrichment may appear, clearly labelled with its stored provider name; export
+never contacts that provider.
+
+Responses are attachments named `pathfinder-analysis-<uuid>.json` or
+`pathfinder-analysis-<uuid>.md`, derived only from the validated analysis UUID.
+JSON uses `application/json; charset=utf-8`; Markdown uses
+`text/markdown; charset=utf-8`. Successful responses use `Cache-Control: no-store`
+and `X-Content-Type-Options: nosniff`. Unknown/deleted IDs return safe 404 errors,
+invalid UUIDs/formats return 422, and persistence-disabled servers return 503.
+
+**Export privacy:** Files may contain sensitive structured candidate/job data.
+Pathfinder does not export raw résumé source, uploaded file bytes, original
+filenames, raw job-posting source, prompts, provider request IDs, API keys, database
+paths, or runtime configuration. No generated export file is stored on the server,
+and no analysis data is placed in localStorage, sessionStorage, IndexedDB, or
+cookies. The browser uses a Blob and temporary object URL for the explicit
+download, then removes the anchor and revokes the URL.
+
+Downloaded files become your responsibility once saved outside Pathfinder.
+Protect them when storing or sharing them. `no-store` reduces HTTP caching; it
+does not remove an explicitly downloaded file. Deleting the saved snapshot does
+not delete previously downloaded copies.
+
+No schema migration, version-2 persistence change, or additional dependency is
+required. Existing deterministic analysis, AI behavior, history search/filter
+semantics, and individual deletion remain unchanged.
+
 ### Saved analysis search and filters
 
 `GET /api/v1/analyses` accepts optional `query`, `ai_enriched`, `min_score`, and

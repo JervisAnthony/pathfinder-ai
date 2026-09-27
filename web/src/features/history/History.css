@@ -139,6 +139,19 @@
   padding: 1.25rem;
 }
 
+.saved-export {
+  border: 1px solid #ccd5df;
+  border-radius: 8px;
+  margin-block: 1rem;
+  padding: 1rem;
+}
+
+.export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .delete-confirmation {
   background: #fff;
   border: 2px solid #a5281b;
