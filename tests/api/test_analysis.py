@@ -1,7 +1,7 @@
 """End-to-end tests for the analysis API."""
 
 import uuid
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentRequest,
     AIEnrichmentResult,
 )
+from pathfinder_ai.application.analysis_comparison import compare_saved_analyses
 from pathfinder_ai.application.analysis_export import render_saved_analysis_markdown
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
@@ -30,7 +31,7 @@ from pathfinder_ai.application.learning_recommendations import (
     LearningRecommendations,
 )
 from pathfinder_ai.domain import JobDescription, MatchExplanation
-from pathfinder_ai.domain.matching import DeterministicMatcher
+from pathfinder_ai.domain.matching import DeterministicMatcher, MatchScore
 from pathfinder_ai.infrastructure.sqlite_analysis_repository import (
     SQLiteAnalysisRepository,
 )
@@ -906,6 +907,180 @@ def test_export_openapi_contract() -> None:
     assert {"200", "404", "422", "503"}.issubset(responses)
     assert {"application/json", "text/markdown"}.issubset(responses["200"]["content"])
     assert "Content-Disposition" in responses["200"]["headers"]
+
+
+@pytest.mark.parametrize("unscored", [False, True])
+def test_comparison_read_only_sqlite_smoke(
+    tmp_path: Path,
+    valid_payload: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    unscored: bool,
+) -> None:
+    import sqlite3
+
+    from pathfinder_ai.api.schemas import SavedAnalysisComparisonSchema
+
+    database = tmp_path / "comparison.db"
+    repository = SQLiteAnalysisRepository(database)
+    provider = FakeAIProvider()
+    client = TestClient(
+        create_app(analysis_repository=repository, ai_provider=provider)
+    )
+    valid_payload["save_analysis"] = True
+    left_id = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+    valid_payload["include_ai_enrichment"] = True
+    valid_payload["job_description"]["title"]["title"] = (
+        '<script>alert(1)</script> **Café** "SQL"; DROP TABLE analyses;--'
+    )
+    right_id = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+    left, right = (
+        repository.get(uuid.UUID(left_id)),
+        repository.get(uuid.UUID(right_id)),
+    )
+    assert left is not None and right is not None
+    if unscored:
+        left = replace(
+            left,
+            match_explanation=replace(left.match_explanation, score=MatchScore(None)),
+        )
+        assert repository.delete(left.analysis_id)
+        repository.save(left)
+    before = database.read_bytes()
+    with sqlite3.connect(database) as connection:
+        schema_before = connection.execute(
+            "SELECT sql FROM sqlite_master ORDER BY name"
+        ).fetchall()
+        payloads_before = connection.execute(
+            "SELECT payload_json FROM saved_analyses ORDER BY analysis_id"
+        ).fetchall()
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Comparison cannot recompute, call AI or write")
+
+    monkeypatch.setattr(DeterministicMatcher, "explain", forbidden)
+    monkeypatch.setattr(DeterministicInterviewPreparer, "prepare", forbidden)
+    monkeypatch.setattr(DeterministicLearningRecommender, "recommend", forbidden)
+    monkeypatch.setattr(provider, "enrich", forbidden)
+    monkeypatch.setattr(repository, "save", forbidden)
+    params = {"left_analysis_id": left_id, "right_analysis_id": right_id}
+    response = client.get("/api/v1/analyses/compare", params=params)
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    expected = SavedAnalysisComparisonSchema.model_validate(
+        asdict(compare_saved_analyses(left, right))
+    ).model_dump(mode="json")
+    assert response.json() == expected
+    assert (
+        client.get("/api/v1/analyses/compare", params=params).content
+        == response.content
+    )
+    assert response.json()["score_delta"] == (None if unscored else 0)
+    assert response.json()["left"]["ai_enriched"] is False
+    assert response.json()["right"]["ai_enriched"] is True
+    for private in (
+        "candidate_profile",
+        "job_description",
+        "Synthetic AI insight.",
+        "provider_name",
+        "payload_json",
+    ):
+        assert private not in response.text
+    same = client.get(
+        "/api/v1/analyses/compare",
+        params={"left_analysis_id": right_id, "right_analysis_id": right_id},
+    )
+    assert same.status_code == 200 and same.json()["score_delta"] == 0
+    assert same.json()["matched_skills"]["left_only"] == []
+    assert database.read_bytes() == before
+    assert repository.get(uuid.UUID(left_id)) == left
+    assert repository.get(uuid.UUID(right_id)) == right
+    with sqlite3.connect(database) as connection:
+        assert (
+            connection.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall()
+            == schema_before
+        )
+        assert (
+            connection.execute(
+                "SELECT payload_json FROM saved_analyses ORDER BY analysis_id"
+            ).fetchall()
+            == payloads_before
+        )
+        assert connection.execute(
+            "SELECT DISTINCT payload_version FROM saved_analyses"
+        ).fetchall() == [(2,)]
+    assert client.get("/api/v1/analyses").status_code == 200
+    for analysis_id in (left_id, right_id):
+        assert client.get(f"/api/v1/analyses/{analysis_id}").status_code == 200
+        for format in ("json", "markdown"):
+            assert (
+                client.get(
+                    f"/api/v1/analyses/{analysis_id}/export", params={"format": format}
+                ).status_code
+                == 200
+            )
+    assert client.delete(f"/api/v1/analyses/{left_id}").status_code == 204
+    missing = client.get("/api/v1/analyses/compare", params=params)
+    other_missing = client.get(
+        "/api/v1/analyses/compare",
+        params={"left_analysis_id": right_id, "right_analysis_id": left_id},
+    )
+    both_missing = client.get(
+        "/api/v1/analyses/compare",
+        params={"left_analysis_id": left_id, "right_analysis_id": left_id},
+    )
+    assert (
+        missing.status_code
+        == other_missing.status_code
+        == both_missing.status_code
+        == 404
+    )
+    assert missing.json() == other_missing.json() == both_missing.json()
+    assert left_id not in missing.text and right_id not in missing.text
+    assert client.get(f"/api/v1/analyses/{left_id}/export").status_code == 404
+    assert client.get(f"/api/v1/analyses/{right_id}").status_code == 200
+
+
+@pytest.mark.parametrize("side", ["left_analysis_id", "right_analysis_id"])
+def test_comparison_invalid_uuid(side: str, fake_repo: FakeRepository) -> None:
+    params = {
+        "left_analysis_id": str(uuid.uuid4()),
+        "right_analysis_id": str(uuid.uuid4()),
+    }
+    params[side] = "invalid-private-input"
+    response = TestClient(create_app(analysis_repository=fake_repo)).get(
+        "/api/v1/analyses/compare", params=params
+    )
+    _assert_validation_error(response, side)
+    assert "invalid-private-input" not in response.text
+
+
+def test_comparison_unavailable_openapi_and_route_order() -> None:
+    app = create_app()
+    response = TestClient(app).get(
+        "/api/v1/analyses/compare",
+        params={
+            "left_analysis_id": str(uuid.uuid4()),
+            "right_analysis_id": str(uuid.uuid4()),
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "persistence_unavailable"
+    from pathfinder_ai.api.routes.analysis import router
+
+    paths = [route.path for route in router.routes if hasattr(route, "path")]
+    assert paths.index("/api/v1/analyses/compare") < paths.index(
+        "/api/v1/analyses/{analysis_id}"
+    )
+    operation = app.openapi()["paths"]["/api/v1/analyses/compare"]["get"]
+    assert {parameter["name"] for parameter in operation["parameters"]} == {
+        "left_analysis_id",
+        "right_analysis_id",
+    }
+    assert {"200", "404", "422", "503"} <= operation["responses"].keys()
 
 
 def test_export_after_deletion_returns_not_found(
