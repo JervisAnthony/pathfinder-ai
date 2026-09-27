@@ -155,6 +155,7 @@ export function AnalysisHistory() {
       <SavedDetailView
         detail={detail}
         onBack={() => setDetail(null)}
+        backLabel={comparison ? '← Back to Comparison' : undefined}
         onDelete={deleteDetail}
         key={detail.analysis_id}
         comparisonSelectionId={selection?.id}

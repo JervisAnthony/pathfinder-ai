@@ -510,10 +510,12 @@ describe('saved comparison workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
     expect(deleteSavedAnalysis).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(screen.getByRole('button', { name: '← Back to Comparison' }));
+    expect(screen.getByRole('heading', { name: 'Saved Analysis Comparison' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open right snapshot' }));
     await screen.findByRole('heading', { name: 'Second role' });
-    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(screen.getByRole('button', { name: '← Back to Comparison' }));
+    expect(screen.getByRole('heading', { name: 'Saved Analysis Comparison' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Clear comparison' }));
     expect(screen.queryByText(/Selected for comparison:/)).not.toBeInTheDocument();
     expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0); expect(document.cookie).toBe('');

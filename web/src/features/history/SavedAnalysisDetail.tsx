@@ -9,6 +9,7 @@ import { savedAnalysisDetailToAnalysisResponse } from './mapping';
 interface Props {
   detail: SavedDetail;
   onBack: () => void;
+  backLabel?: string;
   onDelete: (analysisId: string) => Promise<void>;
   comparisonSelectionId?: string;
   onSelectComparison?: () => void;
@@ -44,7 +45,7 @@ function exportErrorMessage(error: unknown): string {
   return 'Pathfinder could not export this saved analysis. Please try again.';
 }
 
-export function SavedAnalysisDetail({ detail, onBack, onDelete, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
+export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -94,7 +95,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete, comparisonSelect
 
   return (
     <article className="saved-detail">
-      <button type="button" className="back-btn" disabled={comparing} onClick={onBack}>← Back to History</button>
+      <button type="button" className="back-btn" disabled={comparing} onClick={onBack}>{backLabel}</button>
       <header className="history-heading">
         <div>
           <p className="eyebrow">Saved analysis</p>
