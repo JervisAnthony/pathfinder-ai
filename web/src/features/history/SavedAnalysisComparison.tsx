@@ -41,7 +41,7 @@ export function SavedAnalysisComparison({ comparison: result, onBack, onClear, o
   const coverage = (value: number | null) => value === null ? 'Not available' : `${value}%`;
   const component = (earned: number | null, possible: number | null) => earned === null || possible === null ? 'Not present' : `${earned} / ${possible}`;
   return <article className="saved-comparison" aria-labelledby="comparison-title">
-    <div className="comparison-actions"><button type="button" onClick={onBack}>Back to History</button><button type="button" onClick={onClear}>Clear comparison</button>
+    <div className="comparison-actions"><button type="button" disabled={opening} onClick={onBack}>Back to History</button><button type="button" disabled={opening} onClick={onClear}>Clear comparison</button>
       <button type="button" disabled={opening} onClick={() => onOpen(result.left.analysis_id)}>Open left snapshot</button>
       <button type="button" disabled={opening} onClick={() => onOpen(result.right.analysis_id)}>Open right snapshot</button></div>
     {opening && <p role="status">Loading saved analysis…</p>}{error && <p role="alert">{error}</p>}

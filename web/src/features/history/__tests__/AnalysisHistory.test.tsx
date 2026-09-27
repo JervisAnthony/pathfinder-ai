@@ -586,3 +586,41 @@ describe('saved comparison workflow', () => {
     expect(document.querySelector('script')).toBeNull();
   });
 });
+
+describe('comparison request navigation guards', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary, secondSummary] });
+    vi.mocked(getSavedAnalysis).mockImplementation(async (id) => ({ ...detail, analysis_id: id }));
+    vi.mocked(compareSavedAnalyses).mockResolvedValue(comparison);
+  });
+  async function openComparisonPair() {
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Select for comparison' }));
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Second role/ }));
+    await screen.findByRole('button', { name: 'Compare with selected' });
+  }
+  it('prevents an existing delete confirmation from submitting during comparison', async () => {
+    let resolve!: (value: SavedAnalysisComparison) => void;
+    vi.mocked(compareSavedAnalyses).mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<AnalysisHistory />); await openComparisonPair();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    const deletion = screen.getByRole('button', { name: 'Delete permanently' });
+    expect(deletion).toBeDisabled(); fireEvent.click(deletion);
+    expect(deleteSavedAnalysis).not.toHaveBeenCalled();
+    resolve(comparison); await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
+  });
+  it('prevents clearing or leaving comparison during side retrieval', async () => {
+    render(<AnalysisHistory />); await openComparisonPair();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
+    let resolve!: (value: SavedAnalysisDetail) => void;
+    vi.mocked(getSavedAnalysis).mockReturnValue(new Promise((r) => { resolve = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open left snapshot' }));
+    expect(screen.getByRole('button', { name: 'Clear comparison' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Back to History' })).toBeDisabled();
+    resolve(detail); await screen.findByRole('button', { name: 'Download JSON' });
+  });
+});

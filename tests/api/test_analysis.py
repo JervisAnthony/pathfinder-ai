@@ -1,6 +1,7 @@
 """End-to-end tests for the analysis API."""
 
 import uuid
+from contextlib import closing
 from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
@@ -950,7 +951,7 @@ def test_comparison_read_only_sqlite_smoke(
         assert repository.delete(left.analysis_id)
         repository.save(left)
     before = database.read_bytes()
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         schema_before = connection.execute(
             "SELECT sql FROM sqlite_master ORDER BY name"
         ).fetchall()
@@ -998,7 +999,7 @@ def test_comparison_read_only_sqlite_smoke(
     assert database.read_bytes() == before
     assert repository.get(uuid.UUID(left_id)) == left
     assert repository.get(uuid.UUID(right_id)) == right
-    with sqlite3.connect(database) as connection:
+    with closing(sqlite3.connect(database)) as connection:
         assert (
             connection.execute("SELECT sql FROM sqlite_master ORDER BY name").fetchall()
             == schema_before

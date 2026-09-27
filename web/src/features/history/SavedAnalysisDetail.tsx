@@ -109,8 +109,8 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete, comparisonSelect
 
       {onSelectComparison && <section aria-label="Comparison selection">
         {!comparisonSelectionId ? <button type="button" onClick={onSelectComparison}>Select for comparison</button> : <>
-          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing} onClick={onCompare}>Compare with selected</button>}
-          <button type="button" disabled={comparing} onClick={onClearComparison}>Clear comparison selection</button>
+          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting} onClick={onCompare}>Compare with selected</button>}
+          <button type="button" disabled={comparing || deleting} onClick={onClearComparison}>Clear comparison selection</button>
         </>}
         {comparing && <p role="status">Loading saved analysis comparison…</p>}
         {comparisonError && <p role="alert">{comparisonError}</p>}
@@ -229,7 +229,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete, comparisonSelect
               <button
                 type="button"
                 className="secondary-btn"
-                disabled={deleting}
+                disabled={deleting || comparing}
                 onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
               >
                 Cancel
@@ -237,7 +237,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete, comparisonSelect
               <button
                 type="button"
                 className="danger-btn"
-                disabled={deleting}
+                disabled={deleting || comparing}
                 onClick={() => void confirmDelete()}
               >
                 Delete permanently
