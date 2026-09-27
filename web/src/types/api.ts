@@ -311,6 +311,38 @@ export interface AnalysisHistoryResponse {
   items: SavedAnalysisSummary[];
 }
 
+export interface ComparisonSide extends SavedAnalysisSummary {
+  keyword_coverage_percentage: number | null;
+}
+
+export interface ComparisonSkills {
+  in_both: string[];
+  left_only: string[];
+  right_only: string[];
+}
+
+export interface ComparisonComponent {
+  kind: ScoreComponent['kind'];
+  left_earned_points: number | null;
+  left_possible_points: number | null;
+  right_earned_points: number | null;
+  right_possible_points: number | null;
+  earned_points_delta: number | null;
+}
+
+export interface SavedAnalysisComparison {
+  left: ComparisonSide;
+  right: ComparisonSide;
+  score_delta: number | null;
+  keyword_coverage_delta: number | null;
+  score_components: ComparisonComponent[];
+  matched_skills: ComparisonSkills;
+  missing_required_skills: ComparisonSkills;
+  missing_preferred_skills: ComparisonSkills;
+  experience_gaps: { left: ExperienceGap | null; right: ExperienceGap | null };
+  education_gaps: { left: EducationRequirement | null; right: EducationRequirement | null };
+}
+
 export interface SavedAnalysisDetail {
   analysis_id: string;
   created_at: string;

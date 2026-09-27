@@ -3,12 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
   ApiError,
+  compareSavedAnalyses,
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
   getSavedAnalysis,
 } from '../../../api/pathfinder';
-import { SavedAnalysisDetail, SavedAnalysisSummary } from '../../../types/api';
+import { SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../../types/api';
 import { AnalysisHistory } from '../AnalysisHistory';
 import { formatSavedTimestamp } from '../formatting';
 import { savedAnalysisDetailToAnalysisResponse } from '../mapping';
@@ -16,6 +17,7 @@ import { savedAnalysisDetailToAnalysisResponse } from '../mapping';
 vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(),
+  compareSavedAnalyses: vi.fn(),
   getSavedAnalysis: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
   downloadSavedAnalysis: vi.fn(),
@@ -456,5 +458,131 @@ describe('history filters', () => {
     await screen.findByText('No saved analyses match these filters.');
     resolveOld({ items: [summary] });
     await waitFor(() => expect(screen.queryByText('Platform Engineer')).not.toBeInTheDocument());
+  });
+});
+
+const secondSummary = { ...summary, analysis_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', job_title: 'Second role' };
+const comparison: SavedAnalysisComparison = {
+  left: { ...summary, score: 82, keyword_coverage_percentage: 50, ai_enriched: false },
+  right: { ...secondSummary, score: 74, keyword_coverage_percentage: 100, company_name: 'Northwind' },
+  score_delta: -8, keyword_coverage_delta: 50,
+  score_components: [{ kind: 'required_skills', left_earned_points: 50, left_possible_points: 60, right_earned_points: 42, right_possible_points: 60, earned_points_delta: -8 }, { kind: 'experience', left_earned_points: null, left_possible_points: null, right_earned_points: 10, right_possible_points: 20, earned_points_delta: null }],
+  matched_skills: { in_both: ['python'], left_only: ['fastapi', 'azure'], right_only: ['docker'] },
+  missing_required_skills: { in_both: [], left_only: ['kubernetes'], right_only: ['mlflow'] },
+  missing_preferred_skills: { in_both: [], left_only: ['docker'], right_only: ['azure'] },
+  experience_gaps: { left: { required_months: 36, known_candidate_months: 24, missing_months: 12 }, right: null },
+  education_gaps: { left: { level: 'master', field_of_study: 'Computing', description: 'Stored degree' }, right: null },
+};
+
+describe('saved comparison workflow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary, secondSummary] });
+    vi.mocked(getSavedAnalysis).mockImplementation(async (id) => ({ ...detail, analysis_id: id, job_description: { ...detail.job_description, title: { title: id === summary.analysis_id ? summary.job_title : secondSummary.job_title } } }));
+    vi.mocked(compareSavedAnalyses).mockResolvedValue(comparison);
+  });
+  async function selectFirst() {
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Select for comparison' }));
+    expect(compareSavedAnalyses).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Compare with selected' })).not.toBeInTheDocument();
+    expect(screen.getByText('Selected for comparison')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+  }
+  async function openSecond() {
+    fireEvent.click(screen.getByRole('button', { name: /Second role/ }));
+    await screen.findByRole('button', { name: 'Compare with selected' });
+  }
+  it('compares once and renders neutral stored values, gaps and AI presence without AI text', async () => {
+    render(<AnalysisHistory />); await selectFirst(); await openSecond();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    expect(await screen.findByRole('heading', { name: 'Saved Analysis Comparison' })).toBeInTheDocument();
+    expect(compareSavedAnalyses).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, secondSummary.analysis_id);
+    expect(screen.getByText(/They do not by themselves indicate improvement or regression/)).toBeInTheDocument();
+    for (const text of ['Northwind', '-8', 'Not present', 'python', 'fastapi', 'mlflow', 'kubernetes', 'Stored degree', 'No stored experience gap', 'No stored education gap', 'Stored AI enrichment: Yes', 'Stored AI enrichment: No']) {
+      expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByText('Historical insight')).not.toBeInTheDocument();
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Open left snapshot' }));
+    await screen.findByRole('button', { name: 'Download JSON' });
+    expect(screen.getByRole('button', { name: 'Download Markdown' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    expect(deleteSavedAnalysis).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open right snapshot' }));
+    await screen.findByRole('heading', { name: 'Second role' });
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear comparison' }));
+    expect(screen.queryByText(/Selected for comparison:/)).not.toBeInTheDocument();
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0); expect(document.cookie).toBe('');
+  });
+  it('preserves selection and draft/applied filters across pagination and comparison Back', async () => {
+    const page = Array.from({ length: 20 }, (_, i) => ({ ...summary, analysis_id: i ? `id-${i}` : summary.analysis_id, job_title: i ? `Role ${i}` : summary.job_title }));
+    vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, offset) => ({ items: offset ? [secondSummary] : page }));
+    render(<AnalysisHistory />); await selectFirst();
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'role' } });
+    fireEvent.change(screen.getByLabelText('AI enrichment'), { target: { value: 'yes' } });
+    fireEvent.change(screen.getByLabelText('Minimum score'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledWith(20, 0, { query: 'role', ai_enriched: true, min_score: 0 }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByRole('button', { name: /Second role/ }); await openSecond();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
+    fireEvent.click(screen.getByRole('button', { name: 'Back to History' }));
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('draft');
+    expect(screen.getByLabelText('AI enrichment')).toHaveValue('yes');
+    expect(screen.getByLabelText('Minimum score')).toHaveValue(0);
+    expect(screen.getByText(/Selected for comparison:/)).toBeInTheDocument();
+  });
+  it.each([
+    [new ApiError('PRIVATE', 404, 'analysis_not_found'), 'One or both saved analyses no longer exist.'],
+    [new ApiError('PRIVATE', 503, 'persistence_unavailable'), 'Saved analysis comparison is unavailable because persistence is not configured on this Pathfinder server.'],
+    [new Error('PRIVATE'), 'Pathfinder could not compare these saved analyses. Please try again.'],
+  ])('keeps detail usable after safe comparison failure', async (error, message) => {
+    vi.mocked(compareSavedAnalyses).mockRejectedValue(error);
+    render(<AnalysisHistory />); await selectFirst(); await openSecond();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText('PRIVATE')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeInTheDocument();
+    if (error instanceof ApiError && error.status === 404) expect(screen.getByRole('button', { name: 'Select for comparison' })).toBeInTheDocument();
+  });
+  it('guards duplicate requests and reports loading', async () => {
+    let resolve!: (value: SavedAnalysisComparison) => void;
+    vi.mocked(compareSavedAnalyses).mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<AnalysisHistory />); await selectFirst(); await openSecond();
+    const button = screen.getByRole('button', { name: 'Compare with selected' });
+    fireEvent.click(button); fireEvent.click(button);
+    expect(screen.getByRole('status')).toHaveTextContent('Loading saved analysis comparison');
+    expect(compareSavedAnalyses).toHaveBeenCalledTimes(1);
+    resolve(comparison); await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
+  });
+  it('clears selection when the selected snapshot is deleted and when History unmounts', async () => {
+    vi.mocked(deleteSavedAnalysis).mockResolvedValue();
+    const view = render(<AnalysisHistory />); await selectFirst();
+    fireEvent.click(screen.getByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByText('Selected for comparison');
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    await screen.findByRole('heading', { name: 'Analysis History' });
+    expect(screen.queryByText(/Selected for comparison:/)).not.toBeInTheDocument();
+    await selectFirst(); view.unmount(); render(<AnalysisHistory />);
+    await screen.findByRole('heading', { name: 'Analysis History' });
+    expect(screen.queryByText(/Selected for comparison:/)).not.toBeInTheDocument();
+  });
+  it('renders unavailable deltas and hostile stored text as inert React text', async () => {
+    const hostile = '<script>alert(1)</script> **Café** "quote"; DROP TABLE saved_analyses;--';
+    vi.mocked(compareSavedAnalyses).mockResolvedValue({ ...comparison, left: { ...comparison.left, job_title: hostile, score: null, keyword_coverage_percentage: null }, score_delta: null, keyword_coverage_delta: null, matched_skills: { in_both: [hostile], left_only: [], right_only: [] } });
+    render(<AnalysisHistory />); await selectFirst(); await openSecond();
+    fireEvent.click(screen.getByRole('button', { name: 'Compare with selected' }));
+    await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
+    expect(screen.getAllByText('Not comparable').length).toBeGreaterThan(1);
+    expect(screen.getAllByText(hostile)).toHaveLength(2);
+    expect(document.querySelector('script')).toBeNull();
   });
 });

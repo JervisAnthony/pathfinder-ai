@@ -5,6 +5,7 @@ import {
   ApiErrorDetail,
   ApiErrorResponse,
   SavedAnalysisDetail,
+  SavedAnalysisComparison,
   ResumeSkillImportRequest,
   ResumeSkillImportResponse,
   PathfinderCapabilities,
@@ -262,6 +263,11 @@ export function getAnalysisHistory(
 
 export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetail> {
   return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}`);
+}
+
+export function compareSavedAnalyses(leftAnalysisId: string, rightAnalysisId: string): Promise<SavedAnalysisComparison> {
+  const query = new URLSearchParams({ left_analysis_id: leftAnalysisId, right_analysis_id: rightAnalysisId });
+  return requestJson(`/api/v1/analyses/compare?${query.toString()}`, { method: 'GET', cache: 'no-store' });
 }
 
 export type SavedAnalysisExportFormat = 'json' | 'markdown';
