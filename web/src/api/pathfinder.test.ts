@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
   ApiError,
+  compareSavedAnalyses,
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
@@ -326,5 +327,28 @@ describe('saved analysis API', () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({
       limit: '20', offset: '40', query: search, ai_enriched: 'false', min_score: '0', max_score: '100',
     });
+  });
+});
+
+describe('compareSavedAnalyses', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('encodes both IDs and uses a read-only uncached GET', async () => {
+    const result = { score_delta: -8 };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(result)));
+    expect(await compareSavedAnalyses('left/&?', 'right + Unicodeé')).toEqual(result);
+    const [url, init] = fetchMock.mock.calls[0];
+    const parsed = new URL(String(url), 'http://localhost');
+    expect(parsed.pathname).toBe('/api/v1/analyses/compare');
+    expect(parsed.searchParams.get('left_analysis_id')).toBe('left/&?');
+    expect(parsed.searchParams.get('right_analysis_id')).toBe('right + Unicodeé');
+    expect(init).toEqual({ method: 'GET', cache: 'no-store' });
+  });
+  it.each([[404, 'analysis_not_found'], [503, 'persistence_unavailable']])('preserves safe errors %s', async (status, code) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(errorResponse(Number(status), String(code), 'Safe message'));
+    await expect(compareSavedAnalyses('left', 'right')).rejects.toMatchObject({ status, code, message: 'Safe message' });
+  });
+  it('masks network failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('PRIVATE'));
+    await expect(compareSavedAnalyses('left', 'right')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
   });
 });

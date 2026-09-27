@@ -2,13 +2,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import {
   ApiError,
+  compareSavedAnalyses,
   deleteSavedAnalysis,
   getAnalysisHistory,
   getSavedAnalysis,
 } from '../../api/pathfinder';
-import { SavedAnalysisDetail, SavedAnalysisSummary } from '../../types/api';
+import { SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
+import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import './History.css';
 
 const PAGE_SIZE = 20;
@@ -40,6 +42,11 @@ export function AnalysisHistory() {
   const [filters, setFilters] = useState<AnalysisHistoryFilters>({});
   const [filterError, setFilterError] = useState<string | null>(null);
   const historyRequest = useRef(0);
+  const [selection, setSelection] = useState<{ id: string; title: string } | null>(null);
+  const [comparison, setComparison] = useState<SavedAnalysisComparison | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [comparisonError, setComparisonError] = useState<string | null>(null);
+  const comparisonPending = useRef(false);
   const filtered = Object.keys(filters).length > 0;
 
   const applyFilters = (event: React.FormEvent) => {
@@ -97,6 +104,7 @@ export function AnalysisHistory() {
     setDetailError(null);
     try {
       setDetail(await getSavedAnalysis(analysisId));
+      setComparisonError(null);
     } catch (caught) {
       setDetailError(errorMessage(caught, 'detail'));
     } finally {
@@ -108,10 +116,37 @@ export function AnalysisHistory() {
     await deleteSavedAnalysis(analysisId);
     setDetail(null);
     setDetailError(null);
+    if (selection?.id === analysisId) setSelection(null);
+    if (comparison?.left.analysis_id === analysisId || comparison?.right.analysis_id === analysisId) setComparison(null);
     if (offset > 0 && items.length === 1) {
       setOffset(Math.max(0, offset - PAGE_SIZE));
     } else {
       await loadHistory();
+    }
+  };
+
+  const clearComparison = () => {
+    setSelection(null); setComparison(null); setComparisonError(null);
+  };
+
+  const compare = async () => {
+    if (!selection || !detail || selection.id === detail.analysis_id || comparisonPending.current) return;
+    comparisonPending.current = true;
+    setComparing(true); setComparisonError(null);
+    try {
+      setComparison(await compareSavedAnalyses(selection.id, detail.analysis_id));
+      setDetail(null);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.code === 'analysis_not_found') {
+        setSelection(null); setComparison(null);
+        setComparisonError('One or both saved analyses no longer exist.');
+      } else if (caught instanceof ApiError && caught.code === 'persistence_unavailable') {
+        setComparisonError('Saved analysis comparison is unavailable because persistence is not configured on this Pathfinder server.');
+      } else {
+        setComparisonError('Pathfinder could not compare these saved analyses. Please try again.');
+      }
+    } finally {
+      comparisonPending.current = false; setComparing(false);
     }
   };
 
@@ -120,10 +155,20 @@ export function AnalysisHistory() {
       <SavedDetailView
         detail={detail}
         onBack={() => setDetail(null)}
+        backLabel={comparison ? '← Back to Comparison' : undefined}
         onDelete={deleteDetail}
+        key={detail.analysis_id}
+        comparisonSelectionId={selection?.id}
+        onSelectComparison={() => { setSelection({ id: detail.analysis_id, title: detail.job_description.title.title }); setComparisonError(null); }}
+        onClearComparison={clearComparison}
+        onCompare={() => void compare()}
+        comparing={comparing}
+        comparisonError={comparisonError}
       />
     );
   }
+
+  if (comparison) return <ComparisonView comparison={comparison} onBack={() => setComparison(null)} onClear={clearComparison} onOpen={(id) => void openDetail(id)} opening={detailLoading} error={detailError} />;
 
   return (
     <section className="history-view" aria-labelledby="history-title">
@@ -142,6 +187,7 @@ export function AnalysisHistory() {
         snapshot from Pathfinder history; it is not a secure filesystem wipe.
       </p>
 
+      {selection && <div className="comparison-selection"><p role="status">Selected for comparison: {selection.title}</p><button type="button" onClick={clearComparison}>Clear comparison selection</button></div>}
       <form className="history-filters" onSubmit={applyFilters}>
         <label>Search job title or company
           <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} />

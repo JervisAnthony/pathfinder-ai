@@ -9,7 +9,14 @@ import { savedAnalysisDetailToAnalysisResponse } from './mapping';
 interface Props {
   detail: SavedDetail;
   onBack: () => void;
+  backLabel?: string;
   onDelete: (analysisId: string) => Promise<void>;
+  comparisonSelectionId?: string;
+  onSelectComparison?: () => void;
+  onClearComparison?: () => void;
+  onCompare?: () => void;
+  comparing?: boolean;
+  comparisonError?: string | null;
 }
 
 function TextList({ values, empty }: { values: string[]; empty: string }) {
@@ -38,7 +45,7 @@ function exportErrorMessage(error: unknown): string {
   return 'Pathfinder could not export this saved analysis. Please try again.';
 }
 
-export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
+export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -88,7 +95,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
 
   return (
     <article className="saved-detail">
-      <button type="button" className="back-btn" onClick={onBack}>← Back to History</button>
+      <button type="button" className="back-btn" disabled={comparing} onClick={onBack}>{backLabel}</button>
       <header className="history-heading">
         <div>
           <p className="eyebrow">Saved analysis</p>
@@ -101,6 +108,14 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
         </div>
       </header>
 
+      {onSelectComparison && <section aria-label="Comparison selection">
+        {!comparisonSelectionId ? <button type="button" onClick={onSelectComparison}>Select for comparison</button> : <>
+          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting} onClick={onCompare}>Compare with selected</button>}
+          <button type="button" disabled={comparing || deleting} onClick={onClearComparison}>Clear comparison selection</button>
+        </>}
+        {comparing && <p role="status">Loading saved analysis comparison…</p>}
+        {comparisonError && <p role="alert">{comparisonError}</p>}
+      </section>}
       <section className="saved-export" aria-labelledby="saved-export-title">
         <h3 id="saved-export-title">Download saved analysis</h3>
         <p>Exports contain stored candidate and job information. Protect downloaded files when sharing or saving them.</p>
@@ -188,6 +203,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
         <button
           type="button"
           className="danger-btn"
+          disabled={comparing}
           onClick={() => { setConfirmingDelete(true); setDeleteError(null); }}
         >
           Delete saved analysis
@@ -214,7 +230,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
               <button
                 type="button"
                 className="secondary-btn"
-                disabled={deleting}
+                disabled={deleting || comparing}
                 onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
               >
                 Cancel
@@ -222,7 +238,7 @@ export function SavedAnalysisDetail({ detail, onBack, onDelete }: Props) {
               <button
                 type="button"
                 className="danger-btn"
-                disabled={deleting}
+                disabled={deleting || comparing}
                 onClick={() => void confirmDelete()}
               >
                 Delete permanently

@@ -2,6 +2,7 @@
 
 import json
 import uuid
+from dataclasses import asdict
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
@@ -21,6 +22,7 @@ from pathfinder_ai.api.schemas import (
     AnalysisHistoryResponseSchema,
     AnalysisRequestSchema,
     AnalysisResponseSchema,
+    SavedAnalysisComparisonSchema,
     SavedAnalysisDetailSchema,
     SavedAnalysisMetadataSchema,
     SavedAnalysisSummarySchema,
@@ -39,6 +41,7 @@ from pathfinder_ai.application.ai_enrichment import (
     AIEnrichmentRequest,
     AIEnrichmentService,
 )
+from pathfinder_ai.application.analysis_comparison import compare_saved_analyses
 from pathfinder_ai.application.analysis_export import render_saved_analysis_markdown
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
@@ -228,6 +231,36 @@ async def list_analyses(
             )
             for s in summaries
         ]
+    )
+
+
+@router.get(
+    "/analyses/compare",
+    response_model=SavedAnalysisComparisonSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUIDs."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def compare_analyses(
+    request: Request,
+    response: Response,
+    left_analysis_id: uuid.UUID,
+    right_analysis_id: uuid.UUID,
+) -> SavedAnalysisComparisonSchema:
+    """Compare two existing snapshots without revealing a missing side."""
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    history = AnalysisHistoryService(repository=repository)
+    left = history.get_analysis(left_analysis_id)
+    right = history.get_analysis(right_analysis_id)
+    if left is None or right is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return SavedAnalysisComparisonSchema.model_validate(
+        asdict(compare_saved_analyses(left, right))
     )
 
 

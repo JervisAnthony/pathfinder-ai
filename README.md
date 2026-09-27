@@ -195,6 +195,56 @@ python -m uvicorn pathfinder_ai.api.runtime:create_runtime_app --factory --host 
 The configured database contains sensitive candidate and job snapshots. Use it
 only on a trusted local installation and protect the database file appropriately.
 
+### Saved analysis comparison
+
+Open a saved detail and choose **Select for comparison**. Return to History,
+use the existing search, filters, or pagination, open a different saved detail,
+and choose **Compare with selected**. Selection alone does not send a comparison
+request. The selected snapshot cannot be compared with itself through this UI.
+Selection, draft/applied filters, and the current page remain in React component
+memory while History stays mounted; they are cleared when it unmounts. No
+localStorage, sessionStorage, IndexedDB, cookies, or URL persistence is used.
+
+`GET /api/v1/analyses/compare?left_analysis_id=<uuid>&right_analysis_id=<uuid>`
+retrieves two existing saved snapshots and runs a pure application comparison.
+It never recomputes matching, explanation, interview preparation, or learning
+recommendations and never calls AI. The response contains left/right IDs, saved
+timestamps, role/company names, stored scores, structured skill keyword coverage,
+and AI-presence booleans. It compares stored score components, matched skills,
+missing required/preferred skills, and independent experience/education gaps.
+It does not return complete Candidate Profiles or Job Descriptions or compare AI
+text. Open either normal detail to inspect evidence or use existing downloads.
+
+Numerical deltas mean **right minus left** only. Scores and keyword percentages
+must both be known; otherwise the delta is unavailable. Unknown scores are never
+zero. Missing score components say **Not present**. Components follow the existing
+enum order. Skills use exact existing deterministic normalized Skill identity,
+deduplicated in snapshot order: shared/left-only names follow the left snapshot,
+right-only names follow the right snapshot. No fuzzy, semantic, alias, embedding,
+or AI matching occurs. Experience and education gaps remain independent stored
+side values. AI is shown only as stored enrichment present/absent.
+
+**Interpretation boundary:** A higher or lower score or changed skill/gap set does
+not by itself establish candidate improvement or regression. Saved snapshots may
+use different candidate data, different job requirements, or both. Comparison is
+descriptive, not career advice, causal inference, a ranking, or hiring likelihood.
+
+The static comparison route precedes UUID detail routes. The backend also permits
+same-ID comparison, returning zero deltas where values are known. Missing/deleted
+IDs return the same safe 404 without disclosing which side exists; invalid UUIDs
+return 422 and persistence-disabled servers return 503. The Web clears stale
+selection on comparison 404 and preserves usable detail/history. Deleting a
+locally selected snapshot clears selection. Back to History preserves filters and
+pagination; **Clear comparison** also removes selection.
+
+Comparison is request-scope computation only: no comparison history, output,
+selected IDs, logs of snapshot contents, telemetry, analytics, or external data
+transfer is added. SQLite schema, persisted SavedAnalysis structure, and payload
+version 2 remain unchanged. No dependencies are added. Existing individual
+deletion, history filters, and snapshot export contracts remain intact; comparison
+export is outside this scope. Normal detail/export privacy caveats still apply
+when opening or downloading a snapshot.
+
 ### Saved analysis export and portability
 
 Open a saved analysis in History, inspect its detail, and explicitly choose

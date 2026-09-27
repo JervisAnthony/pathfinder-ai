@@ -48,6 +48,7 @@ from pathfinder_ai.domain.candidate_profile import (
 from pathfinder_ai.domain.education import EducationLevel
 from pathfinder_ai.domain.explanation import (
     MatchExplanation,
+    ScoreComponentKind,
 )
 from pathfinder_ai.domain.job_description import (
     CompanyInfo,
@@ -63,6 +64,66 @@ from pathfinder_ai.domain.skill import Skill
 
 class BaseStrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class ComparisonSideSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    created_at: datetime
+    job_title: str
+    company_name: str | None
+    score: float | None
+    keyword_coverage_percentage: float | None
+    ai_enriched: bool
+
+
+class ComparisonComponentSchema(BaseStrictModel):
+    kind: ScoreComponentKind
+    left_earned_points: float | None
+    left_possible_points: float | None
+    right_earned_points: float | None
+    right_possible_points: float | None
+    earned_points_delta: float | None
+
+
+class ComparisonSkillsSchema(BaseStrictModel):
+    in_both: list[str]
+    left_only: list[str]
+    right_only: list[str]
+
+
+class ComparisonExperienceGapSchema(BaseStrictModel):
+    required_months: int
+    known_candidate_months: int
+    missing_months: int
+
+
+class ComparisonEducationGapSchema(BaseStrictModel):
+    level: EducationLevel | None
+    field_of_study: str | None
+    description: str | None
+
+
+class ComparisonExperienceGapsSchema(BaseStrictModel):
+    left: ComparisonExperienceGapSchema | None
+    right: ComparisonExperienceGapSchema | None
+
+
+class ComparisonEducationGapsSchema(BaseStrictModel):
+    left: ComparisonEducationGapSchema | None
+    right: ComparisonEducationGapSchema | None
+
+
+class SavedAnalysisComparisonSchema(BaseStrictModel):
+    left: ComparisonSideSchema
+    right: ComparisonSideSchema
+    score_delta: float | None
+    keyword_coverage_delta: float | None
+    score_components: list[ComparisonComponentSchema]
+    matched_skills: ComparisonSkillsSchema
+    missing_required_skills: ComparisonSkillsSchema
+    missing_preferred_skills: ComparisonSkillsSchema
+    experience_gaps: ComparisonExperienceGapsSchema
+    education_gaps: ComparisonEducationGapsSchema
 
 
 class PathfinderCapabilitiesSchema(BaseStrictModel):
