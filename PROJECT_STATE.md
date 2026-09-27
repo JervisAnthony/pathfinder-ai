@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`2646bbf2e3892b8c99a5d9566306b86d14f789f5`
+`23a2ae72f524e56aa95b917a341512fff87343a8`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 19 — Saved Analysis Search & Filters**
+**Commit 20 — Saved Analysis Export & Portability**
 
 ## Completed MVP-1 Roadmap
 
@@ -43,33 +43,37 @@ These milestones must not be replayed or rebuilt.
 - Commit 17 — AI-Assisted Candidate Profile Import — complete (PR #21 merged)
 - Commit 18 — Saved Analysis Deletion & Privacy Controls — complete (PR #22 merged)
 - Commit 19 — Saved Analysis Search & Filters — complete (PR #23 merged)
+- Commit 20 — Saved Analysis Export & Portability — complete (PR #24 merged)
 
 ## Post-MVP Active Work
 
-**Commit 20 — Saved Analysis Export & Portability**
+**Commit 21 — Saved Analysis Comparison & Change View**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
 Active pull request:
 
-**PR #24 — Add saved analysis export**
+None
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/24
+This authorized post-MVP milestone compares two existing stored snapshots through
+a pure immutable application result, a typed read-only API, and a detail-driven
+Web selection workflow. Numerical deltas mean right minus left only; unknown
+values remain unavailable. Skill sets use exact existing normalized identity and
+deterministic snapshot order. Experience/education gaps remain independent side
+values; AI enrichment is represented only by presence, with no AI text comparison.
 
-This authorized post-MVP milestone adds explicit JSON and Markdown downloads of
-one existing saved snapshot from its Web detail view. JSON reuses the public
-saved-detail contract. Markdown is rendered by a deterministic application module
-with centralized escaping of stored text, using only the saved timestamp/results.
+Differences may reflect different candidate inputs, target jobs, or both and do
+not establish improvement/regression, causation, ranking, or hiring likelihood.
+The comparison response excludes complete candidate/job payloads and AI text.
+There is no recomputation, AI call, persistence write, comparison logging, external
+transfer, or browser storage. Selection and filters stay in component memory.
 
-Exports do not recompute analysis, invoke AI or import/drafting workflows, mutate
-snapshots, write persistence, or store report files on the server. UUID-derived
-attachment filenames, no-store responses, and nosniff headers protect the download
-contract. Downloaded files may contain sensitive structured candidate/job data
-and become the user's responsibility outside Pathfinder.
-
-SQLite schema and version-2 snapshot payloads remain unchanged. No dependencies,
-browser storage, deterministic-core changes, AI behavior changes, or next-milestone
-scope are introduced. Existing history filters and individual deletion remain intact.
+The explicit maintainer exception reconciles the formerly stale Commit 20 review
+state with verified PR #24 merged at the starting main above. MVP-1 and all
+completed post-MVP milestones remain preserved. SQLite schema, SavedAnalysis,
+and payload version 2 are unchanged. No dependencies, deterministic-core changes,
+AI behavior changes, or future scope are introduced. Existing history filters,
+individual deletion, and JSON/Markdown snapshot exports remain intact.
 
 ## Existing Capabilities
 
@@ -97,6 +101,7 @@ The repository already contains:
 - confirmation-gated deletion of individual saved-analysis snapshots
 - saved-history title/company search, AI presence filters, and inclusive score bounds
 - explicit JSON and deterministic Markdown downloads of individual saved snapshots
+- descriptive comparison of two saved snapshots with neutral deltas and skill/gap sets
 
 ## Architectural Boundary
 
