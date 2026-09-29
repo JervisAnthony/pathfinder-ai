@@ -50,11 +50,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 22 — Saved Analysis Application Status Tracking**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #26 — Add saved analysis application status**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/26
 
 This authorized post-MVP milestone adds explicit, user-managed application
 status to saved-analysis History and detail. The seven fixed values are stored in
