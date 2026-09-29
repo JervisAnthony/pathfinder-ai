@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 from contextlib import closing
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -13,6 +13,9 @@ import pytest
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
+    AnalysisHistoryService,
+    AnalysisTracking,
+    ApplicationStatus,
     SavedAnalysis,
 )
 from pathfinder_ai.application.interview_preparation import (
@@ -746,3 +749,130 @@ def test_sqlite_repository_handles_special_characters(
 
     # Make sure table still exists
     assert repo.list_recent(limit=10, offset=0)
+
+
+def test_tracking_lifecycle_and_filters(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "tracking.db"
+    repo = SQLiteAnalysisRepository(path)
+    repo.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    original = repo.get(identifier)
+    with closing(sqlite3.connect(path)) as connection:
+        before = connection.execute(
+            "SELECT payload_version, payload_json FROM saved_analyses "
+            "WHERE analysis_id = ?",
+            (str(identifier),),
+        ).fetchone()
+    assert repo.get_tracking(uuid.uuid4()) is None
+    assert repo.get_tracking(identifier) == AnalysisTracking(
+        identifier, ApplicationStatus.NOT_APPLIED, None
+    )
+    clock = datetime(2026, 1, 1, tzinfo=UTC)
+    service = AnalysisHistoryService(repo, clock=lambda: clock)
+    assert service.update_application_status(
+        identifier, ApplicationStatus.NOT_APPLIED
+    ) == repo.get_tracking(identifier)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_tracking").fetchone()[0]
+            == 0
+        )
+    for status in ApplicationStatus:
+        if status is ApplicationStatus.NOT_APPLIED:
+            continue
+        updated = service.update_application_status(identifier, status)
+        assert updated == AnalysisTracking(identifier, status, clock)
+        assert service.update_application_status(identifier, status) == updated
+        assert (
+            repo.list_recent(
+                limit=20,
+                offset=0,
+                history_filter=AnalysisHistoryFilter(application_status=status),
+            )[0].application_status
+            == status
+        )
+    assert service.update_application_status(
+        identifier, ApplicationStatus.NOT_APPLIED
+    ) == AnalysisTracking(identifier, ApplicationStatus.NOT_APPLIED, clock)
+    assert (
+        repo.list_recent(
+            limit=20,
+            offset=0,
+            history_filter=AnalysisHistoryFilter(
+                application_status=ApplicationStatus.NOT_APPLIED
+            ),
+        )[0].status_updated_at
+        == clock
+    )
+    assert repo.get(identifier) == original
+    with closing(sqlite3.connect(path)) as connection:
+        after = connection.execute(
+            "SELECT payload_version, payload_json FROM saved_analyses "
+            "WHERE analysis_id = ?",
+            (str(identifier),),
+        ).fetchone()
+    assert after == before
+    assert (
+        repo.upsert_tracking(
+            AnalysisTracking(uuid.uuid4(), ApplicationStatus.APPLIED, clock)
+        )
+        is False
+    )
+    assert repo.delete(identifier)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_tracking").fetchone()[0]
+            == 0
+        )
+
+
+def test_tracking_value_validation() -> None:
+    identifier = uuid.uuid4()
+    with pytest.raises(ValueError, match="required"):
+        AnalysisTracking(identifier, ApplicationStatus.APPLIED, None)
+    with pytest.raises(ValueError, match="timezone-aware"):
+        AnalysisTracking(identifier, ApplicationStatus.APPLIED, datetime(2026, 1, 1))
+    assert AnalysisTracking(
+        identifier,
+        ApplicationStatus.APPLIED,
+        datetime(2026, 1, 1, 5, 30, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+    ).updated_at == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_tracking_write_requires_change(tmp_path: Path) -> None:
+    repo = SQLiteAnalysisRepository(tmp_path / "empty.db")
+    with pytest.raises(ValueError, match="changed"):
+        repo.upsert_tracking(
+            AnalysisTracking(uuid.uuid4(), ApplicationStatus.NOT_APPLIED, None)
+        )
+
+
+def test_legacy_database_adds_tracking_without_touching_snapshot(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "legacy.db"
+    old_repo = SQLiteAnalysisRepository(path)
+    old_repo.save(sample_analysis)
+    with closing(sqlite3.connect(path)) as connection:
+        before = connection.execute("SELECT * FROM saved_analyses").fetchall()
+        columns = connection.execute("PRAGMA table_info(saved_analyses)").fetchall()
+        connection.execute("DROP TABLE analysis_tracking")
+        connection.commit()
+    current = SQLiteAnalysisRepository(path)
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("SELECT * FROM saved_analyses").fetchall() == before
+        assert (
+            connection.execute("PRAGMA table_info(saved_analyses)").fetchall()
+            == columns
+        )
+        assert (
+            connection.execute(
+                "SELECT name FROM sqlite_master WHERE name = 'analysis_tracking'"
+            ).fetchone()
+            is not None
+        )
+    assert current.get_tracking(sample_analysis.analysis_id) == AnalysisTracking(
+        sample_analysis.analysis_id, ApplicationStatus.NOT_APPLIED, None
+    )

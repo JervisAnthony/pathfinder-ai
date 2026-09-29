@@ -4,12 +4,15 @@ SQLite implementation of the analysis repository.
 
 import sqlite3
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisRepository,
+    AnalysisTracking,
+    ApplicationStatus,
     SavedAnalysis,
     SavedAnalysisSummary,
 )
@@ -37,6 +40,7 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
         )
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         return contextlib.closing(conn)
 
     def _init_db(self) -> None:
@@ -62,6 +66,15 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 CREATE INDEX IF NOT EXISTS idx_saved_analyses_created_at
                 ON saved_analyses(created_at DESC, analysis_id DESC)
                 """
+            )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS analysis_tracking (
+                    analysis_id TEXT PRIMARY KEY,
+                    application_status TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
+                    ON DELETE CASCADE
+                )"""
             )
 
     def save(self, analysis: SavedAnalysis) -> None:
@@ -125,6 +138,49 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             conn.commit()
             return bool(cursor.rowcount == 1)
 
+    def get_tracking(self, analysis_id: uuid.UUID) -> AnalysisTracking | None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT s.analysis_id, t.application_status, t.updated_at
+                FROM saved_analyses AS s
+                LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(analysis_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return AnalysisTracking(
+            analysis_id=analysis_id,
+            application_status=ApplicationStatus(
+                row["application_status"] or ApplicationStatus.NOT_APPLIED
+            ),
+            updated_at=(
+                datetime.fromisoformat(row["updated_at"])
+                if row["updated_at"] is not None
+                else None
+            ),
+        )
+
+    def upsert_tracking(self, tracking: AnalysisTracking) -> bool:
+        if tracking.updated_at is None:
+            raise ValueError("Only changed tracking can be persisted")
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                """INSERT INTO analysis_tracking
+                    (analysis_id, application_status, updated_at)
+                SELECT analysis_id, ?, ? FROM saved_analyses WHERE analysis_id = ?
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    application_status = excluded.application_status,
+                    updated_at = excluded.updated_at""",
+                (
+                    tracking.application_status.value,
+                    tracking.updated_at.isoformat(),
+                    str(tracking.analysis_id),
+                ),
+            )
+            conn.commit()
+            return bool(cursor.rowcount == 1)
+
     def list_recent(
         self,
         *,
@@ -145,19 +201,22 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 )
                 pattern = f"%{escaped_query}%"
                 predicates.append(
-                    "(LOWER(job_title) LIKE LOWER(?) ESCAPE '\\' "
-                    "OR LOWER(COALESCE(company_name, '')) LIKE LOWER(?) ESCAPE '\\')"
+                    "(LOWER(s.job_title) LIKE LOWER(?) ESCAPE '\\' "
+                    "OR LOWER(COALESCE(s.company_name, '')) LIKE LOWER(?) ESCAPE '\\')"
                 )
                 parameters.extend((pattern, pattern))
             if history_filter.ai_enriched is not None:
-                predicates.append("ai_enriched = ?")
+                predicates.append("s.ai_enriched = ?")
                 parameters.append(1 if history_filter.ai_enriched else 0)
             if history_filter.min_score is not None:
-                predicates.append("score >= ?")
+                predicates.append("s.score >= ?")
                 parameters.append(history_filter.min_score)
             if history_filter.max_score is not None:
-                predicates.append("score <= ?")
+                predicates.append("s.score <= ?")
                 parameters.append(history_filter.max_score)
+            if history_filter.application_status is not None:
+                predicates.append("COALESCE(t.application_status, 'not_applied') = ?")
+                parameters.append(history_filter.application_status.value)
 
         where_clause = f"WHERE {' AND '.join(predicates)}" if predicates else ""
         parameters.extend((limit, offset))
@@ -166,15 +225,18 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             cursor = conn.execute(
                 f"""
                 SELECT
-                    analysis_id,
-                    created_at,
-                    job_title,
-                    company_name,
-                    score,
-                    ai_enriched
-                FROM saved_analyses
+                    s.analysis_id,
+                    s.created_at,
+                    s.job_title,
+                    s.company_name,
+                    s.score,
+                    s.ai_enriched,
+                    COALESCE(t.application_status, 'not_applied') AS application_status,
+                    t.updated_at AS status_updated_at
+                FROM saved_analyses AS s
+                LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
                 {where_clause}
-                ORDER BY created_at DESC, analysis_id DESC
+                ORDER BY s.created_at DESC, s.analysis_id DESC
                 LIMIT ? OFFSET ?
                 """,
                 parameters,
@@ -192,6 +254,12 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 company_name=row["company_name"],
                 score=row["score"],
                 ai_enriched=bool(row["ai_enriched"]),
+                application_status=ApplicationStatus(row["application_status"]),
+                status_updated_at=(
+                    datetime.fromisoformat(row["status_updated_at"])
+                    if row["status_updated_at"] is not None
+                    else None
+                ),
             )
             for row in rows
         )

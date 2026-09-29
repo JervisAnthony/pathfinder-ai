@@ -424,3 +424,16 @@ def test_service_rejects_naive_clock(fake_repo: FakeRepository) -> None:
         service.save_analysis(profile, job, explanation, preparation)
 
     assert fake_repo.saved == {}
+
+
+def test_summary_rejects_naive_status_timestamp() -> None:
+    with pytest.raises(ValueError, match="status_updated_at must be timezone-aware"):
+        SavedAnalysisSummary(
+            analysis_id=uuid.uuid4(),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+            job_title="Fictional Engineer",
+            company_name=None,
+            score=None,
+            ai_enriched=False,
+            status_updated_at=datetime(2026, 1, 2),
+        )
