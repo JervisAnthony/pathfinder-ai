@@ -265,7 +265,7 @@ describe('AnalysisHistory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
 
     expect(await screen.findByText('Page 1')).toBeInTheDocument();
-    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0);
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0));
   });
 
   it('handles legacy recommendations and detail not found', async () => {
