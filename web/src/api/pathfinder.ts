@@ -13,6 +13,8 @@ import {
   JobDescriptionDraftResponse,
   CandidateProfileDraftResponse,
   CandidateProfileDraftRequest,
+  ApplicationStatus,
+  AnalysisTracking,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -243,6 +245,7 @@ export interface AnalysisHistoryFilters {
   ai_enriched?: boolean;
   min_score?: number;
   max_score?: number;
+  application_status?: ApplicationStatus;
 }
 
 export function getAnalysisHistory(
@@ -258,11 +261,25 @@ export function getAnalysisHistory(
   if (filters.ai_enriched !== undefined) query.set('ai_enriched', String(filters.ai_enriched));
   if (filters.min_score !== undefined) query.set('min_score', String(filters.min_score));
   if (filters.max_score !== undefined) query.set('max_score', String(filters.max_score));
+  if (filters.application_status !== undefined) query.set('application_status', filters.application_status);
   return requestJson(`/api/v1/analyses?${query.toString()}`);
 }
 
 export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetail> {
   return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}`);
+}
+
+export function getAnalysisTracking(analysisId: string): Promise<AnalysisTracking> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/tracking`, { cache: 'no-store' });
+}
+
+export function updateAnalysisTracking(analysisId: string, applicationStatus: ApplicationStatus): Promise<AnalysisTracking> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/tracking`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ application_status: applicationStatus }),
+    cache: 'no-store',
+  });
 }
 
 export function compareSavedAnalyses(leftAnalysisId: string, rightAnalysisId: string): Promise<SavedAnalysisComparison> {

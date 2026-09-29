@@ -305,13 +305,29 @@ export interface SavedAnalysisSummary {
   company_name: string | null;
   score: number | null;
   ai_enriched: boolean;
+  application_status: ApplicationStatus;
+  status_updated_at: string | null;
+}
+
+export type ApplicationStatus = 'not_applied' | 'applied' | 'interviewing' | 'offer' | 'accepted' | 'rejected' | 'withdrawn';
+
+export interface AnalysisTracking {
+  analysis_id: string;
+  application_status: ApplicationStatus;
+  updated_at: string | null;
 }
 
 export interface AnalysisHistoryResponse {
   items: SavedAnalysisSummary[];
 }
 
-export interface ComparisonSide extends SavedAnalysisSummary {
+export interface ComparisonSide {
+  analysis_id: string;
+  created_at: string;
+  job_title: string;
+  company_name: string | null;
+  score: number | null;
+  ai_enriched: boolean;
   keyword_coverage_percentage: number | null;
 }
 

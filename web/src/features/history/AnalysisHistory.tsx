@@ -7,10 +7,11 @@ import {
   getAnalysisHistory,
   getSavedAnalysis,
 } from '../../api/pathfinder';
-import { SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
+import { ApplicationStatus, SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
+import { applicationStatuses, statusLabel } from './status';
 import './History.css';
 
 const PAGE_SIZE = 20;
@@ -37,6 +38,7 @@ export function AnalysisHistory() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [ai, setAi] = useState('all');
+  const [status, setStatus] = useState<ApplicationStatus | 'all'>('all');
   const [minScore, setMinScore] = useState('');
   const [maxScore, setMaxScore] = useState('');
   const [filters, setFilters] = useState<AnalysisHistoryFilters>({});
@@ -67,11 +69,12 @@ export function AnalysisHistory() {
       ...(ai === 'all' ? {} : { ai_enriched: ai === 'yes' }),
       ...(min === undefined ? {} : { min_score: min }),
       ...(max === undefined ? {} : { max_score: max }),
+      ...(status === 'all' ? {} : { application_status: status }),
     });
   };
 
   const clearFilters = () => {
-    setQuery(''); setAi('all'); setMinScore(''); setMaxScore('');
+    setQuery(''); setAi('all'); setStatus('all'); setMinScore(''); setMaxScore('');
     setFilterError(null); setOffset(0); setFilters({});
   };
 
@@ -125,6 +128,18 @@ export function AnalysisHistory() {
     }
   };
 
+  const refreshAfterStatusUpdate = async () => {
+    const current = await getAnalysisHistory(PAGE_SIZE, offset, filters);
+    if (offset > 0 && current.items.length === 0) {
+      setOffset(Math.max(0, offset - PAGE_SIZE));
+    } else {
+      historyRequest.current += 1;
+      setItems(current.items);
+      setError(null);
+      setLoading(false);
+    }
+  };
+
   const clearComparison = () => {
     setSelection(null); setComparison(null); setComparisonError(null);
   };
@@ -157,6 +172,7 @@ export function AnalysisHistory() {
         onBack={() => setDetail(null)}
         backLabel={comparison ? '← Back to Comparison' : undefined}
         onDelete={deleteDetail}
+        onStatusUpdated={refreshAfterStatusUpdate}
         key={detail.analysis_id}
         comparisonSelectionId={selection?.id}
         onSelectComparison={() => { setSelection({ id: detail.analysis_id, title: detail.job_description.title.title }); setComparisonError(null); }}
@@ -199,6 +215,12 @@ export function AnalysisHistory() {
             <option value="no">Without AI enrichment</option>
           </select>
         </label>
+        <label>Application status
+          <select value={status} onChange={(event) => setStatus(event.target.value as ApplicationStatus | 'all')}>
+            <option value="all">All statuses</option>
+            {applicationStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+        </label>
         <label>Minimum score
           <input type="number" min="0" max="100" step="any" value={minScore} onChange={(event) => setMinScore(event.target.value)} />
         </label>
@@ -236,6 +258,7 @@ export function AnalysisHistory() {
                   <strong>{item.score === null ? 'Not scored' : `${item.score}% match`}</strong>
                   <small>{formatSavedTimestamp(item.created_at)}</small>
                   <small>{item.ai_enriched ? 'Includes AI enrichment' : 'Deterministic analysis'}</small>
+                  <small>Status: {statusLabel(item.application_status)}</small>
                 </span>
               </button>
             </li>

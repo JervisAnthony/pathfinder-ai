@@ -6,7 +6,9 @@ import {
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
+  getAnalysisTracking,
   getSavedAnalysis,
+  updateAnalysisTracking,
   importResumeSkills,
 } from './pathfinder';
 import {
@@ -350,5 +352,25 @@ describe('compareSavedAnalyses', () => {
   it('masks network failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('PRIVATE'));
     await expect(compareSavedAnalyses('left', 'right')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+  });
+});
+
+describe('analysis tracking client', () => {
+  afterEach(() => vi.restoreAllMocks());
+  it('reads and writes the separate tracking resource', async () => {
+    const tracking = { analysis_id: 'id', application_status: 'applied', updated_at: '2026-01-01T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(tracking), { status: 200 }));
+    expect(await getAnalysisTracking('id +')).toEqual(tracking);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/tracking', { cache: 'no-store' });
+    expect(await updateAnalysisTracking('id +', 'applied')).toEqual(tracking);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/analyses/id%20%2B/tracking', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ application_status: 'applied' }), cache: 'no-store',
+    });
+  });
+  it.each([[404, 'analysis_not_found'], [503, 'persistence_unavailable']])('preserves safe errors %s', async (status, code) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => errorResponse(Number(status), String(code), 'Safe message'));
+    await expect(getAnalysisTracking('id')).rejects.toMatchObject({ status, code });
+    await expect(updateAnalysisTracking('id', 'applied')).rejects.toMatchObject({ status, code });
   });
 });
