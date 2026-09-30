@@ -348,6 +348,40 @@ tracking row. Status is local workflow metadata and is not sent to OpenAI or
 stored in the browser. Tracking stores no notes, contacts, interview feedback,
 salary, offer details, rejection reasons, or candidate free text.
 
+### Application status activity timeline
+
+Saved Analysis Detail shows **Application activity** below the current status
+editor. Each recorded event shows the previous status, new status, and time the
+user changed it in Pathfinder. The timeline is newest first and loads 20 events
+at a time; **Load older activity** retrieves another page. A repeated update to
+the same status creates no event and leaves the current timestamp unchanged.
+Events are append-only and the current `analysis_tracking` row remains the
+source of the effective status. A status change and its event share one timestamp
+and one SQLite transaction.
+
+Existing statuses and timestamps are preserved when activity history becomes
+available. Pathfinder does not reconstruct earlier transitions. For example, an
+existing **Interviewing** status can initially show **No application status
+changes have been recorded yet**. Only future explicit changes in Pathfinder
+create events. An **Applied → Interviewing** event means the user changed the
+status in Pathfinder at that time; it does not establish when an employer took
+any action.
+
+SQLite adds `analysis_tracking_events` and an index beside the existing
+`saved_analyses` and `analysis_tracking` tables. Columns in those existing
+tables and the version-2 snapshot payload remain unchanged. Existing databases
+gain the event table without payload migration or event backfill. Deleting a
+saved analysis cascades to both its current tracking and events.
+`GET /api/v1/analyses/{analysis_id}/tracking/history` returns paginated events
+with `limit` and `offset`; it does not return snapshot data.
+
+Events store only the saved analysis ID, previous enum status, new enum status,
+and transition timestamp. They contain no notes, contacts, email, interview
+feedback, salary, rejection reasons, AI text, or candidate free text. Activity
+is not sent to AI or stored in the browser. JSON and Markdown downloads remain
+immutable snapshot exports and exclude activity. Saved-analysis comparison also
+excludes activity and transition counts.
+
 ### Saved analysis deletion and privacy
 
 Pathfinder lets a user delete one saved-analysis snapshot at a time from its

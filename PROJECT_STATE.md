@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`2c4cfba40e4cf7ed60d8961bc616d434e69f18d9`
+`244e18792d3a6beac7bd2668478d291c013bf8d2`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 21 — Saved Analysis Comparison & Change View**
+**Commit 22 — Saved Analysis Application Status Tracking**
 
 ## Completed MVP-1 Roadmap
 
@@ -45,30 +45,24 @@ These milestones must not be replayed or rebuilt.
 - Commit 19 — Saved Analysis Search & Filters — complete (PR #23 merged)
 - Commit 20 — Saved Analysis Export & Portability — complete (PR #24 merged)
 - Commit 21 — Saved Analysis Comparison & Change View — complete (PR #25 merged)
+- Commit 22 — Saved Analysis Application Status Tracking — complete (PR #26 merged)
 
 ## Post-MVP Active Work
 
-**Commit 22 — Saved Analysis Application Status Tracking**
+**Commit 23 — Application Status Activity Timeline**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
-Active pull request:
+Active pull request: None.
 
-**PR #26 — Add saved analysis application status**
+This authorized post-MVP milestone records future explicit application-status
+transitions in an additive SQLite event table. Existing current status and its
+timestamp remain authoritative; earlier changes are not reconstructed. The
+saved-detail timeline is newest first and paginated. Snapshot payloads, exports,
+comparison, deterministic analysis, and optional AI remain unchanged.
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/26
-
-This authorized post-MVP milestone adds explicit, user-managed application
-status to saved-analysis History and detail. The seven fixed values are stored in
-an additive `analysis_tracking` SQLite table and exposed through a dedicated
-tracking API. Missing metadata means Not applied. The immutable SavedAnalysis,
-version-2 payload, deterministic score, AI behavior, exports, and comparison
-remain unchanged. Status filtering composes with existing History filters before
-pagination; updates are explicit and idempotent.
-
-The maintainer exception reconciles the stale Commit 21 review state with
-verified PR #25 merged at the starting main above. All prior milestone history
-remains preserved. No dependency or future-roadmap scope is introduced.
+The maintainer explicitly authorized reconciliation of the stale Commit 22 state:
+PR #26 merged at main `244e18792d3a6beac7bd2668478d291c013bf8d2`.
 
 ## Existing Capabilities
 
@@ -98,6 +92,7 @@ The repository already contains:
 - explicit JSON and deterministic Markdown downloads of individual saved snapshots
 - descriptive comparison of two saved snapshots with neutral deltas and skill/gap sets
 - explicit saved-analysis application status with server-side History filtering
+- paginated application-status activity for saved analysis detail
 
 ## Architectural Boundary
 
