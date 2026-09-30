@@ -320,6 +320,34 @@ it is not saved in browser storage. Search only reads summary metadata and does
 not search candidate content, decode snapshots, recompute scores, or call AI.
 No schema migration, payload-version change, or new dependency is required.
 
+### Saved analysis application status
+
+History shows an explicitly user-managed application status for each saved
+analysis: **Not applied**, **Applied**, **Interviewing**, **Offer**, **Accepted**,
+**Rejected**, or **Withdrawn**. Open a saved detail, choose a status, and click
+**Update status** to save it. Changing the selection alone does not save. A
+same-status update leaves the timestamp unchanged. Existing snapshots display
+**Not applied** until changed. The History status filter is applied only when
+**Apply filters** is clicked; it runs before pagination, and ordering stays
+newest first.
+
+Pathfinder never infers status. It does not affect match scores or AI enrichment
+and is not a hiring probability. Status is separate mutable metadata; changing
+it never edits a saved analysis snapshot. `GET` and `PUT`
+`/api/v1/analyses/{analysis_id}/tracking` read and update the tracking resource.
+The saved-detail response remains a snapshot resource. JSON and Markdown exports
+remain snapshot exports, so changing Applied to Interviewing does not change
+their contents. Saved-analysis comparison likewise excludes status.
+
+SQLite adds one separate `analysis_tracking` table with only analysis ID, enum
+status, and update timestamp. The `saved_analyses` table and version-2 payload
+remain unchanged. Existing databases gain the metadata table through idempotent
+table creation; no snapshot backfill or payload migration is needed. No tracking
+row means effective **Not applied**. Deleting a saved analysis cascades to its
+tracking row. Status is local workflow metadata and is not sent to OpenAI or
+stored in the browser. Tracking stores no notes, contacts, interview feedback,
+salary, offer details, rejection reasons, or candidate free text.
+
 ### Saved analysis deletion and privacy
 
 Pathfinder lets a user delete one saved-analysis snapshot at a time from its

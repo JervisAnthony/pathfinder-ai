@@ -7,7 +7,9 @@ import {
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
+  getAnalysisTracking,
   getSavedAnalysis,
+  updateAnalysisTracking,
 } from '../../../api/pathfinder';
 import { SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../../types/api';
 import { AnalysisHistory } from '../AnalysisHistory';
@@ -19,6 +21,8 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   getAnalysisHistory: vi.fn(),
   compareSavedAnalyses: vi.fn(),
   getSavedAnalysis: vi.fn(),
+  getAnalysisTracking: vi.fn(),
+  updateAnalysisTracking: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
   downloadSavedAnalysis: vi.fn(),
   analyzeCandidateJob: vi.fn(),
@@ -31,7 +35,13 @@ const summary: SavedAnalysisSummary = {
   company_name: null,
   score: null,
   ai_enriched: true,
+  application_status: 'not_applied',
+  status_updated_at: null,
 };
+
+beforeEach(() => {
+  vi.mocked(getAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
+});
 
 const detail: SavedAnalysisDetail = {
   analysis_id: summary.analysis_id,
@@ -96,6 +106,7 @@ describe('AnalysisHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [] });
+    vi.mocked(getAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
   });
 
   it('shows loading then an empty state and first-page controls', async () => {
@@ -254,7 +265,7 @@ describe('AnalysisHistory', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
 
     expect(await screen.findByText('Page 1')).toBeInTheDocument();
-    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0);
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0));
   });
 
   it('handles legacy recommendations and detail not found', async () => {
@@ -624,5 +635,37 @@ describe('comparison request navigation guards', () => {
     expect(screen.getByRole('button', { name: 'Clear comparison' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Back to History' })).toBeDisabled();
     resolve(detail); await screen.findByRole('button', { name: 'Download JSON' });
+  });
+});
+
+describe('application status workflow', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+  });
+
+  it('applies the draft filter only after submission', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.change(screen.getByLabelText('Application status'), { target: { value: 'applied' } });
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { application_status: 'applied' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0));
+  });
+
+  it('loads and explicitly updates status while keeping detail open', async () => {
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'applied', updated_at: '2026-09-03T11:00:00Z' });
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    expect(await screen.findByText('Current status: Not applied')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Choose application status'), { target: { value: 'applied' } });
+    expect(updateAnalysisTracking).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    await screen.findByText('Current status: Applied');
+    expect(updateAnalysisTracking).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, 'applied');
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
   });
 });

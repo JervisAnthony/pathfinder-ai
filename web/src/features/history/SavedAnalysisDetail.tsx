@@ -1,16 +1,18 @@
 import { AnalysisResults } from '../analysis/AnalysisResults';
-import { useRef, useState } from 'react';
-import { ApiError, downloadSavedAnalysis } from '../../api/pathfinder';
+import { useEffect, useRef, useState } from 'react';
+import { ApiError, downloadSavedAnalysis, getAnalysisTracking, updateAnalysisTracking } from '../../api/pathfinder';
 import type { SavedAnalysisExportFormat } from '../../api/pathfinder';
-import { SavedAnalysisDetail as SavedDetail } from '../../types/api';
+import { AnalysisTracking, ApplicationStatus, SavedAnalysisDetail as SavedDetail } from '../../types/api';
 import { formatSavedTimestamp } from './formatting';
 import { savedAnalysisDetailToAnalysisResponse } from './mapping';
+import { applicationStatuses, statusLabel } from './status';
 
 interface Props {
   detail: SavedDetail;
   onBack: () => void;
   backLabel?: string;
   onDelete: (analysisId: string) => Promise<void>;
+  onStatusUpdated?: () => Promise<void>;
   comparisonSelectionId?: string;
   onSelectComparison?: () => void;
   onClearComparison?: () => void;
@@ -45,7 +47,7 @@ function exportErrorMessage(error: unknown): string {
   return 'Pathfinder could not export this saved analysis. Please try again.';
 }
 
-export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
+export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, onStatusUpdated, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -54,6 +56,54 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   const [exporting, setExporting] = useState({ json: false, markdown: false });
   const exportRequests = useRef(new Set<SavedAnalysisExportFormat>());
   const [exportError, setExportError] = useState<string | null>(null);
+  const [tracking, setTracking] = useState<AnalysisTracking | null>(null);
+  const [statusDraft, setStatusDraft] = useState<ApplicationStatus>('not_applied');
+  const [trackingError, setTrackingError] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getAnalysisTracking(detail.analysis_id).then((value) => {
+      if (!active) return;
+      setTracking(value);
+      setStatusDraft(value.application_status);
+      setTrackingError(null);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setTrackingError(error instanceof ApiError && error.code === 'persistence_unavailable'
+        ? 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'
+        : error instanceof ApiError && error.code === 'analysis_not_found'
+          ? 'This saved analysis no longer exists.'
+          : 'Pathfinder could not load the application status. Please try again.');
+    });
+    return () => { active = false; };
+  }, [detail.analysis_id]);
+
+  const submitStatus = async () => {
+    if (!tracking || updatingStatus || deleting || comparing) return;
+    setUpdatingStatus(true);
+    setTrackingError(null);
+    setStatusMessage(null);
+    try {
+      const value = await updateAnalysisTracking(detail.analysis_id, statusDraft);
+      setTracking(value);
+      setStatusMessage('Application status updated.');
+      try {
+        await onStatusUpdated?.();
+      } catch {
+        setTrackingError('Application status was saved, but History could not refresh. Please try refreshing History.');
+      }
+    } catch (error) {
+      setTrackingError(error instanceof ApiError && error.code === 'analysis_not_found'
+        ? 'This saved analysis no longer exists.'
+        : error instanceof ApiError && error.code === 'persistence_unavailable'
+          ? 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'
+          : 'Pathfinder could not update the application status. Please try again.');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   const download = async (format: SavedAnalysisExportFormat) => {
     if (exportRequests.current.has(format)) return;
@@ -82,7 +132,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   };
 
   const confirmDelete = async () => {
-    if (deleting) return;
+    if (deleting || updatingStatus) return;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -95,7 +145,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
 
   return (
     <article className="saved-detail">
-      <button type="button" className="back-btn" disabled={comparing} onClick={onBack}>{backLabel}</button>
+      <button type="button" className="back-btn" disabled={comparing || updatingStatus} onClick={onBack}>{backLabel}</button>
       <header className="history-heading">
         <div>
           <p className="eyebrow">Saved analysis</p>
@@ -109,13 +159,29 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
       </header>
 
       {onSelectComparison && <section aria-label="Comparison selection">
-        {!comparisonSelectionId ? <button type="button" onClick={onSelectComparison}>Select for comparison</button> : <>
-          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting} onClick={onCompare}>Compare with selected</button>}
-          <button type="button" disabled={comparing || deleting} onClick={onClearComparison}>Clear comparison selection</button>
+        {!comparisonSelectionId ? <button type="button" disabled={updatingStatus} onClick={onSelectComparison}>Select for comparison</button> : <>
+          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting || updatingStatus} onClick={onCompare}>Compare with selected</button>}
+          <button type="button" disabled={comparing || deleting || updatingStatus} onClick={onClearComparison}>Clear comparison selection</button>
         </>}
         {comparing && <p role="status">Loading saved analysis comparison…</p>}
         {comparisonError && <p role="alert">{comparisonError}</p>}
       </section>}
+      <section aria-labelledby="application-status-title">
+        <h3 id="application-status-title">Application status</h3>
+        {tracking && <>
+          <p>Current status: {statusLabel(tracking.application_status)}</p>
+          <p>{tracking.updated_at ? `Last updated ${formatSavedTimestamp(tracking.updated_at)}` : 'No status change recorded.'}</p>
+          <label>Choose application status
+            <select value={statusDraft} onChange={(event) => setStatusDraft(event.target.value as ApplicationStatus)} disabled={updatingStatus || deleting || comparing}>
+              {applicationStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+            </select>
+          </label>
+          <button type="button" disabled={updatingStatus || deleting || comparing} onClick={() => void submitStatus()}>Update status</button>
+        </>}
+        {updatingStatus && <p role="status">Updating application status…</p>}
+        {statusMessage && <p role="status">{statusMessage}</p>}
+        {trackingError && <p role="alert" className="error-message">{trackingError}</p>}
+      </section>
       <section className="saved-export" aria-labelledby="saved-export-title">
         <h3 id="saved-export-title">Download saved analysis</h3>
         <p>Exports contain stored candidate and job information. Protect downloaded files when sharing or saving them.</p>
@@ -203,7 +269,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
         <button
           type="button"
           className="danger-btn"
-          disabled={comparing}
+          disabled={comparing || updatingStatus}
           onClick={() => { setConfirmingDelete(true); setDeleteError(null); }}
         >
           Delete saved analysis
@@ -230,7 +296,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
               <button
                 type="button"
                 className="secondary-btn"
-                disabled={deleting || comparing}
+                disabled={deleting || comparing || updatingStatus}
                 onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
               >
                 Cancel
@@ -238,7 +304,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
               <button
                 type="button"
                 className="danger-btn"
-                disabled={deleting || comparing}
+                disabled={deleting || comparing || updatingStatus}
                 onClick={() => void confirmDelete()}
               >
                 Delete permanently

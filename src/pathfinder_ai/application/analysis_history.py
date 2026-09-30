@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from math import isfinite
 from typing import Protocol
 
@@ -19,6 +20,32 @@ from pathfinder_ai.domain.job_description import JobDescription
 MAX_HISTORY_QUERY_LENGTH = 200
 
 
+class ApplicationStatus(StrEnum):
+    NOT_APPLIED = "not_applied"
+    APPLIED = "applied"
+    INTERVIEWING = "interviewing"
+    OFFER = "offer"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisTracking:
+    analysis_id: uuid.UUID
+    application_status: ApplicationStatus
+    updated_at: datetime | None
+
+    def __post_init__(self) -> None:
+        if self.updated_at is None:
+            if self.application_status is not ApplicationStatus.NOT_APPLIED:
+                raise ValueError("updated_at is required for changed status")
+            return
+        if self.updated_at.tzinfo is None:
+            raise ValueError("updated_at must be timezone-aware")
+        object.__setattr__(self, "updated_at", self.updated_at.astimezone(UTC))
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisHistoryFilter:
     """Optional deterministic criteria for saved-analysis history."""
@@ -27,6 +54,7 @@ class AnalysisHistoryFilter:
     ai_enriched: bool | None = None
     min_score: float | None = None
     max_score: float | None = None
+    application_status: ApplicationStatus | None = None
 
     def __post_init__(self) -> None:
         normalized_query = (
@@ -99,6 +127,8 @@ class SavedAnalysisSummary:
     company_name: str | None
     score: float | None
     ai_enriched: bool
+    application_status: ApplicationStatus = ApplicationStatus.NOT_APPLIED
+    status_updated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.created_at.tzinfo is None:
@@ -106,6 +136,12 @@ class SavedAnalysisSummary:
 
         # Ensure UTC
         object.__setattr__(self, "created_at", self.created_at.astimezone(UTC))
+        if self.status_updated_at is not None:
+            if self.status_updated_at.tzinfo is None:
+                raise ValueError("status_updated_at must be timezone-aware")
+            object.__setattr__(
+                self, "status_updated_at", self.status_updated_at.astimezone(UTC)
+            )
 
 
 class AnalysisRepository(Protocol):
@@ -123,6 +159,14 @@ class AnalysisRepository(Protocol):
 
     def delete(self, analysis_id: uuid.UUID) -> bool:
         """Delete one analysis by ID and report whether it existed."""
+        ...
+
+    def get_tracking(self, analysis_id: uuid.UUID) -> AnalysisTracking | None:
+        """Get effective tracking for an existing saved analysis."""
+        ...
+
+    def upsert_tracking(self, tracking: AnalysisTracking) -> bool:
+        """Store changed tracking only if the saved analysis still exists."""
         ...
 
     def list_recent(
@@ -192,6 +236,18 @@ class AnalysisHistoryService:
     def delete_analysis(self, analysis_id: uuid.UUID) -> bool:
         """Delete a specific saved analysis without recomputing it."""
         return self._repository.delete(analysis_id)
+
+    def get_tracking(self, analysis_id: uuid.UUID) -> AnalysisTracking | None:
+        return self._repository.get_tracking(analysis_id)
+
+    def update_application_status(
+        self, analysis_id: uuid.UUID, status: ApplicationStatus
+    ) -> AnalysisTracking | None:
+        current = self._repository.get_tracking(analysis_id)
+        if current is None or current.application_status == status:
+            return current
+        updated = AnalysisTracking(analysis_id, status, self._now())
+        return updated if self._repository.upsert_tracking(updated) else None
 
     def list_history(
         self,

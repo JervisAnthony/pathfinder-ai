@@ -1096,3 +1096,99 @@ def test_export_after_deletion_returns_not_found(
     assert client.get(f"/api/v1/analyses/{analysis_id}/export").status_code == 200
     assert client.delete(f"/api/v1/analyses/{analysis_id}").status_code == 204
     assert client.get(f"/api/v1/analyses/{analysis_id}/export").status_code == 404
+
+
+def test_tracking_api_lifecycle(tmp_path: Path, valid_payload: dict[str, Any]) -> None:
+    repository = SQLiteAnalysisRepository(tmp_path / "tracking-api.db")
+    client = TestClient(create_app(analysis_repository=repository))
+    valid_payload["save_analysis"] = True
+    analysis_id = client.post("/api/v1/analysis", json=valid_payload).json()[
+        "saved_analysis"
+    ]["analysis_id"]
+    path = f"/api/v1/analyses/{analysis_id}/tracking"
+    detail_before = client.get(f"/api/v1/analyses/{analysis_id}").json()
+    json_before = client.get(
+        f"/api/v1/analyses/{analysis_id}/export?format=json"
+    ).content
+    markdown_before = client.get(
+        f"/api/v1/analyses/{analysis_id}/export?format=markdown"
+    ).content
+    default = client.get(path)
+    assert default.status_code == 200
+    assert default.headers["Cache-Control"] == "no-store"
+    assert default.json() == {
+        "analysis_id": analysis_id,
+        "application_status": "not_applied",
+        "updated_at": None,
+    }
+    assert (
+        client.put(path, json={"application_status": "not_applied"}).json()
+        == default.json()
+    )
+    for status in (
+        "applied",
+        "interviewing",
+        "offer",
+        "accepted",
+        "rejected",
+        "withdrawn",
+        "not_applied",
+    ):
+        updated = client.put(path, json={"application_status": status})
+        assert updated.status_code == 200
+        assert updated.headers["Cache-Control"] == "no-store"
+        assert updated.json()["application_status"] == status
+        assert updated.json()["updated_at"] is not None
+        assert (
+            client.put(path, json={"application_status": status}).json()
+            == updated.json()
+        )
+        listed = client.get("/api/v1/analyses", params={"application_status": status})
+        assert listed.json()["items"][0]["application_status"] == status
+    assert client.get(f"/api/v1/analyses/{analysis_id}").json() == detail_before
+    assert (
+        client.get(f"/api/v1/analyses/{analysis_id}/export?format=json").content
+        == json_before
+    )
+    assert (
+        client.get(f"/api/v1/analyses/{analysis_id}/export?format=markdown").content
+        == markdown_before
+    )
+    assert client.put(path, json={"application_status": "invalid"}).status_code == 422
+    assert (
+        client.get(
+            "/api/v1/analyses", params={"application_status": "invalid"}
+        ).status_code
+        == 422
+    )
+    assert client.delete(f"/api/v1/analyses/{analysis_id}").status_code == 204
+    assert client.get(path).status_code == 404
+    assert client.put(path, json={"application_status": "applied"}).status_code == 404
+
+
+def test_tracking_api_missing_and_unavailable(tmp_path: Path) -> None:
+    unavailable = TestClient(create_app())
+    missing = TestClient(
+        create_app(
+            analysis_repository=SQLiteAnalysisRepository(tmp_path / "missing.db")
+        )
+    )
+    identifier = uuid.uuid4()
+    for client, status in ((unavailable, 503), (missing, 404)):
+        assert (
+            client.get(f"/api/v1/analyses/{identifier}/tracking").status_code == status
+        )
+        assert (
+            client.put(
+                f"/api/v1/analyses/{identifier}/tracking",
+                json={"application_status": "applied"},
+            ).status_code
+            == status
+        )
+    assert unavailable.get("/api/v1/analyses/invalid/tracking").status_code == 422
+    assert (
+        unavailable.put(
+            "/api/v1/analyses/invalid/tracking", json={"application_status": "applied"}
+        ).status_code
+        == 422
+    )

@@ -22,10 +22,12 @@ from pathfinder_ai.api.schemas import (
     AnalysisHistoryResponseSchema,
     AnalysisRequestSchema,
     AnalysisResponseSchema,
+    AnalysisTrackingSchema,
     SavedAnalysisComparisonSchema,
     SavedAnalysisDetailSchema,
     SavedAnalysisMetadataSchema,
     SavedAnalysisSummarySchema,
+    UpdateAnalysisTrackingSchema,
     map_ai_enrichment_to_schema,
     map_analysis_response,
     map_candidate_profile,
@@ -47,6 +49,7 @@ from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
     AnalysisRepository,
+    ApplicationStatus,
     SavedAnalysis,
 )
 from pathfinder_ai.application.interview_preparation import (
@@ -196,6 +199,7 @@ async def list_analyses(
     ai_enriched: bool | None = None,
     min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
     max_score: Annotated[float | None, Query(ge=0, le=100)] = None,
+    application_status: ApplicationStatus | None = None,
 ) -> AnalysisHistoryResponseSchema:
     """List recent saved analyses."""
     try:
@@ -204,6 +208,7 @@ async def list_analyses(
             ai_enriched=ai_enriched,
             min_score=min_score,
             max_score=max_score,
+            application_status=application_status,
         )
     except ValueError as exc:
         raise RequestValidationError(
@@ -228,10 +233,61 @@ async def list_analyses(
                 company_name=s.company_name,
                 score=s.score,
                 ai_enriched=s.ai_enriched,
+                application_status=s.application_status,
+                status_updated_at=s.status_updated_at,
             )
             for s in summaries
         ]
     )
+
+
+@router.get(
+    "/analyses/{analysis_id}/tracking",
+    response_model=AnalysisTrackingSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUID."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def get_analysis_tracking(
+    analysis_id: uuid.UUID, request: Request, response: Response
+) -> AnalysisTrackingSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    tracking = AnalysisHistoryService(repository).get_tracking(analysis_id)
+    if tracking is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisTrackingSchema.model_validate(asdict(tracking))
+
+
+@router.put(
+    "/analyses/{analysis_id}/tracking",
+    response_model=AnalysisTrackingSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid UUID or status."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def update_analysis_tracking(
+    analysis_id: uuid.UUID,
+    payload: UpdateAnalysisTrackingSchema,
+    request: Request,
+    response: Response,
+) -> AnalysisTrackingSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    tracking = AnalysisHistoryService(repository).update_application_status(
+        analysis_id, payload.application_status
+    )
+    if tracking is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisTrackingSchema.model_validate(asdict(tracking))
 
 
 @router.get(
