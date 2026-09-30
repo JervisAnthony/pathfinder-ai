@@ -16,6 +16,7 @@ from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryService,
     AnalysisTracking,
     ApplicationStatus,
+    ApplicationStatusEvent,
     SavedAnalysis,
 )
 from pathfinder_ai.application.interview_preparation import (
@@ -818,7 +819,7 @@ def test_tracking_lifecycle_and_filters(
         repo.upsert_tracking(
             AnalysisTracking(uuid.uuid4(), ApplicationStatus.APPLIED, clock)
         )
-        is False
+        is None
     )
     assert repo.delete(identifier)
     with closing(sqlite3.connect(path)) as connection:
@@ -876,3 +877,94 @@ def test_legacy_database_adds_tracking_without_touching_snapshot(
     assert current.get_tracking(sample_analysis.analysis_id) == AnalysisTracking(
         sample_analysis.analysis_id, ApplicationStatus.NOT_APPLIED, None
     )
+
+
+def test_activity_records_only_future_transitions_and_preserves_legacy_tracking(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "activity.db"
+    old = SQLiteAnalysisRepository(path)
+    old.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    old_time = datetime(2026, 1, 1, tzinfo=UTC)
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute(
+            "INSERT INTO analysis_tracking VALUES (?, ?, ?)",
+            (str(identifier), "interviewing", old_time.isoformat()),
+        )
+        connection.execute("DROP INDEX idx_analysis_tracking_events_analysis_changed")
+        connection.execute("DROP TABLE analysis_tracking_events")
+        connection.commit()
+    repo = SQLiteAnalysisRepository(path)
+    assert repo.get_tracking(identifier) == AnalysisTracking(
+        identifier, ApplicationStatus.INTERVIEWING, old_time
+    )
+    assert repo.list_tracking_events(identifier, limit=20, offset=0) == ()
+    assert repo.list_tracking_events(uuid.uuid4(), limit=20, offset=0) is None
+    new_time = datetime(2026, 2, 1, tzinfo=UTC)
+    changed = repo.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.OFFER, new_time)
+    )
+    assert changed == AnalysisTracking(identifier, ApplicationStatus.OFFER, new_time)
+    assert (
+        repo.upsert_tracking(
+            AnalysisTracking(
+                identifier, ApplicationStatus.OFFER, datetime(2026, 3, 1, tzinfo=UTC)
+            )
+        )
+        == changed
+    )
+    assert repo.list_tracking_events(identifier, limit=20, offset=0) == (
+        ApplicationStatusEvent(
+            identifier,
+            ApplicationStatus.INTERVIEWING,
+            ApplicationStatus.OFFER,
+            new_time,
+        ),
+    )
+    assert repo.get_tracking(identifier) == changed
+    assert repo.delete(identifier)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM analysis_tracking_events"
+            ).fetchone()[0]
+            == 0
+        )
+
+
+def test_activity_order_pagination_and_atomic_rollback(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "activity-order.db"
+    repo = SQLiteAnalysisRepository(path)
+    repo.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    instant = datetime(2026, 2, 1, tzinfo=UTC)
+    repo.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.APPLIED, instant)
+    )
+    repo.upsert_tracking(AnalysisTracking(identifier, ApplicationStatus.OFFER, instant))
+    newest = repo.list_tracking_events(identifier, limit=1, offset=0)
+    older = repo.list_tracking_events(identifier, limit=1, offset=1)
+    assert (
+        newest is not None and newest[0].application_status is ApplicationStatus.OFFER
+    )
+    assert (
+        older is not None and older[0].application_status is ApplicationStatus.APPLIED
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute(
+            """CREATE TRIGGER reject_activity
+            BEFORE INSERT ON analysis_tracking_events
+            BEGIN SELECT RAISE(ABORT, 'activity rejected'); END"""
+        )
+        connection.commit()
+    with pytest.raises(sqlite3.IntegrityError, match="activity rejected"):
+        repo.upsert_tracking(
+            AnalysisTracking(identifier, ApplicationStatus.ACCEPTED, instant)
+        )
+    assert repo.get_tracking(identifier) == AnalysisTracking(
+        identifier, ApplicationStatus.OFFER, instant
+    )
+    assert repo.list_tracking_events(identifier, limit=20, offset=0) == newest + older

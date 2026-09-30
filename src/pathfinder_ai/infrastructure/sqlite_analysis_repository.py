@@ -13,6 +13,7 @@ from pathfinder_ai.application.analysis_history import (
     AnalysisRepository,
     AnalysisTracking,
     ApplicationStatus,
+    ApplicationStatusEvent,
     SavedAnalysis,
     SavedAnalysisSummary,
 )
@@ -74,6 +75,24 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
                     ON DELETE CASCADE
+                )"""
+            )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS analysis_tracking_events (
+                    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    analysis_id TEXT NOT NULL,
+                    previous_status TEXT NOT NULL,
+                    application_status TEXT NOT NULL,
+                    changed_at TEXT NOT NULL,
+                    FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
+                    ON DELETE CASCADE
+                )"""
+            )
+            conn.execute(
+                """CREATE INDEX IF NOT EXISTS
+                idx_analysis_tracking_events_analysis_changed
+                ON analysis_tracking_events(
+                    analysis_id, changed_at DESC, event_id DESC
                 )"""
             )
 
@@ -161,25 +180,84 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             ),
         )
 
-    def upsert_tracking(self, tracking: AnalysisTracking) -> bool:
+    def upsert_tracking(self, tracking: AnalysisTracking) -> AnalysisTracking | None:
         if tracking.updated_at is None:
             raise ValueError("Only changed tracking can be persisted")
         with self._get_connection() as conn:
-            cursor = conn.execute(
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT t.application_status, t.updated_at FROM saved_analyses AS s
+                LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(tracking.analysis_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            previous = ApplicationStatus(
+                row["application_status"] or ApplicationStatus.NOT_APPLIED
+            )
+            if previous == tracking.application_status:
+                return AnalysisTracking(
+                    tracking.analysis_id,
+                    previous,
+                    datetime.fromisoformat(row["updated_at"])
+                    if row["updated_at"] is not None
+                    else None,
+                )
+            conn.execute(
                 """INSERT INTO analysis_tracking
-                    (analysis_id, application_status, updated_at)
-                SELECT analysis_id, ?, ? FROM saved_analyses WHERE analysis_id = ?
+                (analysis_id, application_status, updated_at)
+                VALUES (?, ?, ?)
                 ON CONFLICT(analysis_id) DO UPDATE SET
                     application_status = excluded.application_status,
                     updated_at = excluded.updated_at""",
                 (
+                    str(tracking.analysis_id),
                     tracking.application_status.value,
                     tracking.updated_at.isoformat(),
+                ),
+            )
+            conn.execute(
+                """INSERT INTO analysis_tracking_events
+                (analysis_id, previous_status, application_status, changed_at)
+                VALUES (?, ?, ?, ?)""",
+                (
                     str(tracking.analysis_id),
+                    previous.value,
+                    tracking.application_status.value,
+                    tracking.updated_at.isoformat(),
                 ),
             )
             conn.commit()
-            return bool(cursor.rowcount == 1)
+            return tracking
+
+    def list_tracking_events(
+        self, analysis_id: uuid.UUID, *, limit: int, offset: int
+    ) -> tuple[ApplicationStatusEvent, ...] | None:
+        with self._get_connection() as conn:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM saved_analyses WHERE analysis_id = ?",
+                    (str(analysis_id),),
+                ).fetchone()
+                is None
+            ):
+                return None
+            rows = conn.execute(
+                """SELECT previous_status, application_status, changed_at
+                FROM analysis_tracking_events WHERE analysis_id = ?
+                ORDER BY changed_at DESC, event_id DESC LIMIT ? OFFSET ?""",
+                (str(analysis_id), limit, offset),
+            ).fetchall()
+        return tuple(
+            ApplicationStatusEvent(
+                analysis_id,
+                ApplicationStatus(row["previous_status"]),
+                ApplicationStatus(row["application_status"]),
+                datetime.fromisoformat(row["changed_at"]),
+            )
+            for row in rows
+        )
 
     def list_recent(
         self,
