@@ -8,6 +8,7 @@ import {
   downloadSavedAnalysis,
   getAnalysisHistory,
   getAnalysisTracking,
+  getAnalysisTrackingHistory,
   getSavedAnalysis,
   updateAnalysisTracking,
 } from '../../../api/pathfinder';
@@ -22,6 +23,7 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   compareSavedAnalyses: vi.fn(),
   getSavedAnalysis: vi.fn(),
   getAnalysisTracking: vi.fn(),
+  getAnalysisTrackingHistory: vi.fn(),
   updateAnalysisTracking: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
   downloadSavedAnalysis: vi.fn(),
@@ -41,6 +43,8 @@ const summary: SavedAnalysisSummary = {
 
 beforeEach(() => {
   vi.mocked(getAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
+  vi.mocked(getAnalysisTrackingHistory).mockReset();
+  vi.mocked(getAnalysisTrackingHistory).mockResolvedValue({ items: [] });
 });
 
 const detail: SavedAnalysisDetail = {
@@ -571,7 +575,7 @@ describe('saved comparison workflow', () => {
     render(<AnalysisHistory />); await selectFirst(); await openSecond();
     const button = screen.getByRole('button', { name: 'Compare with selected' });
     fireEvent.click(button); fireEvent.click(button);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading saved analysis comparison');
+    expect(screen.getByText(/Loading saved analysis comparison/)).toBeInTheDocument();
     expect(compareSavedAnalyses).toHaveBeenCalledTimes(1);
     resolve(comparison); await screen.findByRole('heading', { name: 'Saved Analysis Comparison' });
   });
@@ -667,5 +671,63 @@ describe('application status workflow', () => {
     await screen.findByText('Current status: Applied');
     expect(updateAnalysisTracking).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, 'applied');
     expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+  });
+
+  it('shows recorded activity, loads older events, and refreshes after a real change', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      previous_status: 'not_applied' as const,
+      application_status: 'applied' as const,
+      changed_at: `2026-09-03T${String(index).padStart(2, '0')}:00:00Z`,
+    }));
+    vi.mocked(getAnalysisTrackingHistory)
+      .mockResolvedValueOnce({ items: firstPage })
+      .mockResolvedValueOnce({ items: [{ previous_status: 'applied', application_status: 'interviewing', changed_at: '2026-09-02T10:00:00Z' }] })
+      .mockResolvedValueOnce({ items: [{ previous_status: 'applied', application_status: 'offer', changed_at: '2026-09-04T10:00:00Z' }] });
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'offer', updated_at: '2026-09-04T10:00:00Z' });
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await waitFor(() => expect(screen.getAllByText('Not applied → Applied')).toHaveLength(20));
+    expect(screen.getByText('This timeline records status changes made in Pathfinder after activity tracking became available.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older activity' }));
+    await waitFor(() => expect(getAnalysisTrackingHistory).toHaveBeenLastCalledWith(summary.analysis_id, 20, 20));
+    expect(await screen.findByText('Applied → Interviewing')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Choose application status'), { target: { value: 'offer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    expect(await screen.findByText('Applied → Offer')).toBeInTheDocument();
+    expect(screen.queryByText('Applied → Interviewing')).not.toBeInTheDocument();
+  });
+
+  it('keeps the saved detail usable when activity fails', async () => {
+    vi.mocked(getAnalysisTrackingHistory).mockRejectedValue(new Error('network'));
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    expect(await screen.findByText('Pathfinder could not load application activity. Please try again.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update status' })).toBeEnabled();
+  });
+
+  it('keeps activity unchanged after a same-status update', async () => {
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByText('No application status changes have been recorded yet.');
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    await screen.findByText('Application status updated.');
+    expect(getAnalysisTrackingHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports activity refresh failure separately after saving status', async () => {
+    vi.mocked(getAnalysisTrackingHistory)
+      .mockResolvedValueOnce({ items: [] })
+      .mockRejectedValueOnce(new Error('network'));
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'applied', updated_at: '2026-09-03T11:00:00Z' });
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByText('No application status changes have been recorded yet.');
+    fireEvent.change(screen.getByLabelText('Choose application status'), { target: { value: 'applied' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    expect(await screen.findByText('Current status: Applied')).toBeInTheDocument();
+    expect(await screen.findByText('Application status was saved, but the activity timeline could not be refreshed.')).toBeInTheDocument();
+    expect(screen.getByText('Application status updated.')).toBeInTheDocument();
   });
 });

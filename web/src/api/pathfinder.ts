@@ -15,6 +15,7 @@ import {
   CandidateProfileDraftRequest,
   ApplicationStatus,
   AnalysisTracking,
+  ApplicationStatusHistoryResponse,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -271,6 +272,11 @@ export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetai
 
 export function getAnalysisTracking(analysisId: string): Promise<AnalysisTracking> {
   return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/tracking`, { cache: 'no-store' });
+}
+
+export function getAnalysisTrackingHistory(analysisId: string, limit = 20, offset = 0): Promise<ApplicationStatusHistoryResponse> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/tracking/history?${query.toString()}`, { cache: 'no-store' });
 }
 
 export function updateAnalysisTracking(analysisId: string, applicationStatus: ApplicationStatus): Promise<AnalysisTracking> {

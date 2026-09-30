@@ -230,3 +230,20 @@
   padding: 0.5rem;
   max-width: 100%;
 }
+
+.application-activity {
+  margin-block: 1.5rem;
+}
+
+.application-activity ol {
+  padding-left: 1.5rem;
+}
+
+.application-activity li {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.application-activity li span {
+  display: block;
+}

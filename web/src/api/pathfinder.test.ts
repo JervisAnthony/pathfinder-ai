@@ -7,6 +7,7 @@ import {
   downloadSavedAnalysis,
   getAnalysisHistory,
   getAnalysisTracking,
+  getAnalysisTrackingHistory,
   getSavedAnalysis,
   updateAnalysisTracking,
   importResumeSkills,
@@ -368,9 +369,16 @@ describe('analysis tracking client', () => {
       body: JSON.stringify({ application_status: 'applied' }), cache: 'no-store',
     });
   });
+  it('loads paginated activity without browser caching', async () => {
+    const payload = { items: [{ previous_status: 'applied', application_status: 'offer', changed_at: '2026-01-01T00:00:00Z' }] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(payload), { status: 200 }));
+    expect(await getAnalysisTrackingHistory('id +', 20, 40)).toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/tracking/history?limit=20&offset=40', { cache: 'no-store' });
+  });
   it.each([[404, 'analysis_not_found'], [503, 'persistence_unavailable']])('preserves safe errors %s', async (status, code) => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async () => errorResponse(Number(status), String(code), 'Safe message'));
     await expect(getAnalysisTracking('id')).rejects.toMatchObject({ status, code });
     await expect(updateAnalysisTracking('id', 'applied')).rejects.toMatchObject({ status, code });
+    await expect(getAnalysisTrackingHistory('id')).rejects.toMatchObject({ status, code });
   });
 });

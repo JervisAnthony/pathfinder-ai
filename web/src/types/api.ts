@@ -317,6 +317,16 @@ export interface AnalysisTracking {
   updated_at: string | null;
 }
 
+export interface ApplicationStatusEvent {
+  previous_status: ApplicationStatus;
+  application_status: ApplicationStatus;
+  changed_at: string;
+}
+
+export interface ApplicationStatusHistoryResponse {
+  items: ApplicationStatusEvent[];
+}
+
 export interface AnalysisHistoryResponse {
   items: SavedAnalysisSummary[];
 }

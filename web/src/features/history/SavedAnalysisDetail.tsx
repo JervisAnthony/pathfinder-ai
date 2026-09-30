@@ -6,6 +6,7 @@ import { AnalysisTracking, ApplicationStatus, SavedAnalysisDetail as SavedDetail
 import { formatSavedTimestamp } from './formatting';
 import { savedAnalysisDetailToAnalysisResponse } from './mapping';
 import { applicationStatuses, statusLabel } from './status';
+import { ApplicationStatusActivity } from './ApplicationStatusActivity';
 
 interface Props {
   detail: SavedDetail;
@@ -61,6 +62,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   const [trackingError, setTrackingError] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -87,8 +89,10 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
     setStatusMessage(null);
     try {
       const value = await updateAnalysisTracking(detail.analysis_id, statusDraft);
+      const changed = value.application_status !== tracking.application_status;
       setTracking(value);
       setStatusMessage('Application status updated.');
+      if (changed) setActivityRefreshKey((current) => current + 1);
       try {
         await onStatusUpdated?.();
       } catch {
@@ -182,6 +186,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
         {statusMessage && <p role="status">{statusMessage}</p>}
         {trackingError && <p role="alert" className="error-message">{trackingError}</p>}
       </section>
+      <ApplicationStatusActivity analysisId={detail.analysis_id} refreshKey={activityRefreshKey} />
       <section className="saved-export" aria-labelledby="saved-export-title">
         <h3 id="saved-export-title">Download saved analysis</h3>
         <p>Exports contain stored candidate and job information. Protect downloaded files when sharing or saving them.</p>
