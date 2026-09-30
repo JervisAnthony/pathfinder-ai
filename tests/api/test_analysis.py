@@ -1106,6 +1106,7 @@ def test_tracking_api_lifecycle(tmp_path: Path, valid_payload: dict[str, Any]) -
         "saved_analysis"
     ]["analysis_id"]
     path = f"/api/v1/analyses/{analysis_id}/tracking"
+    history_path = f"{path}/history"
     detail_before = client.get(f"/api/v1/analyses/{analysis_id}").json()
     json_before = client.get(
         f"/api/v1/analyses/{analysis_id}/export?format=json"
@@ -1121,6 +1122,10 @@ def test_tracking_api_lifecycle(tmp_path: Path, valid_payload: dict[str, Any]) -
         "application_status": "not_applied",
         "updated_at": None,
     }
+    empty_history = client.get(history_path)
+    assert empty_history.status_code == 200
+    assert empty_history.headers["Cache-Control"] == "no-store"
+    assert empty_history.json() == {"items": []}
     assert (
         client.put(path, json={"application_status": "not_applied"}).json()
         == default.json()
@@ -1145,6 +1150,21 @@ def test_tracking_api_lifecycle(tmp_path: Path, valid_payload: dict[str, Any]) -
         )
         listed = client.get("/api/v1/analyses", params={"application_status": status})
         assert listed.json()["items"][0]["application_status"] == status
+    activity = client.get(history_path)
+    assert activity.status_code == 200
+    assert len(activity.json()["items"]) == 7
+    assert activity.json()["items"][0]["application_status"] == "not_applied"
+    assert activity.json()["items"][0]["previous_status"] == "withdrawn"
+    assert set(activity.json()["items"][0]) == {
+        "previous_status",
+        "application_status",
+        "changed_at",
+    }
+    assert activity.json()["items"][0]["changed_at"] == updated.json()["updated_at"]
+    assert len(client.get(history_path, params={"limit": 2}).json()["items"]) == 2
+    assert len(client.get(history_path, params={"offset": 6}).json()["items"]) == 1
+    for params in ({"limit": 0}, {"limit": 101}, {"offset": -1}):
+        assert client.get(history_path, params=params).status_code == 422
     assert client.get(f"/api/v1/analyses/{analysis_id}").json() == detail_before
     assert (
         client.get(f"/api/v1/analyses/{analysis_id}/export?format=json").content
@@ -1163,6 +1183,7 @@ def test_tracking_api_lifecycle(tmp_path: Path, valid_payload: dict[str, Any]) -
     )
     assert client.delete(f"/api/v1/analyses/{analysis_id}").status_code == 204
     assert client.get(path).status_code == 404
+    assert client.get(history_path).status_code == 404
     assert client.put(path, json={"application_status": "applied"}).status_code == 404
 
 
@@ -1179,6 +1200,10 @@ def test_tracking_api_missing_and_unavailable(tmp_path: Path) -> None:
             client.get(f"/api/v1/analyses/{identifier}/tracking").status_code == status
         )
         assert (
+            client.get(f"/api/v1/analyses/{identifier}/tracking/history").status_code
+            == status
+        )
+        assert (
             client.put(
                 f"/api/v1/analyses/{identifier}/tracking",
                 json={"application_status": "applied"},
@@ -1187,8 +1212,28 @@ def test_tracking_api_missing_and_unavailable(tmp_path: Path) -> None:
         )
     assert unavailable.get("/api/v1/analyses/invalid/tracking").status_code == 422
     assert (
+        unavailable.get("/api/v1/analyses/invalid/tracking/history").status_code == 422
+    )
+    assert (
         unavailable.put(
             "/api/v1/analyses/invalid/tracking", json={"application_status": "applied"}
         ).status_code
         == 422
     )
+
+
+def test_tracking_history_openapi_contract() -> None:
+    spec = TestClient(create_app()).get("/openapi.json").json()
+    operation = spec["paths"]["/api/v1/analyses/{analysis_id}/tracking/history"]["get"]
+    parameters = {item["name"]: item for item in operation["parameters"]}
+    assert {"analysis_id", "limit", "offset"} == set(parameters)
+    assert parameters["limit"]["schema"]["minimum"] == 1
+    assert parameters["limit"]["schema"]["maximum"] == 100
+    assert parameters["offset"]["schema"]["minimum"] == 0
+    assert {"200", "404", "422", "503"} <= set(operation["responses"])
+    event = spec["components"]["schemas"]["ApplicationStatusEventSchema"]
+    assert set(event["properties"]) == {
+        "previous_status",
+        "application_status",
+        "changed_at",
+    }

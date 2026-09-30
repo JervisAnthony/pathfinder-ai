@@ -23,6 +23,8 @@ from pathfinder_ai.api.schemas import (
     AnalysisRequestSchema,
     AnalysisResponseSchema,
     AnalysisTrackingSchema,
+    ApplicationStatusEventSchema,
+    ApplicationStatusHistoryResponseSchema,
     SavedAnalysisComparisonSchema,
     SavedAnalysisDetailSchema,
     SavedAnalysisMetadataSchema,
@@ -237,6 +239,43 @@ async def list_analyses(
                 status_updated_at=s.status_updated_at,
             )
             for s in summaries
+        ]
+    )
+
+
+@router.get(
+    "/analyses/{analysis_id}/tracking/history",
+    response_model=ApplicationStatusHistoryResponseSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid request."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def get_analysis_tracking_history(
+    analysis_id: uuid.UUID,
+    request: Request,
+    response: Response,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> ApplicationStatusHistoryResponseSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    events = AnalysisHistoryService(repository).list_tracking_events(
+        analysis_id, limit=limit, offset=offset
+    )
+    if events is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return ApplicationStatusHistoryResponseSchema(
+        items=[
+            ApplicationStatusEventSchema(
+                previous_status=event.previous_status,
+                application_status=event.application_status,
+                changed_at=event.changed_at,
+            )
+            for event in events
         ]
     )
 

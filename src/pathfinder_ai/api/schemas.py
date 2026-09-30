@@ -487,6 +487,16 @@ class UpdateAnalysisTrackingSchema(BaseStrictModel):
     application_status: ApplicationStatus
 
 
+class ApplicationStatusEventSchema(BaseStrictModel):
+    previous_status: ApplicationStatus
+    application_status: ApplicationStatus
+    changed_at: datetime
+
+
+class ApplicationStatusHistoryResponseSchema(BaseStrictModel):
+    items: list[ApplicationStatusEventSchema]
+
+
 class AnalysisHistoryResponseSchema(BaseStrictModel):
     items: list[SavedAnalysisSummarySchema]
 
