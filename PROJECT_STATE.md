@@ -51,9 +51,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 23 — Application Status Activity Timeline**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
-Active pull request: None.
+Active pull request:
+
+**PR #27 — Add application status activity timeline**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/27
 
 This authorized post-MVP milestone records future explicit application-status
 transitions in an additive SQLite event table. Existing current status and its
