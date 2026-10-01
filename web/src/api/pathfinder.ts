@@ -15,6 +15,7 @@ import {
   CandidateProfileDraftRequest,
   ApplicationStatus,
   AnalysisTracking,
+  AnalysisNote,
   ApplicationStatusHistoryResponse,
 } from '../types/api'
 
@@ -272,6 +273,43 @@ export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetai
 
 export function getAnalysisTracking(analysisId: string): Promise<AnalysisTracking> {
   return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/tracking`, { cache: 'no-store' });
+}
+
+export function getAnalysisNote(analysisId: string): Promise<AnalysisNote> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/note`, { method: 'GET', cache: 'no-store' });
+}
+
+export function updateAnalysisNote(analysisId: string, content: string): Promise<AnalysisNote> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/note`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+    cache: 'no-store',
+  });
+}
+
+export async function clearAnalysisNote(analysisId: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/v1/analyses/${encodeURIComponent(analysisId)}/note`, {
+      method: 'DELETE', cache: 'no-store',
+    });
+    if (!response.ok) {
+      let errorData: unknown;
+      try {
+        errorData = await response.json();
+      } catch {
+        throw new ApiError('Pathfinder returned an unreadable error response.', response.status);
+      }
+      if (!isApiErrorResponse(errorData)) {
+        throw new ApiError('Pathfinder returned an invalid error response.', response.status);
+      }
+      const { code, message, details } = errorData.error;
+      throw new ApiError(message, response.status, code, details);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Unable to reach Pathfinder. Check your connection and try again.');
+  }
 }
 
 export function getAnalysisTrackingHistory(analysisId: string, limit = 20, offset = 0): Promise<ApplicationStatusHistoryResponse> {

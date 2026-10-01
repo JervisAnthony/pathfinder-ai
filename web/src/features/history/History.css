@@ -247,3 +247,19 @@
 .application-activity li span {
   display: block;
 }
+
+.application-note {
+  margin-block: 1.5rem;
+}
+
+.application-note textarea {
+  display: block;
+  width: 100%;
+  min-height: 8rem;
+  margin-block: 0.5rem;
+  font: inherit;
+}
+
+.application-note button {
+  margin-right: 0.75rem;
+}
