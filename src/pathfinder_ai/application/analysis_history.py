@@ -47,6 +47,21 @@ class AnalysisTracking:
 
 
 @dataclass(frozen=True, slots=True)
+class ApplicationStatusEvent:
+    analysis_id: uuid.UUID
+    previous_status: ApplicationStatus
+    application_status: ApplicationStatus
+    changed_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.previous_status == self.application_status:
+            raise ValueError("status event must represent a change")
+        if self.changed_at.tzinfo is None:
+            raise ValueError("changed_at must be timezone-aware")
+        object.__setattr__(self, "changed_at", self.changed_at.astimezone(UTC))
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisHistoryFilter:
     """Optional deterministic criteria for saved-analysis history."""
 
@@ -165,8 +180,14 @@ class AnalysisRepository(Protocol):
         """Get effective tracking for an existing saved analysis."""
         ...
 
-    def upsert_tracking(self, tracking: AnalysisTracking) -> bool:
-        """Store changed tracking only if the saved analysis still exists."""
+    def upsert_tracking(self, tracking: AnalysisTracking) -> AnalysisTracking | None:
+        """Atomically store a transition and return effective persisted tracking."""
+        ...
+
+    def list_tracking_events(
+        self, analysis_id: uuid.UUID, *, limit: int, offset: int
+    ) -> tuple[ApplicationStatusEvent, ...] | None:
+        """Return recorded transitions, or None if the analysis does not exist."""
         ...
 
     def list_recent(
@@ -247,7 +268,18 @@ class AnalysisHistoryService:
         if current is None or current.application_status == status:
             return current
         updated = AnalysisTracking(analysis_id, status, self._now())
-        return updated if self._repository.upsert_tracking(updated) else None
+        return self._repository.upsert_tracking(updated)
+
+    def list_tracking_events(
+        self, analysis_id: uuid.UUID, *, limit: int = 20, offset: int = 0
+    ) -> tuple[ApplicationStatusEvent, ...] | None:
+        if limit < 1 or limit > 100:
+            raise ValueError("Limit must be between 1 and 100")
+        if offset < 0:
+            raise ValueError("Offset must be non-negative")
+        return self._repository.list_tracking_events(
+            analysis_id, limit=limit, offset=offset
+        )
 
     def list_history(
         self,

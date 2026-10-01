@@ -10,6 +10,8 @@ from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
     AnalysisRepository,
+    ApplicationStatus,
+    ApplicationStatusEvent,
     SavedAnalysis,
     SavedAnalysisSummary,
 )
@@ -437,3 +439,39 @@ def test_summary_rejects_naive_status_timestamp() -> None:
             ai_enriched=False,
             status_updated_at=datetime(2026, 1, 2),
         )
+
+
+def test_application_status_event_validation_and_utc_normalization() -> None:
+    identifier = uuid.uuid4()
+    with pytest.raises(ValueError, match="represent a change"):
+        ApplicationStatusEvent(
+            identifier,
+            ApplicationStatus.APPLIED,
+            ApplicationStatus.APPLIED,
+            datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    with pytest.raises(ValueError, match="timezone-aware"):
+        ApplicationStatusEvent(
+            identifier,
+            ApplicationStatus.APPLIED,
+            ApplicationStatus.OFFER,
+            datetime(2026, 1, 1),
+        )
+    event = ApplicationStatusEvent(
+        identifier,
+        ApplicationStatus.APPLIED,
+        ApplicationStatus.OFFER,
+        datetime(2026, 1, 1, 5, 30, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+    )
+    assert event.changed_at == datetime(2026, 1, 1, tzinfo=UTC)
+
+
+def test_tracking_activity_pagination_validation(fake_repo: FakeRepository) -> None:
+    service = AnalysisHistoryService(fake_repo)
+    identifier = uuid.uuid4()
+    with pytest.raises(ValueError, match="Limit"):
+        service.list_tracking_events(identifier, limit=0)
+    with pytest.raises(ValueError, match="Limit"):
+        service.list_tracking_events(identifier, limit=101)
+    with pytest.raises(ValueError, match="Offset"):
+        service.list_tracking_events(identifier, offset=-1)
