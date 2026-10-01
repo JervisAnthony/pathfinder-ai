@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-09-30
+Last updated: 2026-10-01
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`244e18792d3a6beac7bd2668478d291c013bf8d2`
+`29a35228d593a9946c9873a8396037d531a87062`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 22 — Saved Analysis Application Status Tracking**
+**Commit 23 — Application Status Activity Timeline**
 
 ## Completed MVP-1 Roadmap
 
@@ -46,27 +46,23 @@ These milestones must not be replayed or rebuilt.
 - Commit 20 — Saved Analysis Export & Portability — complete (PR #24 merged)
 - Commit 21 — Saved Analysis Comparison & Change View — complete (PR #25 merged)
 - Commit 22 — Saved Analysis Application Status Tracking — complete (PR #26 merged)
+- Commit 23 — Application Status Activity Timeline — complete (PR #27 merged)
 
 ## Post-MVP Active Work
 
-**Commit 23 — Application Status Activity Timeline**
+**Commit 24 — Saved Analysis Application Notes**
 
-Status: **PR under review**
+Status: **Implementation in progress**
 
-Active pull request:
+Active pull request: None.
 
-**PR #27 — Add application status activity timeline**
+This authorized post-MVP milestone adds one explicit, private, mutable
+plain-text note to each saved analysis. The note lives in additive SQLite
+metadata, separate from the immutable SavedAnalysis snapshot, current status,
+status activity, exports, comparison, deterministic analysis, and optional AI.
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/27
-
-This authorized post-MVP milestone records future explicit application-status
-transitions in an additive SQLite event table. Existing current status and its
-timestamp remain authoritative; earlier changes are not reconstructed. The
-saved-detail timeline is newest first and paginated. Snapshot payloads, exports,
-comparison, deterministic analysis, and optional AI remain unchanged.
-
-The maintainer explicitly authorized reconciliation of the stale Commit 22 state:
-PR #26 merged at main `244e18792d3a6beac7bd2668478d291c013bf8d2`.
+The maintainer explicitly authorized reconciliation of the stale Commit 23
+state: PR #27 merged at main `29a35228d593a9946c9873a8396037d531a87062`.
 
 ## Existing Capabilities
 
@@ -97,6 +93,7 @@ The repository already contains:
 - descriptive comparison of two saved snapshots with neutral deltas and skill/gap sets
 - explicit saved-analysis application status with server-side History filtering
 - paginated application-status activity for saved analysis detail
+- private, user-authored application notes on saved analysis detail
 
 ## Architectural Boundary
 
