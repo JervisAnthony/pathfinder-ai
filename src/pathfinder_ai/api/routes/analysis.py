@@ -20,6 +20,7 @@ from pathfinder_ai.api.errors import (
 )
 from pathfinder_ai.api.schemas import (
     AnalysisHistoryResponseSchema,
+    AnalysisNoteSchema,
     AnalysisRequestSchema,
     AnalysisResponseSchema,
     AnalysisTrackingSchema,
@@ -29,6 +30,7 @@ from pathfinder_ai.api.schemas import (
     SavedAnalysisDetailSchema,
     SavedAnalysisMetadataSchema,
     SavedAnalysisSummarySchema,
+    UpdateAnalysisNoteSchema,
     UpdateAnalysisTrackingSchema,
     map_ai_enrichment_to_schema,
     map_analysis_response,
@@ -54,6 +56,7 @@ from pathfinder_ai.application.analysis_history import (
     ApplicationStatus,
     SavedAnalysis,
 )
+from pathfinder_ai.application.analysis_notes import AnalysisNoteService
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
 )
@@ -278,6 +281,71 @@ async def get_analysis_tracking_history(
             for event in events
         ]
     )
+
+
+@router.get(
+    "/analyses/{analysis_id}/note",
+    response_model=AnalysisNoteSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUID."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def get_analysis_note(
+    analysis_id: uuid.UUID, request: Request, response: Response
+) -> AnalysisNoteSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    note = AnalysisNoteService(repository).get_note(analysis_id)
+    if note is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisNoteSchema.model_validate(asdict(note))
+
+
+@router.put(
+    "/analyses/{analysis_id}/note",
+    response_model=AnalysisNoteSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid note request."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def update_analysis_note(
+    analysis_id: uuid.UUID,
+    payload: UpdateAnalysisNoteSchema,
+    request: Request,
+    response: Response,
+) -> AnalysisNoteSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    note = AnalysisNoteService(repository).update_note(analysis_id, payload.content)
+    if note is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisNoteSchema.model_validate(asdict(note))
+
+
+@router.delete(
+    "/analyses/{analysis_id}/note",
+    status_code=204,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUID."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def clear_analysis_note(analysis_id: uuid.UUID, request: Request) -> Response:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    if AnalysisNoteService(repository).clear_note(analysis_id) is None:
+        raise AnalysisNotFoundError()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
 
 
 @router.get(

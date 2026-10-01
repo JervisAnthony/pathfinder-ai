@@ -11,6 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.analysis_history import ApplicationStatus
+from pathfinder_ai.application.analysis_notes import (
+    MAX_APPLICATION_NOTE_LENGTH,
+    validate_note_content,
+)
 from pathfinder_ai.application.candidate_profile_import import (
     MAX_CANDIDATE_DRAFT_CERTIFICATIONS,
     MAX_CANDIDATE_DRAFT_EDUCATION,
@@ -481,6 +485,22 @@ class AnalysisTrackingSchema(BaseStrictModel):
     analysis_id: uuid.UUID
     application_status: ApplicationStatus
     updated_at: datetime | None
+
+
+class AnalysisNoteSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    content: str | None
+    updated_at: datetime | None
+
+
+class UpdateAnalysisNoteSchema(BaseStrictModel):
+    content: str = Field(max_length=MAX_APPLICATION_NOTE_LENGTH)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        validate_note_content(value)
+        return value
 
 
 class UpdateAnalysisTrackingSchema(BaseStrictModel):
