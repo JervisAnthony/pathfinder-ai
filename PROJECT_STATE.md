@@ -52,9 +52,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 24 — Saved Analysis Application Notes**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
-Active pull request: None.
+Active pull request:
+
+**PR #28 — Add saved analysis application notes**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/28
 
 This authorized post-MVP milestone adds one explicit, private, mutable
 plain-text note to each saved analysis. The note lives in additive SQLite
