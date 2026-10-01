@@ -382,6 +382,35 @@ is not sent to AI or stored in the browser. JSON and Markdown downloads remain
 immutable snapshot exports and exclude activity. Saved-analysis comparison also
 excludes activity and transition counts.
 
+### Saved analysis application notes
+
+Saved Analysis Detail lets the user keep one private, plain-text application
+note. The user writes and explicitly saves or clears it; editing the textarea
+does not autosave. A note can contain at most 10,000 characters. Saving identical
+content preserves its update timestamp. Clearing requires confirmation, and
+there is no note history or revision recovery.
+
+Notes are user-authored workflow metadata, separate from immutable
+`SavedAnalysis`, deterministic analysis, current application status, and status
+activity. Pathfinder does not generate notes or deliberately send their content
+to AI. Editing a note does not change status or its timestamp and does not add a
+status-transition event. The activity timeline remains a status-transition log.
+
+SQLite stores a note's parent analysis ID, exact content, and update timestamp
+in one additive `analysis_notes` table. The other tables—`saved_analyses`,
+`analysis_tracking`, and `analysis_tracking_events`—retain their columns. Existing
+analyses receive no backfilled note row. The saved-analysis payload remains
+version 2 with no migration, and deleting an analysis cascades to its note.
+`GET`, `PUT`, and `DELETE /api/v1/analyses/{analysis_id}/note` manage the separate
+note resource.
+
+Notes may contain sensitive user-entered information. Users remain responsible
+for what they choose to enter. Notes are rendered as ordinary text and are not
+interpreted as HTML or Markdown. This feature does not store notes or drafts in
+the browser or deliberately log note content. Notes are excluded from History
+summaries and search, snapshot JSON and Markdown exports, and saved-analysis
+comparison. There is no note export or note comparison.
+
 ### Saved analysis deletion and privacy
 
 Pathfinder lets a user delete one saved-analysis snapshot at a time from its

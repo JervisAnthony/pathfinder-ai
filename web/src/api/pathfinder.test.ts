@@ -8,6 +8,9 @@ import {
   getAnalysisHistory,
   getAnalysisTracking,
   getAnalysisTrackingHistory,
+  getAnalysisNote,
+  updateAnalysisNote,
+  clearAnalysisNote,
   getSavedAnalysis,
   updateAnalysisTracking,
   importResumeSkills,
@@ -380,5 +383,52 @@ describe('analysis tracking client', () => {
     await expect(getAnalysisTracking('id')).rejects.toMatchObject({ status, code });
     await expect(updateAnalysisTracking('id', 'applied')).rejects.toMatchObject({ status, code });
     await expect(getAnalysisTrackingHistory('id')).rejects.toMatchObject({ status, code });
+  });
+});
+
+describe('application note client', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reads an empty or saved note using the encoded URL and no-store', async () => {
+    const empty = { analysis_id: 'id', content: null, updated_at: null };
+    const saved = { analysis_id: 'id', content: '  🐍\nline two  ', updated_at: '2026-01-01T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(empty), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(saved), { status: 200 }));
+    expect(await getAnalysisNote('id +')).toEqual(empty);
+    expect(await getAnalysisNote('id +')).toEqual(saved);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/note', { method: 'GET', cache: 'no-store' });
+  });
+
+  it('sends exact user content only when explicitly asked to save', async () => {
+    const saved = { analysis_id: 'id', content: '  🐍\nline two  ', updated_at: '2026-01-01T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(saved), { status: 200 }));
+    expect(await updateAnalysisNote('id +', saved.content)).toEqual(saved);
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/v1/analyses/id%20%2B/note', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: saved.content }), cache: 'no-store',
+    });
+  });
+
+  it('clears a note using DELETE and accepts a bodyless 204', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(clearAnalysisNote('id +')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/note', { method: 'DELETE', cache: 'no-store' });
+  });
+
+  it.each([[404, 'analysis_not_found'], [503, 'persistence_unavailable']])('preserves safe %s note errors', async (status, code) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => errorResponse(Number(status), String(code), 'Safe message'));
+    await expect(getAnalysisNote('id')).rejects.toMatchObject({ status, code });
+    await expect(updateAnalysisNote('id', 'text')).rejects.toMatchObject({ status, code });
+    await expect(clearAnalysisNote('id')).rejects.toMatchObject({ status, code });
+  });
+
+  it('preserves note validation and masks network failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorResponse(422, 'validation_error', 'Safe message'))
+      .mockRejectedValue(new Error('PRIVATE'));
+    await expect(updateAnalysisNote('id', 'text')).rejects.toMatchObject({ status: 422, code: 'validation_error' });
+    await expect(getAnalysisNote('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+    await expect(updateAnalysisNote('id', 'text')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+    await expect(clearAnalysisNote('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
   });
 });

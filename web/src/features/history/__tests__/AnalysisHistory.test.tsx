@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
@@ -9,6 +9,9 @@ import {
   getAnalysisHistory,
   getAnalysisTracking,
   getAnalysisTrackingHistory,
+  getAnalysisNote,
+  updateAnalysisNote,
+  clearAnalysisNote,
   getSavedAnalysis,
   updateAnalysisTracking,
 } from '../../../api/pathfinder';
@@ -24,6 +27,9 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   getSavedAnalysis: vi.fn(),
   getAnalysisTracking: vi.fn(),
   getAnalysisTrackingHistory: vi.fn(),
+  getAnalysisNote: vi.fn(),
+  updateAnalysisNote: vi.fn(),
+  clearAnalysisNote: vi.fn(),
   updateAnalysisTracking: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
   downloadSavedAnalysis: vi.fn(),
@@ -45,6 +51,8 @@ beforeEach(() => {
   vi.mocked(getAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
   vi.mocked(getAnalysisTrackingHistory).mockReset();
   vi.mocked(getAnalysisTrackingHistory).mockResolvedValue({ items: [] });
+  vi.mocked(getAnalysisNote).mockReset();
+  vi.mocked(getAnalysisNote).mockResolvedValue({ analysis_id: summary.analysis_id, content: null, updated_at: null });
 });
 
 const detail: SavedAnalysisDetail = {
@@ -729,5 +737,149 @@ describe('application status workflow', () => {
     expect(await screen.findByText('Current status: Applied')).toBeInTheDocument();
     expect(await screen.findByText('Application status was saved, but the activity timeline could not be refreshed.')).toBeInTheDocument();
     expect(screen.getByText('Application status updated.')).toBeInTheDocument();
+  });
+});
+
+describe('application note workflow', () => {
+  const emptyNote = { analysis_id: summary.analysis_id, content: null, updated_at: null };
+  const savedNote = { analysis_id: summary.analysis_id, content: '  🐍\n<script>alert(1)</script>  ', updated_at: '2026-09-04T10:00:00Z' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(updateAnalysisNote).mockReset();
+    vi.mocked(clearAnalysisNote).mockReset();
+  });
+
+  async function openDetail() {
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    return await screen.findByRole('textbox', { name: 'Application note' });
+  }
+
+  it('loads an empty note and saves exact plain text only on explicit action', async () => {
+    vi.mocked(updateAnalysisNote).mockResolvedValue(savedNote);
+    const textarea = await openDetail();
+    expect(screen.getByRole('heading', { name: 'Application note' })).toBeInTheDocument();
+    expect(screen.getByText('No application note saved.')).toBeInTheDocument();
+    expect(textarea).toHaveAttribute('maxLength', '10000');
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    fireEvent.change(textarea, { target: { value: savedNote.content } });
+    expect(updateAnalysisNote).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(await screen.findByText('Application note saved.')).toBeInTheDocument();
+    expect(updateAnalysisNote).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, savedNote.content);
+    expect(textarea).toHaveValue(savedNote.content);
+    expect(screen.getByText(`Last updated ${formatSavedTimestamp(savedNote.updated_at)}`)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    expect(screen.getByText(`${savedNote.content.length} / 10,000`)).toBeInTheDocument();
+    expect(document.querySelector('script')).toBeNull();
+    expect(getAnalysisTrackingHistory).toHaveBeenCalledTimes(1);
+    expect(updateAnalysisTracking).not.toHaveBeenCalled();
+    vi.mocked(getAnalysisNote).mockResolvedValue(savedNote);
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await waitFor(() => expect(getAnalysisNote).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('textbox', { name: 'Application note' })).toHaveValue(savedNote.content);
+  });
+
+  it('preserves multiline hostile and Markdown-like text as inert textarea content', async () => {
+    const content = '<img src=x onerror=alert(1)>\n# Heading\n[link](https://example.invalid)\n`code`\n\' OR 1=1 --';
+    vi.mocked(getAnalysisNote).mockResolvedValue({ ...savedNote, content });
+    const textarea = await openDetail();
+    expect(textarea).toHaveValue(content);
+    expect(document.querySelector('img')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'link' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+  });
+
+  it('requires confirmation to clear and preserves unrelated workflow state', async () => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(savedNote);
+    vi.mocked(clearAnalysisNote).mockResolvedValue(undefined);
+    const textarea = await openDetail();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear note' }));
+    expect(clearAnalysisNote).not.toHaveBeenCalled();
+    const dialog = screen.getByRole('alertdialog', { name: 'Clear this application note?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(textarea).toHaveValue(savedNote.content);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear note' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear note' }));
+    expect(await screen.findByText('Application note cleared.')).toBeInTheDocument();
+    expect(clearAnalysisNote).toHaveBeenCalledExactlyOnceWith(summary.analysis_id);
+    expect(textarea).toHaveValue('');
+    expect(screen.queryByText(`Last updated ${formatSavedTimestamp(savedNote.updated_at)}`)).not.toBeInTheDocument();
+    expect(screen.getByText('Current status: Not applied')).toBeInTheDocument();
+    expect(getAnalysisTrackingHistory).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeEnabled();
+  });
+
+  it('guards other mutations during save and retains a failed draft', async () => {
+    let reject!: (reason: unknown) => void;
+    vi.mocked(updateAnalysisNote).mockReturnValue(new Promise((_, r) => { reject = r; }));
+    const textarea = await openDetail();
+    fireEvent.change(textarea, { target: { value: 'Follow up' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(screen.getByText('Saving application note…')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Update status' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete saved analysis' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Back to History/ })).toBeDisabled();
+    reject(new ApiError('private', 422, 'validation_error'));
+    expect(await screen.findByText('The application note is invalid. Check that it contains text and is no longer than 10,000 characters.')).toBeInTheDocument();
+    expect(textarea).toHaveValue('Follow up');
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeEnabled();
+  });
+
+  it('keeps detail usable after note load failure and retries', async () => {
+    vi.mocked(getAnalysisNote).mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(emptyNote);
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    expect(await screen.findByText('Pathfinder could not load the application note. Please try again.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save note' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry note' }));
+    expect(await screen.findByRole('textbox', { name: 'Application note' })).toHaveValue('');
+  });
+
+  it.each([
+    [new ApiError('private', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('private', 503, 'persistence_unavailable'), 'Application notes are unavailable because persistence is not configured on this Pathfinder server.'],
+  ])('shows a safe note load failure without hiding detail', async (failure, text) => {
+    vi.mocked(getAnalysisNote).mockRejectedValue(failure);
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update status' })).toBeEnabled();
+  });
+
+  it('prevents blank or unchanged saves and disables note mutations during status updates', async () => {
+    const textarea = await openDetail();
+    fireEvent.change(textarea, { target: { value: ' \n ' } });
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    fireEvent.change(textarea, { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    let resolve!: (value: { analysis_id: string; application_status: 'applied'; updated_at: string }) => void;
+    vi.mocked(updateAnalysisTracking).mockReturnValue(new Promise((r) => { resolve = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    expect(textarea).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save note' })).toBeDisabled();
+    resolve({ analysis_id: summary.analysis_id, application_status: 'applied', updated_at: '2026-09-04T10:00:00Z' });
+    await screen.findByText('Current status: Applied');
+    expect(textarea).toBeEnabled();
+  });
+
+  it('retains note and draft after a failed clear', async () => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(savedNote);
+    vi.mocked(clearAnalysisNote).mockRejectedValue(new Error('network'));
+    const textarea = await openDetail();
+    fireEvent.change(textarea, { target: { value: 'Unsaved edit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear note' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear note' }));
+    expect(await screen.findByText('Pathfinder could not clear the application note. Please try again.')).toBeInTheDocument();
+    expect(textarea).toHaveValue('Unsaved edit');
+    expect(screen.getByText(`Last updated ${formatSavedTimestamp(savedNote.updated_at)}`)).toBeInTheDocument();
   });
 });

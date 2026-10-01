@@ -19,6 +19,7 @@ from pathfinder_ai.application.analysis_history import (
     ApplicationStatusEvent,
     SavedAnalysis,
 )
+from pathfinder_ai.application.analysis_notes import AnalysisNote, AnalysisNoteService
 from pathfinder_ai.application.interview_preparation import (
     InterviewerQuestion,
     InterviewPreparation,
@@ -968,3 +969,117 @@ def test_activity_order_pagination_and_atomic_rollback(
         identifier, ApplicationStatus.OFFER, instant
     )
     assert repo.list_tracking_events(identifier, limit=20, offset=0) == newest + older
+
+
+def test_note_lifecycle_preserves_snapshots_tracking_and_activity(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "notes.db"
+    repo = SQLiteAnalysisRepository(path)
+    repo.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    assert repo.get_note(uuid.uuid4()) is None
+    assert repo.get_note(identifier) == AnalysisNote(identifier, None, None)
+    with closing(sqlite3.connect(path)) as connection:
+        before = connection.execute(
+            "SELECT * FROM saved_analyses WHERE analysis_id = ?", (str(identifier),)
+        ).fetchone()
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    repo.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.APPLIED, timestamp)
+    )
+    tracking = repo.get_tracking(identifier)
+    activity = repo.list_tracking_events(identifier, limit=20, offset=0)
+    content = "  Recruiter called\n🐍 <script>alert(1)</script> ' OR 1=1 --  "
+    note = AnalysisNote(identifier, content, timestamp)
+    assert repo.upsert_note(note) == note
+    assert repo.get_note(identifier) == note
+    assert (
+        repo.upsert_note(
+            AnalysisNote(identifier, content, datetime(2026, 1, 2, tzinfo=UTC))
+        )
+        == note
+    )
+    assert repo.get_note(identifier) == note
+    service = AnalysisNoteService(repo, clock=lambda: datetime(2026, 1, 3, tzinfo=UTC))
+    assert service.update_note(identifier, "Changed") == AnalysisNote(
+        identifier, "Changed", datetime(2026, 1, 3, tzinfo=UTC)
+    )
+    assert repo.get_tracking(identifier) == tracking
+    assert repo.list_tracking_events(identifier, limit=20, offset=0) == activity
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute(
+                "SELECT * FROM saved_analyses WHERE analysis_id = ?", (str(identifier),)
+            ).fetchone()
+            == before
+        )
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_notes").fetchone()[0] == 1
+        )
+    assert repo.clear_note(identifier) == AnalysisNote(identifier, None, None)
+    assert repo.clear_note(identifier) == AnalysisNote(identifier, None, None)
+    assert repo.get_note(identifier) == AnalysisNote(identifier, None, None)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_notes").fetchone()[0] == 0
+        )
+    assert repo.upsert_note(AnalysisNote(uuid.uuid4(), "text", timestamp)) is None
+    assert repo.clear_note(uuid.uuid4()) is None
+    assert repo.get_tracking(identifier) == tracking
+    assert repo.list_tracking_events(identifier, limit=20, offset=0) == activity
+
+
+def test_note_upgrade_and_parent_cascade(
+    tmp_path: Path, sample_analysis: SavedAnalysis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "legacy-note.db"
+    old = SQLiteAnalysisRepository(path)
+    old.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    old.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.INTERVIEWING, timestamp)
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        snapshots = connection.execute("SELECT * FROM saved_analyses").fetchall()
+        tracking = connection.execute("SELECT * FROM analysis_tracking").fetchall()
+        events = connection.execute("SELECT * FROM analysis_tracking_events").fetchall()
+        connection.execute("DROP TABLE analysis_notes")
+        connection.commit()
+    repo = SQLiteAnalysisRepository(path)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute("SELECT * FROM saved_analyses").fetchall() == snapshots
+        )
+        assert (
+            connection.execute("SELECT * FROM analysis_tracking").fetchall() == tracking
+        )
+        assert (
+            connection.execute("SELECT * FROM analysis_tracking_events").fetchall()
+            == events
+        )
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_notes").fetchone()[0] == 0
+        )
+        assert connection.execute("PRAGMA table_info(analysis_notes)").fetchall()
+        assert connection.execute("PRAGMA foreign_key_list(analysis_notes)").fetchall()
+    import pathfinder_ai.infrastructure.sqlite_analysis_repository as sqlite_module
+
+    monkeypatch.setattr(
+        sqlite_module, "decode_analysis", lambda *_: pytest.fail("snapshot decoded")
+    )
+    assert repo.get_note(identifier) == AnalysisNote(identifier, None, None)
+    repo.upsert_note(AnalysisNote(identifier, "private", timestamp))
+    assert repo.delete(identifier)
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM analysis_notes").fetchone()[0] == 0
+        )
+    assert repo.get_note(identifier) is None
+
+
+def test_note_repository_rejects_empty_write(tmp_path: Path) -> None:
+    repo = SQLiteAnalysisRepository(tmp_path / "empty-note.db")
+    with pytest.raises(ValueError, match="non-empty"):
+        repo.upsert_note(AnalysisNote(uuid.uuid4(), None, None))

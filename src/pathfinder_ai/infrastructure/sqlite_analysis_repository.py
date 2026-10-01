@@ -17,6 +17,7 @@ from pathfinder_ai.application.analysis_history import (
     SavedAnalysis,
     SavedAnalysisSummary,
 )
+from pathfinder_ai.application.analysis_notes import AnalysisNote
 from pathfinder_ai.infrastructure._analysis_codec import (
     CURRENT_PAYLOAD_VERSION,
     decode_analysis,
@@ -93,6 +94,15 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 idx_analysis_tracking_events_analysis_changed
                 ON analysis_tracking_events(
                     analysis_id, changed_at DESC, event_id DESC
+                )"""
+            )
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS analysis_notes (
+                    analysis_id TEXT PRIMARY KEY,
+                    content TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
+                    ON DELETE CASCADE
                 )"""
             )
 
@@ -258,6 +268,71 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             )
             for row in rows
         )
+
+    def get_note(self, analysis_id: uuid.UUID) -> AnalysisNote | None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT n.content, n.updated_at FROM saved_analyses AS s
+                LEFT JOIN analysis_notes AS n ON n.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(analysis_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return AnalysisNote(
+            analysis_id,
+            row["content"],
+            datetime.fromisoformat(row["updated_at"])
+            if row["updated_at"] is not None
+            else None,
+        )
+
+    def upsert_note(self, note: AnalysisNote) -> AnalysisNote | None:
+        if note.content is None or note.updated_at is None:
+            raise ValueError("Only non-empty application notes can be persisted")
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT n.content, n.updated_at FROM saved_analyses AS s
+                LEFT JOIN analysis_notes AS n ON n.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(note.analysis_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["content"] == note.content:
+                return AnalysisNote(
+                    note.analysis_id,
+                    row["content"],
+                    datetime.fromisoformat(row["updated_at"]),
+                )
+            conn.execute(
+                """INSERT INTO analysis_notes (analysis_id, content, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    content = excluded.content,
+                    updated_at = excluded.updated_at""",
+                (str(note.analysis_id), note.content, note.updated_at.isoformat()),
+            )
+            conn.commit()
+        return note
+
+    def clear_note(self, analysis_id: uuid.UUID) -> AnalysisNote | None:
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if (
+                conn.execute(
+                    "SELECT 1 FROM saved_analyses WHERE analysis_id = ?",
+                    (str(analysis_id),),
+                ).fetchone()
+                is None
+            ):
+                return None
+            conn.execute(
+                "DELETE FROM analysis_notes WHERE analysis_id = ?", (str(analysis_id),)
+            )
+            conn.commit()
+        return AnalysisNote(analysis_id, None, None)
 
     def list_recent(
         self,
