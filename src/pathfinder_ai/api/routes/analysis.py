@@ -19,6 +19,7 @@ from pathfinder_ai.api.errors import (
     PersistenceUnavailableError,
 )
 from pathfinder_ai.api.schemas import (
+    AnalysisFollowUpSchema,
     AnalysisHistoryResponseSchema,
     AnalysisNoteSchema,
     AnalysisRequestSchema,
@@ -30,6 +31,7 @@ from pathfinder_ai.api.schemas import (
     SavedAnalysisDetailSchema,
     SavedAnalysisMetadataSchema,
     SavedAnalysisSummarySchema,
+    UpdateAnalysisFollowUpSchema,
     UpdateAnalysisNoteSchema,
     UpdateAnalysisTrackingSchema,
     map_ai_enrichment_to_schema,
@@ -49,6 +51,7 @@ from pathfinder_ai.application.ai_enrichment import (
 )
 from pathfinder_ai.application.analysis_comparison import compare_saved_analyses
 from pathfinder_ai.application.analysis_export import render_saved_analysis_markdown
+from pathfinder_ai.application.analysis_follow_up import AnalysisFollowUpService
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
@@ -240,6 +243,7 @@ async def list_analyses(
                 ai_enriched=s.ai_enriched,
                 application_status=s.application_status,
                 status_updated_at=s.status_updated_at,
+                follow_up_on=s.follow_up_on,
             )
             for s in summaries
         ]
@@ -344,6 +348,78 @@ async def clear_analysis_note(analysis_id: uuid.UUID, request: Request) -> Respo
     if repository is None:
         raise PersistenceUnavailableError()
     if AnalysisNoteService(repository).clear_note(analysis_id) is None:
+        raise AnalysisNotFoundError()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
+@router.get(
+    "/analyses/{analysis_id}/follow-up",
+    response_model=AnalysisFollowUpSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUID."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def get_analysis_follow_up(
+    analysis_id: uuid.UUID, request: Request, response: Response
+) -> AnalysisFollowUpSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    follow_up = AnalysisFollowUpService(repository).get_follow_up(analysis_id)
+    if follow_up is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisFollowUpSchema.model_validate(asdict(follow_up))
+
+
+@router.put(
+    "/analyses/{analysis_id}/follow-up",
+    response_model=AnalysisFollowUpSchema,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {
+            "model": ErrorResponseSchema,
+            "description": "Invalid follow-up request.",
+        },
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def update_analysis_follow_up(
+    analysis_id: uuid.UUID,
+    payload: UpdateAnalysisFollowUpSchema,
+    request: Request,
+    response: Response,
+) -> AnalysisFollowUpSchema:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    follow_up = AnalysisFollowUpService(repository).update_follow_up(
+        analysis_id, payload.follow_up_on
+    )
+    if follow_up is None:
+        raise AnalysisNotFoundError()
+    response.headers["Cache-Control"] = "no-store"
+    return AnalysisFollowUpSchema.model_validate(asdict(follow_up))
+
+
+@router.delete(
+    "/analyses/{analysis_id}/follow-up",
+    status_code=204,
+    responses={
+        404: {"model": ErrorResponseSchema, "description": "Analysis not found."},
+        422: {"model": ErrorResponseSchema, "description": "Invalid analysis UUID."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def clear_analysis_follow_up(
+    analysis_id: uuid.UUID, request: Request
+) -> Response:
+    repository = getattr(request.app.state, "analysis_repository", None)
+    if repository is None:
+        raise PersistenceUnavailableError()
+    if AnalysisFollowUpService(repository).clear_follow_up(analysis_id) is None:
         raise AnalysisNotFoundError()
     return Response(status_code=204, headers={"Cache-Control": "no-store"})
 

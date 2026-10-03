@@ -1,6 +1,6 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-01
+Last updated: 2026-10-03
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
@@ -9,11 +9,11 @@ Agents must read it before beginning any roadmap task.
 
 Starting main:
 
-`29a35228d593a9946c9873a8396037d531a87062`
+`7fd4a7d16b1f5b8b04bd19e517fa998abed78fc1`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 23 — Application Status Activity Timeline**
+**Commit 24 — Saved Analysis Application Notes**
 
 ## Completed MVP-1 Roadmap
 
@@ -47,26 +47,30 @@ These milestones must not be replayed or rebuilt.
 - Commit 21 — Saved Analysis Comparison & Change View — complete (PR #25 merged)
 - Commit 22 — Saved Analysis Application Status Tracking — complete (PR #26 merged)
 - Commit 23 — Application Status Activity Timeline — complete (PR #27 merged)
+- Commit 24 — Saved Analysis Application Notes — complete (PR #28 merged)
 
 ## Post-MVP Active Work
 
-**Commit 24 — Saved Analysis Application Notes**
+**Commit 25 — Application Follow-Up Date**
 
 Status: **PR under review**
 
 Active pull request:
 
-**PR #28 — Add saved analysis application notes**
+**PR #29**
 
-https://github.com/JervisAnthony/pathfinder-ai/pull/28
+https://github.com/JervisAnthony/pathfinder-ai/pull/29
 
-This authorized post-MVP milestone adds one explicit, private, mutable
-plain-text note to each saved analysis. The note lives in additive SQLite
-metadata, separate from the immutable SavedAnalysis snapshot, current status,
-status activity, exports, comparison, deterministic analysis, and optional AI.
+This authorized post-MVP milestone adds one optional, user-managed calendar
+follow-up date to each saved analysis. Additive SQLite metadata remains separate
+from the immutable snapshot, status, activity, notes, exports, comparison,
+deterministic analysis, and optional AI. The Web provides explicit Save and
+confirmation-gated Clear actions and displays dates in History.
 
-The maintainer explicitly authorized reconciliation of the stale Commit 23
-state: PR #27 merged at main `29a35228d593a9946c9873a8396037d531a87062`.
+The maintainer explicitly authorized reconciliation of the stale Commit 24
+state: PR #28 merged at main `7fd4a7d16b1f5b8b04bd19e517fa998abed78fc1`.
+Human-owned checkpoint commits and staging do not mark this milestone complete;
+review and merge remain pending.
 
 ## Existing Capabilities
 

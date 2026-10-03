@@ -2,9 +2,10 @@
 Pydantic v2 schemas for the FastAPI analysis API and domain mapping functions.
 """
 
+import re
 import uuid
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from typing import Self, overload
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -479,6 +480,27 @@ class SavedAnalysisSummarySchema(BaseStrictModel):
     ai_enriched: bool
     application_status: ApplicationStatus
     status_updated_at: datetime | None
+    follow_up_on: date | None
+
+
+class AnalysisFollowUpSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    follow_up_on: date | None
+    updated_at: datetime | None
+
+
+class UpdateAnalysisFollowUpSchema(BaseStrictModel):
+    follow_up_on: date
+
+    @field_validator("follow_up_on", mode="before")
+    @classmethod
+    def validate_calendar_date(cls, value: object) -> date:
+        if (
+            not isinstance(value, str)
+            or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None
+        ):
+            raise ValueError("follow_up_on must be an ISO calendar date (YYYY-MM-DD)")
+        return date.fromisoformat(value)
 
 
 class AnalysisTrackingSchema(BaseStrictModel):

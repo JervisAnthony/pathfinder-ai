@@ -5,12 +5,16 @@ import sqlite3
 import uuid
 from contextlib import closing
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
+from pathfinder_ai.application.analysis_follow_up import (
+    AnalysisFollowUp,
+    AnalysisFollowUpService,
+)
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
@@ -1083,3 +1087,221 @@ def test_note_repository_rejects_empty_write(tmp_path: Path) -> None:
     repo = SQLiteAnalysisRepository(tmp_path / "empty-note.db")
     with pytest.raises(ValueError, match="non-empty"):
         repo.upsert_note(AnalysisNote(uuid.uuid4(), None, None))
+
+
+def test_follow_up_lifecycle_storage_and_defensive_idempotence(
+    tmp_path: Path, sample_analysis: SavedAnalysis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "follow-up.db"
+    repo = SQLiteAnalysisRepository(path)
+    repo.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    repo.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.APPLIED, timestamp)
+    )
+    repo.upsert_note(
+        AnalysisNote(identifier, "Fictional recruiter follow-up", timestamp)
+    )
+    tables = (
+        "saved_analyses",
+        "analysis_tracking",
+        "analysis_tracking_events",
+        "analysis_notes",
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        before = {
+            table: connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table in tables
+        }
+    monkeypatch.setattr(
+        "pathfinder_ai.infrastructure.sqlite_analysis_repository.decode_analysis",
+        lambda *_: pytest.fail("snapshot decoded"),
+    )
+    empty = AnalysisFollowUp(identifier, None, None)
+    assert repo.get_follow_up(uuid.uuid4()) is None
+    assert repo.get_follow_up(identifier) == empty
+    follow_up = AnalysisFollowUp(
+        identifier,
+        date(2026, 10, 12),
+        datetime(2026, 1, 1, 5, 30, tzinfo=timezone(timedelta(hours=5, minutes=30))),
+    )
+    assert repo.upsert_follow_up(follow_up) == follow_up
+    assert SQLiteAnalysisRepository(path).get_follow_up(identifier) == follow_up
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("SELECT * FROM analysis_follow_ups").fetchall() == [
+            (str(identifier), "2026-10-12", "2026-01-01T00:00:00+00:00")
+        ]
+        connection.execute("""CREATE TRIGGER reject_follow_up_update
+            BEFORE UPDATE ON analysis_follow_ups
+            BEGIN SELECT RAISE(ABORT, 'unnecessary update'); END""")
+        connection.commit()
+    assert (
+        repo.upsert_follow_up(
+            replace(follow_up, updated_at=datetime(2026, 1, 2, tzinfo=UTC))
+        )
+        == follow_up
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("DROP TRIGGER reject_follow_up_update")
+        connection.commit()
+    service = AnalysisFollowUpService(
+        repo, clock=lambda: datetime(2026, 1, 3, tzinfo=UTC)
+    )
+    changed = service.update_follow_up(identifier, date(2000, 1, 1))
+    assert changed == AnalysisFollowUp(
+        identifier, date(2000, 1, 1), datetime(2026, 1, 3, tzinfo=UTC)
+    )
+    assert repo.get_follow_up(identifier) == changed
+    assert repo.upsert_follow_up(replace(follow_up, analysis_id=uuid.uuid4())) is None
+    with pytest.raises(ValueError, match="non-empty"):
+        repo.upsert_follow_up(empty)
+    assert repo.clear_follow_up(uuid.uuid4()) is None
+    assert repo.clear_follow_up(identifier) == empty
+    assert repo.clear_follow_up(identifier) == empty
+    assert repo.get_follow_up(identifier) == empty
+    with closing(sqlite3.connect(path)) as connection:
+        assert connection.execute("SELECT * FROM analysis_follow_ups").fetchall() == []
+        assert {
+            table: connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table in tables
+        } == before
+
+
+def test_follow_up_upgrade_and_parent_cascade(
+    tmp_path: Path, sample_analysis: SavedAnalysis
+) -> None:
+    path = tmp_path / "legacy-follow-up.db"
+    old = SQLiteAnalysisRepository(path)
+    old.save(sample_analysis)
+    identifier = sample_analysis.analysis_id
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    old.upsert_tracking(
+        AnalysisTracking(identifier, ApplicationStatus.INTERVIEWING, timestamp)
+    )
+    old.upsert_note(AnalysisNote(identifier, "Private fictional note", timestamp))
+    tables = (
+        "saved_analyses",
+        "analysis_tracking",
+        "analysis_tracking_events",
+        "analysis_notes",
+    )
+    with closing(sqlite3.connect(path)) as connection:
+        connection.execute("DROP TABLE analysis_follow_ups")
+        before = {
+            table: connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table in tables
+        }
+        schema = connection.execute(
+            "SELECT name, sql FROM sqlite_master ORDER BY name"
+        ).fetchall()
+        connection.commit()
+    repo = SQLiteAnalysisRepository(path)
+    assert CURRENT_PAYLOAD_VERSION == 2
+    assert repo.get(identifier) == sample_analysis
+    assert repo.get_follow_up(identifier) == AnalysisFollowUp(identifier, None, None)
+    with closing(sqlite3.connect(path)) as connection:
+        assert {
+            table: connection.execute(f"SELECT * FROM {table}").fetchall()
+            for table in tables
+        } == before
+        assert (
+            connection.execute(
+                "SELECT name, sql FROM sqlite_master "
+                "WHERE name NOT LIKE '%analysis_follow_ups%' ORDER BY name"
+            ).fetchall()
+            == schema
+        )
+        assert connection.execute("SELECT * FROM analysis_follow_ups").fetchall() == []
+        columns = connection.execute(
+            "PRAGMA table_info(analysis_follow_ups)"
+        ).fetchall()
+        assert [(column[1], column[2], column[3], column[5]) for column in columns] == [
+            ("analysis_id", "TEXT", 0, 1),
+            ("follow_up_on", "TEXT", 1, 0),
+            ("updated_at", "TEXT", 1, 0),
+        ]
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(analysis_follow_ups)"
+        ).fetchall()
+        assert [(key[2], key[3], key[4], key[6]) for key in foreign_keys] == [
+            ("saved_analyses", "analysis_id", "analysis_id", "CASCADE")
+        ]
+    repo.upsert_follow_up(AnalysisFollowUp(identifier, date(2026, 10, 12), timestamp))
+    assert repo.delete(identifier)
+    assert repo.get_follow_up(identifier) is None
+    with closing(sqlite3.connect(path)) as connection:
+        for table in (*tables, "analysis_follow_ups"):
+            assert connection.execute(f"SELECT * FROM {table}").fetchall() == []
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize(
+    "history_filter",
+    [
+        None,
+        AnalysisHistoryFilter(query="platform"),
+        AnalysisHistoryFilter(query="acme"),
+        AnalysisHistoryFilter(ai_enriched=True),
+        AnalysisHistoryFilter(ai_enriched=False),
+        AnalysisHistoryFilter(min_score=60),
+        AnalysisHistoryFilter(max_score=60),
+        AnalysisHistoryFilter(application_status=ApplicationStatus.APPLIED),
+        AnalysisHistoryFilter(application_status=ApplicationStatus.NOT_APPLIED),
+        AnalysisHistoryFilter(
+            query="platform",
+            ai_enriched=True,
+            min_score=60,
+            max_score=80,
+            application_status=ApplicationStatus.APPLIED,
+        ),
+    ],
+)
+def test_follow_up_history_preserves_filters_order_and_pagination(
+    tmp_path: Path,
+    sample_analysis: SavedAnalysis,
+    monkeypatch: pytest.MonkeyPatch,
+    history_filter: AnalysisHistoryFilter | None,
+) -> None:
+    repo = SQLiteAnalysisRepository(tmp_path / "follow-up-history.db")
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    records = [
+        _history_variant(
+            sample_analysis,
+            title="Platform Engineer" if i % 2 else "Designer",
+            company="Acme" if i % 3 else "Elsewhere",
+            score=60.0 if i % 2 else 90.0,
+            ai_enriched=bool(i % 2),
+            created_at=timestamp + timedelta(seconds=i // 2),
+        )
+        for i in range(6)
+    ]
+    for i, record in enumerate(records):
+        repo.save(record)
+        if i % 2:
+            repo.upsert_tracking(
+                AnalysisTracking(
+                    record.analysis_id, ApplicationStatus.APPLIED, timestamp
+                )
+            )
+    expected = repo.list_recent(limit=20, offset=0, history_filter=history_filter)
+    expected_page = repo.list_recent(limit=2, offset=1, history_filter=history_filter)
+    scheduled = {
+        record.analysis_id: date(2030 - i, 1, 1)
+        for i, record in enumerate(records)
+        if i % 3
+    }
+    for identifier, scheduled_date in scheduled.items():
+        repo.upsert_follow_up(AnalysisFollowUp(identifier, scheduled_date, timestamp))
+    monkeypatch.setattr(
+        "pathfinder_ai.infrastructure.sqlite_analysis_repository.decode_analysis",
+        lambda *_: pytest.fail("snapshot decoded"),
+    )
+    actual = repo.list_recent(limit=20, offset=0, history_filter=history_filter)
+    assert actual == tuple(
+        replace(item, follow_up_on=scheduled.get(item.analysis_id)) for item in expected
+    )
+    assert repo.list_recent(limit=2, offset=1, history_filter=history_filter) == tuple(
+        replace(item, follow_up_on=scheduled.get(item.analysis_id))
+        for item in expected_page
+    )

@@ -5,7 +5,7 @@ Application models and repository contracts for analysis history.
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from math import isfinite
 from typing import Protocol
@@ -144,6 +144,7 @@ class SavedAnalysisSummary:
     ai_enriched: bool
     application_status: ApplicationStatus = ApplicationStatus.NOT_APPLIED
     status_updated_at: datetime | None = None
+    follow_up_on: date | None = None
 
     def __post_init__(self) -> None:
         if self.created_at.tzinfo is None:

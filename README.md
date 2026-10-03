@@ -411,6 +411,51 @@ the browser or deliberately log note content. Notes are excluded from History
 summaries and search, snapshot JSON and Markdown exports, and saved-analysis
 comparison. There is no note export or note comparison.
 
+### Saved analysis application follow-up date
+
+Saved Analysis Detail provides one optional follow-up calendar date per
+`SavedAnalysis`, after Application note. Set a date to revisit an application,
+then choose **Save follow-up** explicitly; editing the date input does not
+autosave. Same-date saves are idempotent and preserve the server-controlled
+update timestamp. **Clear follow-up** requires confirmation. There is no
+follow-up history or revision recovery.
+
+The date is explicit user-managed workflow metadata in `YYYY-MM-DD` form, with
+no time-of-day or timezone attached. Display preserves the calendar day across
+browser timezones. Past dates are allowed and are never automatically cleared.
+History rows show **Follow up: <date>** when a date exists; existing ordering,
+search, filters, and pagination remain unchanged.
+
+Pathfinder does not send reminder notifications, scheduled notifications, email,
+SMS, or WhatsApp reminders. There is no calendar integration, automatic status
+change, AI-suggested follow-up date, follow-up automation, overdue classification,
+follow-up filter, or follow-up sorting.
+
+`GET`, `PUT`, and `DELETE /api/v1/analyses/{analysis_id}/follow-up` manage the
+separate resource with no-store responses. PUT accepts a strict ISO calendar
+date; null, datetime strings, and extra fields are rejected. Clearing uses
+DELETE and is idempotent for an existing analysis. Missing analyses return 404,
+invalid UUIDs/dates return 422, and absent persistence returns 503. Follow-up
+loads independently, so a load error leaves the saved detail usable. Unsaved
+drafts stay in component memory, with no localStorage, sessionStorage, IndexedDB,
+or cookie persistence.
+
+SQLite now contains `saved_analyses`, `analysis_tracking`,
+`analysis_tracking_events`, `analysis_notes`, and the additive
+`analysis_follow_ups` table. The existing four schemas remain unchanged.
+Follow-up rows store only the parent ID, ISO date, and UTC update timestamp;
+there is no backfill. Parent deletion cascades to follow-up metadata.
+`CURRENT_PAYLOAD_VERSION` remains 2, with no SavedAnalysis payload migration or
+snapshot re-encoding.
+
+Follow-up dates remain outside CandidateProfile, JobDescription, deterministic
+matching, scoring, explanations, gaps, interview preparation, learning
+recommendations, AI enrichment, status-transition history, and application
+notes. Follow-up metadata is not sent to AI. It is intentionally excluded from
+deterministic JSON and Markdown SavedAnalysis exports and saved-analysis
+comparison. Changing or clearing a date does not alter snapshot export content,
+application status or its timestamp, activity, or notes.
+
 ### Saved analysis deletion and privacy
 
 Pathfinder lets a user delete one saved-analysis snapshot at a time from its
