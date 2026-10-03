@@ -957,7 +957,8 @@ describe('application follow-up workflow', () => {
     await screen.findByRole('heading', { name: 'Candidate Profile' });
     expect(screen.getByText('Loading follow-up date\u2026')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save follow-up' })).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Application note' })).toBeEnabled();
+    expect(await screen.findByRole('textbox', { name: 'Application note' })).toBeEnabled();
+    expect(screen.getByText('Loading follow-up date\u2026')).toBeInTheDocument();
     resolve(empty);
     expect(await screen.findByLabelText('Follow-up date')).toHaveValue('');
     expect(screen.getByText('No follow-up date set.')).toBeInTheDocument();
