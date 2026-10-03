@@ -53,11 +53,13 @@ These milestones must not be replayed or rebuilt.
 
 **Commit 25 — Application Follow-Up Date**
 
-Status: **Implementation in progress**
+Status: **PR under review**
 
 Active pull request:
 
-None
+**PR #29**
+
+https://github.com/JervisAnthony/pathfinder-ai/pull/29
 
 This authorized post-MVP milestone adds one optional, user-managed calendar
 follow-up date to each saved analysis. Additive SQLite metadata remains separate
