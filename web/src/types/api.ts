@@ -307,6 +307,7 @@ export interface SavedAnalysisSummary {
   ai_enriched: boolean;
   application_status: ApplicationStatus;
   status_updated_at: string | null;
+  follow_up_on: string | null;
 }
 
 export type ApplicationStatus = 'not_applied' | 'applied' | 'interviewing' | 'offer' | 'accepted' | 'rejected' | 'withdrawn';
@@ -314,6 +315,12 @@ export type ApplicationStatus = 'not_applied' | 'applied' | 'interviewing' | 'of
 export interface AnalysisTracking {
   analysis_id: string;
   application_status: ApplicationStatus;
+  updated_at: string | null;
+}
+
+export interface AnalysisFollowUp {
+  analysis_id: string;
+  follow_up_on: string | null;
   updated_at: string | null;
 }
 

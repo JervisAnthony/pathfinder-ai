@@ -9,6 +9,9 @@ import {
   getAnalysisTracking,
   getAnalysisTrackingHistory,
   getAnalysisNote,
+  getAnalysisFollowUp,
+  updateAnalysisFollowUp,
+  clearAnalysisFollowUp,
   updateAnalysisNote,
   clearAnalysisNote,
   getSavedAnalysis,
@@ -430,5 +433,62 @@ describe('application note client', () => {
     await expect(getAnalysisNote('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
     await expect(updateAnalysisNote('id', 'text')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
     await expect(clearAnalysisNote('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+  });
+});
+
+describe('application follow-up client', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rejects unexpected clear status and masks malformed server errors', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+      .mockResolvedValueOnce(new Response('PRIVATE', { status: 500 }))
+      .mockResolvedValueOnce(new Response('{}', { status: 500 }));
+    await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ status: 200, message: 'Pathfinder returned an unexpected clear response.' });
+    await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ status: 500, message: 'Pathfinder returned an unreadable error response.' });
+    await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ status: 500, message: 'Pathfinder returned an invalid error response.' });
+  });
+
+  it('reads an empty or saved follow-up using the encoded URL and no-store', async () => {
+    const empty = { analysis_id: 'id', follow_up_on: null, updated_at: null };
+    const saved = { analysis_id: 'id', follow_up_on: '2026-10-12', updated_at: '2026-01-01T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify(empty), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(saved), { status: 200 }));
+    expect(await getAnalysisFollowUp('id +')).toEqual(empty);
+    expect(await getAnalysisFollowUp('id +')).toEqual(saved);
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/follow-up', { method: 'GET', cache: 'no-store' });
+  });
+
+  it('sends exact calendar date only when explicitly asked to save', async () => {
+    const saved = { analysis_id: 'id', follow_up_on: '2026-10-12', updated_at: '2026-01-01T00:00:00Z' };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(saved), { status: 200 }));
+    expect(await updateAnalysisFollowUp('id +', saved.follow_up_on)).toEqual(saved);
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/v1/analyses/id%20%2B/follow-up', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ follow_up_on: saved.follow_up_on }), cache: 'no-store',
+    });
+  });
+
+  it('clears a follow-up using DELETE and accepts a bodyless 204', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 204 }));
+    await expect(clearAnalysisFollowUp('id +')).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyses/id%20%2B/follow-up', { method: 'DELETE', cache: 'no-store' });
+  });
+
+  it.each([[404, 'analysis_not_found'], [503, 'persistence_unavailable']])('preserves safe %s follow-up errors', async (status, code) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => errorResponse(Number(status), String(code), 'Safe message'));
+    await expect(getAnalysisFollowUp('id')).rejects.toMatchObject({ status, code });
+    await expect(updateAnalysisFollowUp('id', '2026-10-12')).rejects.toMatchObject({ status, code });
+    await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ status, code });
+  });
+
+  it('preserves follow-up validation and masks network failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorResponse(422, 'validation_error', 'Safe message'))
+      .mockRejectedValue(new Error('PRIVATE'));
+    await expect(updateAnalysisFollowUp('id', '2026-10-12')).rejects.toMatchObject({ status: 422, code: 'validation_error' });
+    await expect(getAnalysisFollowUp('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+    await expect(updateAnalysisFollowUp('id', '2026-10-12')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
+    await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
   });
 });

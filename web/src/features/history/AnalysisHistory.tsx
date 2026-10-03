@@ -8,7 +8,7 @@ import {
   getSavedAnalysis,
 } from '../../api/pathfinder';
 import { ApplicationStatus, SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
-import { formatSavedTimestamp } from './formatting';
+import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import { applicationStatuses, statusLabel } from './status';
@@ -173,6 +173,7 @@ export function AnalysisHistory() {
         backLabel={comparison ? '← Back to Comparison' : undefined}
         onDelete={deleteDetail}
         onStatusUpdated={refreshAfterStatusUpdate}
+        onFollowUpUpdated={refreshAfterStatusUpdate}
         key={detail.analysis_id}
         comparisonSelectionId={selection?.id}
         onSelectComparison={() => { setSelection({ id: detail.analysis_id, title: detail.job_description.title.title }); setComparisonError(null); }}
@@ -259,6 +260,7 @@ export function AnalysisHistory() {
                   <small>{formatSavedTimestamp(item.created_at)}</small>
                   <small>{item.ai_enriched ? 'Includes AI enrichment' : 'Deterministic analysis'}</small>
                   <small>Status: {statusLabel(item.application_status)}</small>
+                  {item.follow_up_on && <small>Follow up: {formatCalendarDate(item.follow_up_on)}</small>}
                 </span>
               </button>
             </li>

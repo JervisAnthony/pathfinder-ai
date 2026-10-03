@@ -8,6 +8,7 @@ import { savedAnalysisDetailToAnalysisResponse } from './mapping';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationStatusActivity } from './ApplicationStatusActivity';
 import { ApplicationNoteEditor } from './ApplicationNoteEditor';
+import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 
 interface Props {
   detail: SavedDetail;
@@ -15,6 +16,7 @@ interface Props {
   backLabel?: string;
   onDelete: (analysisId: string) => Promise<void>;
   onStatusUpdated?: () => Promise<void>;
+  onFollowUpUpdated?: () => Promise<void>;
   comparisonSelectionId?: string;
   onSelectComparison?: () => void;
   onClearComparison?: () => void;
@@ -49,7 +51,7 @@ function exportErrorMessage(error: unknown): string {
   return 'Pathfinder could not export this saved analysis. Please try again.';
 }
 
-export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, onStatusUpdated, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
+export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to History', onDelete, onStatusUpdated, onFollowUpUpdated, comparisonSelectionId, onSelectComparison, onClearComparison, onCompare, comparing, comparisonError }: Props) {
   const candidate = detail.candidate_profile;
   const job = detail.job_description;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -65,6 +67,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [noteMutating, setNoteMutating] = useState(false);
+  const [followUpMutating, setFollowUpMutating] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -85,7 +88,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   }, [detail.analysis_id]);
 
   const submitStatus = async () => {
-    if (!tracking || updatingStatus || deleting || comparing || noteMutating) return;
+    if (!tracking || updatingStatus || deleting || comparing || noteMutating || followUpMutating) return;
     setUpdatingStatus(true);
     setTrackingError(null);
     setStatusMessage(null);
@@ -138,7 +141,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
   };
 
   const confirmDelete = async () => {
-    if (deleting || updatingStatus || noteMutating) return;
+    if (deleting || updatingStatus || noteMutating || followUpMutating) return;
     setDeleting(true);
     setDeleteError(null);
     try {
@@ -151,7 +154,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
 
   return (
     <article className="saved-detail">
-      <button type="button" className="back-btn" disabled={comparing || updatingStatus || noteMutating} onClick={onBack}>{backLabel}</button>
+      <button type="button" className="back-btn" disabled={comparing || updatingStatus || noteMutating || followUpMutating} onClick={onBack}>{backLabel}</button>
       <header className="history-heading">
         <div>
           <p className="eyebrow">Saved analysis</p>
@@ -165,9 +168,9 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
       </header>
 
       {onSelectComparison && <section aria-label="Comparison selection">
-        {!comparisonSelectionId ? <button type="button" disabled={updatingStatus || noteMutating} onClick={onSelectComparison}>Select for comparison</button> : <>
-          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting || updatingStatus || noteMutating} onClick={onCompare}>Compare with selected</button>}
-          <button type="button" disabled={comparing || deleting || updatingStatus || noteMutating} onClick={onClearComparison}>Clear comparison selection</button>
+        {!comparisonSelectionId ? <button type="button" disabled={updatingStatus || noteMutating || followUpMutating} onClick={onSelectComparison}>Select for comparison</button> : <>
+          {comparisonSelectionId === detail.analysis_id ? <p role="status">Selected for comparison</p> : <button type="button" disabled={comparing || deleting || updatingStatus || noteMutating || followUpMutating} onClick={onCompare}>Compare with selected</button>}
+          <button type="button" disabled={comparing || deleting || updatingStatus || noteMutating || followUpMutating} onClick={onClearComparison}>Clear comparison selection</button>
         </>}
         {comparing && <p role="status">Loading saved analysis comparison…</p>}
         {comparisonError && <p role="alert">{comparisonError}</p>}
@@ -178,18 +181,19 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
           <p>Current status: {statusLabel(tracking.application_status)}</p>
           <p>{tracking.updated_at ? `Last updated ${formatSavedTimestamp(tracking.updated_at)}` : 'No status change recorded.'}</p>
           <label>Choose application status
-            <select value={statusDraft} onChange={(event) => setStatusDraft(event.target.value as ApplicationStatus)} disabled={updatingStatus || deleting || comparing || noteMutating}>
+            <select value={statusDraft} onChange={(event) => setStatusDraft(event.target.value as ApplicationStatus)} disabled={updatingStatus || deleting || comparing || noteMutating || followUpMutating}>
               {applicationStatuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           </label>
-          <button type="button" disabled={updatingStatus || deleting || comparing || noteMutating} onClick={() => void submitStatus()}>Update status</button>
+          <button type="button" disabled={updatingStatus || deleting || comparing || noteMutating || followUpMutating} onClick={() => void submitStatus()}>Update status</button>
         </>}
         {updatingStatus && <p role="status">Updating application status…</p>}
         {statusMessage && <p role="status">{statusMessage}</p>}
         {trackingError && <p role="alert" className="error-message">{trackingError}</p>}
       </section>
       <ApplicationStatusActivity analysisId={detail.analysis_id} refreshKey={activityRefreshKey} />
-      <ApplicationNoteEditor analysisId={detail.analysis_id} disabled={updatingStatus || deleting || comparing || confirmingDelete} onMutatingChange={setNoteMutating} />
+      <ApplicationNoteEditor analysisId={detail.analysis_id} disabled={updatingStatus || deleting || comparing || confirmingDelete || followUpMutating} onMutatingChange={setNoteMutating} />
+      <ApplicationFollowUpEditor analysisId={detail.analysis_id} disabled={updatingStatus || deleting || comparing || confirmingDelete || noteMutating} onMutatingChange={setFollowUpMutating} onUpdated={onFollowUpUpdated} />
       <section className="saved-export" aria-labelledby="saved-export-title">
         <h3 id="saved-export-title">Download saved analysis</h3>
         <p>Exports contain stored candidate and job information. Protect downloaded files when sharing or saving them.</p>
@@ -277,7 +281,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
         <button
           type="button"
           className="danger-btn"
-          disabled={comparing || updatingStatus || noteMutating}
+          disabled={comparing || updatingStatus || noteMutating || followUpMutating}
           onClick={() => { setConfirmingDelete(true); setDeleteError(null); }}
         >
           Delete saved analysis
@@ -304,7 +308,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
               <button
                 type="button"
                 className="secondary-btn"
-                disabled={deleting || comparing || updatingStatus || noteMutating}
+                disabled={deleting || comparing || updatingStatus || noteMutating || followUpMutating}
                 onClick={() => { setConfirmingDelete(false); setDeleteError(null); }}
               >
                 Cancel
@@ -312,7 +316,7 @@ export function SavedAnalysisDetail({ detail, onBack, backLabel = '← Back to H
               <button
                 type="button"
                 className="danger-btn"
-                disabled={deleting || comparing || updatingStatus || noteMutating}
+                disabled={deleting || comparing || updatingStatus || noteMutating || followUpMutating}
                 onClick={() => void confirmDelete()}
               >
                 Delete permanently

@@ -263,3 +263,18 @@
 .application-note button {
   margin-right: 0.75rem;
 }
+
+.application-follow-up {
+  margin-block: 1.5rem;
+}
+
+.application-follow-up input {
+  display: block;
+  margin-block: 0.5rem;
+  padding: 0.5rem;
+  font: inherit;
+}
+
+.application-follow-up button {
+  margin-right: 0.75rem;
+}

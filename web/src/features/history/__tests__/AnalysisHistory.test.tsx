@@ -10,6 +10,9 @@ import {
   getAnalysisTracking,
   getAnalysisTrackingHistory,
   getAnalysisNote,
+  getAnalysisFollowUp,
+  updateAnalysisFollowUp,
+  clearAnalysisFollowUp,
   updateAnalysisNote,
   clearAnalysisNote,
   getSavedAnalysis,
@@ -17,7 +20,8 @@ import {
 } from '../../../api/pathfinder';
 import { SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../../types/api';
 import { AnalysisHistory } from '../AnalysisHistory';
-import { formatSavedTimestamp } from '../formatting';
+import { SavedAnalysisDetail as SavedDetailView } from '../SavedAnalysisDetail';
+import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
 import { savedAnalysisDetailToAnalysisResponse } from '../mapping';
 
 vi.mock('../../../api/pathfinder', async (importOriginal) => ({
@@ -28,6 +32,9 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   getAnalysisTracking: vi.fn(),
   getAnalysisTrackingHistory: vi.fn(),
   getAnalysisNote: vi.fn(),
+  getAnalysisFollowUp: vi.fn(),
+  updateAnalysisFollowUp: vi.fn(),
+  clearAnalysisFollowUp: vi.fn(),
   updateAnalysisNote: vi.fn(),
   clearAnalysisNote: vi.fn(),
   updateAnalysisTracking: vi.fn(),
@@ -45,9 +52,14 @@ const summary: SavedAnalysisSummary = {
   ai_enriched: true,
   application_status: 'not_applied',
   status_updated_at: null,
+  follow_up_on: null,
 };
 
 beforeEach(() => {
+  vi.mocked(getAnalysisFollowUp).mockReset();
+  vi.mocked(getAnalysisFollowUp).mockResolvedValue({ analysis_id: summary.analysis_id, follow_up_on: null, updated_at: null });
+  vi.mocked(updateAnalysisFollowUp).mockReset();
+  vi.mocked(clearAnalysisFollowUp).mockReset();
   vi.mocked(getAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'not_applied', updated_at: null });
   vi.mocked(getAnalysisTrackingHistory).mockReset();
   vi.mocked(getAnalysisTrackingHistory).mockResolvedValue({ items: [] });
@@ -881,5 +893,235 @@ describe('application note workflow', () => {
     expect(await screen.findByText('Pathfinder could not clear the application note. Please try again.')).toBeInTheDocument();
     expect(textarea).toHaveValue('Unsaved edit');
     expect(screen.getByText(`Last updated ${formatSavedTimestamp(savedNote.updated_at)}`)).toBeInTheDocument();
+  });
+});
+
+
+describe('application follow-up workflow', () => {
+  const empty = { analysis_id: summary.analysis_id, follow_up_on: null, updated_at: null };
+  const saved = { analysis_id: summary.analysis_id, follow_up_on: '2026-10-12', updated_at: '2026-10-03T10:00:00Z' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+  });
+
+  async function openDetail() {
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    return await screen.findByLabelText('Follow-up date');
+  }
+
+  it('coordinates comparison and Back to Comparison with a pending follow-up', async () => {
+    const onBack = vi.fn();
+    const props = { detail, onBack, onDelete: vi.fn(), backLabel: 'Back to Comparison', comparisonSelectionId: 'other', onSelectComparison: vi.fn(), onClearComparison: vi.fn(), onCompare: vi.fn() };
+    const { rerender } = render(<SavedDetailView {...props} comparing />);
+    const input = await screen.findByLabelText('Follow-up date');
+    expect(input).toBeDisabled();
+    rerender(<SavedDetailView {...props} comparing={false} />);
+    fireEvent.change(input, { target: { value: saved.follow_up_on } });
+    let resolve!: (value: typeof saved) => void;
+    vi.mocked(updateAnalysisFollowUp).mockReturnValue(new Promise((r) => { resolve = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+    for (const name of ['Back to Comparison', 'Compare with selected', 'Clear comparison selection']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name }));
+    }
+    expect(onBack).not.toHaveBeenCalled();
+    expect(props.onCompare).not.toHaveBeenCalled();
+    resolve(saved);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Back to Comparison' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Comparison' }));
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('distinguishes a History refresh failure from a successful save', async () => {
+    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(saved);
+    vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [summary] }).mockRejectedValueOnce(new Error('PRIVATE'));
+    const input = await openDetail();
+    fireEvent.change(input, { target: { value: saved.follow_up_on } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+    await screen.findByText('Follow-up date was saved, but History could not refresh. Please try refreshing History.');
+    expect(input).toHaveValue(saved.follow_up_on);
+    expect(screen.getByText('Follow-up date saved.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Back to History/ })).toBeEnabled();
+  });
+
+  it('loads independently and forbids saving until the date resource arrives', async () => {
+    let resolve!: (value: typeof empty) => void;
+    vi.mocked(getAnalysisFollowUp).mockReturnValue(new Promise((r) => { resolve = r; }));
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    expect(screen.getByText('Loading follow-up date\u2026')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save follow-up' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Application note' })).toBeEnabled();
+    resolve(empty);
+    expect(await screen.findByLabelText('Follow-up date')).toHaveValue('');
+    expect(screen.getByText('No follow-up date set.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Clear follow-up' })).not.toBeInTheDocument();
+  });
+
+  it('saves only on explicit action, uses the server response, and refreshes History', async () => {
+    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(saved);
+    vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [summary] })
+      .mockResolvedValue({ items: [{ ...summary, follow_up_on: saved.follow_up_on }] });
+    const storage = vi.spyOn(Storage.prototype, 'setItem');
+    const input = await openDetail();
+    expect(input).toHaveAttribute('type', 'date');
+    expect(input).not.toHaveAttribute('min');
+    fireEvent.change(input, { target: { value: saved.follow_up_on } });
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+    await screen.findByText('Follow-up date saved.');
+    expect(updateAnalysisFollowUp).toHaveBeenCalledExactlyOnceWith(summary.analysis_id, saved.follow_up_on);
+    expect(input).toHaveValue(saved.follow_up_on);
+    expect(screen.getByText('Follow up on ' + formatCalendarDate(saved.follow_up_on))).toBeInTheDocument();
+    expect(screen.getByText('Last updated ' + formatSavedTimestamp(saved.updated_at))).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeDisabled();
+    expect(getAnalysisTrackingHistory).toHaveBeenCalledTimes(1);
+    expect(updateAnalysisTracking).not.toHaveBeenCalled();
+    expect(updateAnalysisNote).not.toHaveBeenCalled();
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    expect(storage).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0); expect(document.cookie).toBe('');
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    expect(await screen.findByText('Follow up: ' + formatCalendarDate(saved.follow_up_on))).toBeInTheDocument();
+    storage.mockRestore();
+  });
+
+  it('preserves past dates and requires confirmation before clear; cancel preserves draft', async () => {
+    const past = { ...saved, follow_up_on: '2000-01-01' };
+    vi.mocked(getAnalysisFollowUp).mockResolvedValue(past);
+    vi.mocked(clearAnalysisFollowUp).mockResolvedValue(undefined);
+    const input = await openDetail();
+    expect(input).toHaveValue(past.follow_up_on);
+    expect(screen.getByText('Follow up on ' + formatCalendarDate(past.follow_up_on))).toBeInTheDocument();
+    expect(screen.queryByText(/overdue|due soon|due today/i)).not.toBeInTheDocument();
+    fireEvent.change(input, { target: { value: '2026-12-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear follow-up' }));
+    expect(clearAnalysisFollowUp).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+    expect(input).toHaveValue('2026-12-01');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear follow-up' }));
+    fireEvent.click(within(screen.getByRole('alertdialog', { name: 'Clear this follow-up date?' })).getByRole('button', { name: 'Clear follow-up' }));
+    await screen.findByText('Follow-up date cleared.');
+    expect(input).toHaveValue('');
+    expect(clearAnalysisFollowUp).toHaveBeenCalledExactlyOnceWith(summary.analysis_id);
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Last updated ' + formatSavedTimestamp(saved.updated_at))).not.toBeInTheDocument();
+    expect(screen.getByText('Current status: Not applied')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeEnabled();
+  });
+
+  it.each([
+    [new ApiError('PRIVATE', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('PRIVATE', 503, 'persistence_unavailable'), 'Follow-up dates are unavailable because persistence is not configured on this Pathfinder server.'],
+    [new Error('PRIVATE'), 'Pathfinder could not load the follow-up date. Please try again.'],
+  ])('keeps detail usable after load failure and retries', async (failure, message) => {
+    vi.mocked(getAnalysisFollowUp).mockRejectedValueOnce(failure).mockResolvedValueOnce(empty);
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Platform Engineer/ }));
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save follow-up' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update status' })).toBeEnabled();
+    expect(screen.queryByText('PRIVATE')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry follow-up' }));
+    expect(await screen.findByLabelText('Follow-up date')).toHaveValue('');
+  });
+
+  it.each([
+    [new ApiError('PRIVATE', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('PRIVATE', 503, 'persistence_unavailable'), 'Follow-up dates are unavailable because persistence is not configured on this Pathfinder server.'],
+    [new ApiError('PRIVATE', 422, 'validation_error'), 'The follow-up date is invalid.'],
+    [new Error('PRIVATE'), 'Pathfinder could not save the follow-up date. Please try again.'],
+  ])('retains a failed save draft and releases mutation guards', async (failure, message) => {
+    let reject!: (reason: unknown) => void;
+    vi.mocked(updateAnalysisFollowUp).mockReturnValue(new Promise((_, r) => { reject = r; }));
+    const input = await openDetail();
+    fireEvent.change(input, { target: { value: saved.follow_up_on } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+    expect(screen.getByText('Saving follow-up\u2026')).toBeInTheDocument();
+    for (const name of ['Save follow-up', 'Save note', 'Update status', 'Delete saved analysis', 'Select for comparison']) {
+      expect(screen.getByRole('button', { name })).toBeDisabled();
+    }
+    expect(screen.getByRole('button', { name: /Back to History/ })).toBeDisabled();
+    expect(screen.getByLabelText('Choose application status')).toBeDisabled();
+    reject(failure);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(input).toHaveValue(saved.follow_up_on);
+    expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /Back to History/ })).toBeEnabled();
+    expect(screen.queryByText('PRIVATE')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    [new ApiError('PRIVATE', 404, 'analysis_not_found'), 'This saved analysis no longer exists.'],
+    [new ApiError('PRIVATE', 503, 'persistence_unavailable'), 'Follow-up dates are unavailable because persistence is not configured on this Pathfinder server.'],
+    [new ApiError('PRIVATE', 422, 'validation_error'), 'The follow-up date is invalid.'],
+    [new Error('PRIVATE'), 'Pathfinder could not clear the follow-up date. Please try again.'],
+  ])('retains persisted date and draft after failed clear', async (failure, message) => {
+    vi.mocked(getAnalysisFollowUp).mockResolvedValue(saved);
+    let reject!: (reason: unknown) => void;
+    vi.mocked(clearAnalysisFollowUp).mockReturnValue(new Promise((_, r) => { reject = r; }));
+    const input = await openDetail();
+    fireEvent.change(input, { target: { value: '2026-12-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear follow-up' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear follow-up' }));
+    expect(screen.getByText('Clearing follow-up\u2026')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Update status' })).toBeDisabled();
+    reject(failure);
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(input).toHaveValue('2026-12-01');
+    expect(screen.getByText('Follow up on ' + formatCalendarDate(saved.follow_up_on))).toBeInTheDocument();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.queryByText('PRIVATE')).not.toBeInTheDocument();
+  });
+
+  it('disables follow-up during status, note, and deletion mutations', async () => {
+    const input = await openDetail();
+    fireEvent.change(input, { target: { value: saved.follow_up_on } });
+    let resolveStatus!: (value: { analysis_id: string; application_status: 'applied'; updated_at: string }) => void;
+    vi.mocked(updateAnalysisTracking).mockReturnValue(new Promise((r) => { resolveStatus = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    expect(input).toBeDisabled();
+    resolveStatus({ analysis_id: summary.analysis_id, application_status: 'applied', updated_at: saved.updated_at });
+    await waitFor(() => expect(input).toBeEnabled());
+    let resolveNote!: (value: { analysis_id: string; content: string; updated_at: string }) => void;
+    vi.mocked(updateAnalysisNote).mockReturnValue(new Promise((r) => { resolveNote = r; }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Application note' }), { target: { value: 'Fictional note' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+    expect(input).toBeDisabled();
+    resolveNote({ analysis_id: summary.analysis_id, content: 'Fictional note', updated_at: saved.updated_at });
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    expect(input).toBeDisabled();
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }));
+    expect(input).toBeEnabled();
+    let rejectDelete!: (reason: unknown) => void;
+    vi.mocked(deleteSavedAnalysis).mockReturnValue(new Promise((_, r) => { rejectDelete = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete permanently' }));
+    expect(input).toBeDisabled();
+    rejectDelete(new Error('network'));
+    await screen.findByText('Pathfinder could not delete this saved analysis. Please try again.');
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('shows dates only when present and preserves server ordering', async () => {
+    const second = { ...summary, analysis_id: 'second', job_title: 'Second role', follow_up_on: '2000-01-01' };
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary, second] });
+    render(<AnalysisHistory />);
+    await screen.findByText('Second role');
+    expect(screen.getAllByText(/Follow up:/)).toHaveLength(1);
+    expect(screen.getByText('Follow up: ' + formatCalendarDate(second.follow_up_on))).toBeInTheDocument();
+    expect(screen.queryByText(/No follow-up/)).not.toBeInTheDocument();
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[0]).toHaveTextContent('Platform Engineer');
+    expect(rows[1]).toHaveTextContent('Second role');
   });
 });

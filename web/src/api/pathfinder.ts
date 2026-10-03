@@ -16,6 +16,7 @@ import {
   ApplicationStatus,
   AnalysisTracking,
   AnalysisNote,
+  AnalysisFollowUp,
   ApplicationStatusHistoryResponse,
 } from '../types/api'
 
@@ -305,6 +306,46 @@ export async function clearAnalysisNote(analysisId: string): Promise<void> {
       }
       const { code, message, details } = errorData.error;
       throw new ApiError(message, response.status, code, details);
+    }
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError('Unable to reach Pathfinder. Check your connection and try again.');
+  }
+}
+
+export function getAnalysisFollowUp(analysisId: string): Promise<AnalysisFollowUp> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/follow-up`, { method: 'GET', cache: 'no-store' });
+}
+
+export function updateAnalysisFollowUp(analysisId: string, followUpOn: string): Promise<AnalysisFollowUp> {
+  return requestJson(`/api/v1/analyses/${encodeURIComponent(analysisId)}/follow-up`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ follow_up_on: followUpOn }),
+    cache: 'no-store',
+  });
+}
+
+export async function clearAnalysisFollowUp(analysisId: string): Promise<void> {
+  try {
+    const response = await fetch(`/api/v1/analyses/${encodeURIComponent(analysisId)}/follow-up`, {
+      method: 'DELETE', cache: 'no-store',
+    });
+    if (!response.ok) {
+      let errorData: unknown;
+      try {
+        errorData = await response.json();
+      } catch {
+        throw new ApiError('Pathfinder returned an unreadable error response.', response.status);
+      }
+      if (!isApiErrorResponse(errorData)) {
+        throw new ApiError('Pathfinder returned an invalid error response.', response.status);
+      }
+      const { code, message, details } = errorData.error;
+      throw new ApiError(message, response.status, code, details);
+    }
+    if (response.status !== 204) {
+      throw new ApiError('Pathfinder returned an unexpected clear response.', response.status);
     }
   } catch (error) {
     if (error instanceof ApiError) throw error;
