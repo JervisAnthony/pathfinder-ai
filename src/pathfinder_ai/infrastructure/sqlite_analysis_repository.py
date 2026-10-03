@@ -4,10 +4,11 @@ SQLite implementation of the analysis repository.
 
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from pathfinder_ai.application.analysis_follow_up import AnalysisFollowUp
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisRepository,
@@ -100,6 +101,16 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 """CREATE TABLE IF NOT EXISTS analysis_notes (
                     analysis_id TEXT PRIMARY KEY,
                     content TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
+                    ON DELETE CASCADE
+                )"""
+            )
+
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS analysis_follow_ups (
+                    analysis_id TEXT PRIMARY KEY,
+                    follow_up_on TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (analysis_id) REFERENCES saved_analyses(analysis_id)
                     ON DELETE CASCADE
@@ -334,6 +345,79 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             conn.commit()
         return AnalysisNote(analysis_id, None, None)
 
+    def get_follow_up(self, analysis_id: uuid.UUID) -> AnalysisFollowUp | None:
+        with self._get_connection() as conn:
+            row = conn.execute(
+                """SELECT f.follow_up_on, f.updated_at FROM saved_analyses AS s
+                LEFT JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(analysis_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return AnalysisFollowUp(
+            analysis_id,
+            date.fromisoformat(row["follow_up_on"])
+            if row["follow_up_on"] is not None
+            else None,
+            datetime.fromisoformat(row["updated_at"])
+            if row["updated_at"] is not None
+            else None,
+        )
+
+    def upsert_follow_up(self, follow_up: AnalysisFollowUp) -> AnalysisFollowUp | None:
+        if follow_up.follow_up_on is None or follow_up.updated_at is None:
+            raise ValueError("Only non-empty application follow-ups can be persisted")
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """SELECT f.follow_up_on, f.updated_at FROM saved_analyses AS s
+                LEFT JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
+                WHERE s.analysis_id = ?""",
+                (str(follow_up.analysis_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["follow_up_on"] == follow_up.follow_up_on.isoformat():
+                return AnalysisFollowUp(
+                    follow_up.analysis_id,
+                    date.fromisoformat(row["follow_up_on"]),
+                    datetime.fromisoformat(row["updated_at"]),
+                )
+            conn.execute(
+                """INSERT INTO analysis_follow_ups
+                (analysis_id, follow_up_on, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(analysis_id) DO UPDATE SET
+                    follow_up_on = excluded.follow_up_on,
+                    updated_at = excluded.updated_at""",
+                (
+                    str(follow_up.analysis_id),
+                    follow_up.follow_up_on.isoformat(),
+                    follow_up.updated_at.isoformat(),
+                ),
+            )
+            conn.commit()
+        return follow_up
+
+    def clear_follow_up(self, analysis_id: uuid.UUID) -> AnalysisFollowUp | None:
+        with self._get_connection() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if (
+                conn.execute(
+                    "SELECT 1 FROM saved_analyses WHERE analysis_id = ?",
+                    (str(analysis_id),),
+                ).fetchone()
+                is None
+            ):
+                return None
+            conn.execute(
+                "DELETE FROM analysis_follow_ups WHERE analysis_id = ?",
+                (str(analysis_id),),
+            )
+            conn.commit()
+        return AnalysisFollowUp(analysis_id, None, None)
+
     def list_recent(
         self,
         *,
@@ -385,9 +469,11 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                     s.score,
                     s.ai_enriched,
                     COALESCE(t.application_status, 'not_applied') AS application_status,
-                    t.updated_at AS status_updated_at
+                    t.updated_at AS status_updated_at,
+                    f.follow_up_on
                 FROM saved_analyses AS s
                 LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
+                LEFT JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
                 {where_clause}
                 ORDER BY s.created_at DESC, s.analysis_id DESC
                 LIMIT ? OFFSET ?
@@ -408,6 +494,11 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 score=row["score"],
                 ai_enriched=bool(row["ai_enriched"]),
                 application_status=ApplicationStatus(row["application_status"]),
+                follow_up_on=(
+                    date.fromisoformat(row["follow_up_on"])
+                    if row["follow_up_on"] is not None
+                    else None
+                ),
                 status_updated_at=(
                     datetime.fromisoformat(row["status_updated_at"])
                     if row["status_updated_at"] is not None
