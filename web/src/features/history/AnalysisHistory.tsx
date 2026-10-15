@@ -12,6 +12,7 @@ import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import { applicationStatuses, statusLabel } from './status';
+import { ApplicationPipelineOverview } from './ApplicationPipelineOverview';
 import './History.css';
 
 const PAGE_SIZE = 20;
@@ -29,6 +30,7 @@ function errorMessage(error: unknown, action: 'history' | 'detail'): string {
 }
 
 export function AnalysisHistory() {
+  const [overviewRefreshKey, setOverviewRefreshKey] = useState(0);
   const [items, setItems] = useState<SavedAnalysisSummary[]>([]);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -211,7 +213,7 @@ export function AnalysisHistory() {
           <p className="eyebrow">Local snapshots</p>
           <h2 id="history-title">Analysis History</h2>
         </div>
-        <button type="button" className="secondary-btn" onClick={() => void loadHistory()} disabled={loading}>
+        <button type="button" className="secondary-btn" onClick={() => { void loadHistory(); setOverviewRefreshKey((current) => current + 1); }} disabled={loading}>
           Refresh
         </button>
       </div>
@@ -220,6 +222,8 @@ export function AnalysisHistory() {
         Saved analyses remain in configured persistence until deleted. Deletion removes one selected
         snapshot from Pathfinder history; it is not a secure filesystem wipe.
       </p>
+
+      <ApplicationPipelineOverview refreshKey={overviewRefreshKey} onOpen={(id) => void openDetail(id)} opening={detailLoading} />
 
       {selection && <div className="comparison-selection"><p role="status">Selected for comparison: {selection.title}</p><button type="button" onClick={clearComparison}>Clear comparison selection</button></div>}
       <form className="history-filters" onSubmit={applyFilters}>

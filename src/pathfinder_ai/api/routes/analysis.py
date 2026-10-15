@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, BeforeValidator
 from starlette.concurrency import run_in_threadpool
 
@@ -19,6 +20,7 @@ from pathfinder_ai.api.errors import (
     DomainValidationError,
     ErrorResponseSchema,
     PersistenceUnavailableError,
+    persistence_unavailable_handler,
 )
 from pathfinder_ai.api.schemas import (
     AnalysisFollowUpSchema,
@@ -27,6 +29,7 @@ from pathfinder_ai.api.schemas import (
     AnalysisRequestSchema,
     AnalysisResponseSchema,
     AnalysisTrackingSchema,
+    ApplicationPipelineOverviewSchema,
     ApplicationStatusEventSchema,
     ApplicationStatusHistoryResponseSchema,
     SavedAnalysisComparisonSchema,
@@ -63,6 +66,9 @@ from pathfinder_ai.application.analysis_history import (
     SavedAnalysis,
 )
 from pathfinder_ai.application.analysis_notes import AnalysisNoteService
+from pathfinder_ai.application.analysis_overview import (
+    ApplicationPipelineOverviewService,
+)
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
 )
@@ -272,6 +278,34 @@ async def list_analyses(
             for s in summaries
         ]
     )
+
+
+@router.get(
+    "/analyses/overview",
+    response_model=ApplicationPipelineOverviewSchema,
+    responses={
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def get_application_pipeline_overview(
+    request: Request,
+    response: Response,
+) -> ApplicationPipelineOverviewSchema | JSONResponse:
+    """Summarize all saved records, independently of History filters."""
+    response.headers["Cache-Control"] = "no-store"
+    repository: AnalysisRepository | None = getattr(
+        request.app.state, "analysis_repository", None
+    )
+    try:
+        if repository is None:
+            raise PersistenceUnavailableError()
+        overview = ApplicationPipelineOverviewService(repository).get_overview()
+    except Exception as exc:
+        # Reuse the safe error envelope; never expose storage details or cache it.
+        error = await persistence_unavailable_handler(request, exc)
+        error.headers["Cache-Control"] = "no-store"
+        return error
+    return ApplicationPipelineOverviewSchema.model_validate(asdict(overview))
 
 
 @router.get(

@@ -407,3 +407,25 @@ export interface ApiErrorResponse {
     details: ApiErrorDetail[] | null;
   };
 }
+
+
+export interface ApplicationStatusCount {
+  status: ApplicationStatus;
+  count: number;
+}
+
+export interface PipelineFollowUpItem {
+  analysis_id: string;
+  job_title: string;
+  company_name: string | null;
+  application_status: ApplicationStatus;
+  follow_up_on: string;
+}
+
+export interface ApplicationPipelineOverview {
+  total_analyses: number;
+  status_counts: ApplicationStatusCount[];
+  scheduled_follow_up_count: number;
+  unscheduled_follow_up_count: number;
+  earliest_follow_ups: PipelineFollowUpItem[];
+}

@@ -20,6 +20,11 @@ from pathfinder_ai.application.analysis_history import (
     SavedAnalysisSummary,
 )
 from pathfinder_ai.application.analysis_notes import AnalysisNote
+from pathfinder_ai.application.analysis_overview import (
+    ApplicationPipelineOverview,
+    ApplicationStatusCount,
+    PipelineFollowUpItem,
+)
 from pathfinder_ai.infrastructure._analysis_codec import (
     CURRENT_PAYLOAD_VERSION,
     decode_analysis,
@@ -418,6 +423,59 @@ class SQLiteAnalysisRepository(AnalysisRepository):
             )
             conn.commit()
         return AnalysisFollowUp(analysis_id, None, None)
+
+    def get_pipeline_overview(self) -> ApplicationPipelineOverview:
+        """Aggregate metadata and select five dates from a single read snapshot."""
+        # Both joins are one-to-one: each metadata table has analysis_id as its PK.
+        # sqlite3's legacy transaction mode does not begin a transaction for SELECT.
+        # Begin explicitly so both queries see the same snapshot, then end it via
+        # the connection context manager and close the connection on every path.
+        with self._get_connection() as conn, conn:
+            conn.execute("BEGIN")
+            counts = conn.execute(
+                """SELECT COALESCE(t.application_status, 'not_applied') AS status,
+                          COUNT(*) AS total, COUNT(f.follow_up_on) AS scheduled
+                   FROM saved_analyses AS s
+                   LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
+                   LEFT JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
+                   GROUP BY COALESCE(t.application_status, 'not_applied')"""
+            ).fetchall()
+            earliest = conn.execute(
+                """SELECT s.analysis_id, s.job_title, s.company_name,
+                          COALESCE(t.application_status, 'not_applied') AS status,
+                          f.follow_up_on
+                   FROM saved_analyses AS s
+                   JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
+                   LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
+                   WHERE f.follow_up_on IS NOT NULL
+                   ORDER BY f.follow_up_on ASC, s.created_at DESC, s.analysis_id DESC
+                   LIMIT 5"""
+            ).fetchall()
+
+        status_totals = {
+            ApplicationStatus(row["status"]): row["total"] for row in counts
+        }
+        total = sum(row["total"] for row in counts)
+        scheduled = sum(row["scheduled"] for row in counts)
+        return ApplicationPipelineOverview(
+            total_analyses=total,
+            status_counts=tuple(
+                ApplicationStatusCount(status, status_totals.get(status, 0))
+                for status in ApplicationStatus
+            ),
+            scheduled_follow_up_count=scheduled,
+            unscheduled_follow_up_count=total - scheduled,
+            earliest_follow_ups=tuple(
+                PipelineFollowUpItem(
+                    analysis_id=uuid.UUID(row["analysis_id"]),
+                    job_title=row["job_title"],
+                    company_name=row["company_name"],
+                    application_status=ApplicationStatus(row["status"]),
+                    follow_up_on=date.fromisoformat(row["follow_up_on"]),
+                )
+                for row in earliest
+            ),
+        )
 
     def list_recent(
         self,

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 from math import isfinite
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
 from pathfinder_ai.application.analysis_follow_up import validate_follow_up_date
@@ -17,6 +17,9 @@ from pathfinder_ai.application.learning_recommendations import LearningRecommend
 from pathfinder_ai.domain.candidate_profile import CandidateProfile
 from pathfinder_ai.domain.explanation import MatchExplanation
 from pathfinder_ai.domain.job_description import JobDescription
+
+if TYPE_CHECKING:
+    from pathfinder_ai.application.analysis_overview import ApplicationPipelineOverview
 
 MAX_HISTORY_QUERY_LENGTH = 200
 
@@ -215,6 +218,10 @@ class AnalysisRepository(Protocol):
         self, analysis_id: uuid.UUID, *, limit: int, offset: int
     ) -> tuple[ApplicationStatusEvent, ...] | None:
         """Return recorded transitions, or None if the analysis does not exist."""
+        ...
+
+    def get_pipeline_overview(self) -> "ApplicationPipelineOverview":
+        """Summarize all saved analyses using persisted metadata only."""
         ...
 
     def list_recent(

@@ -7,6 +7,7 @@ import {
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
+  getApplicationPipelineOverview,
   getAnalysisTracking,
   getAnalysisTrackingHistory,
   getAnalysisNote,
@@ -23,10 +24,13 @@ import { AnalysisHistory } from '../AnalysisHistory';
 import { SavedAnalysisDetail as SavedDetailView } from '../SavedAnalysisDetail';
 import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
 import { savedAnalysisDetailToAnalysisResponse } from '../mapping';
+import { applicationStatuses } from '../status';
+import type { ApplicationPipelineOverview as PipelineOverview } from '../../../types/api';
 
 vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   ...await importOriginal<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(),
+  getApplicationPipelineOverview: vi.fn(),
   compareSavedAnalyses: vi.fn(),
   getSavedAnalysis: vi.fn(),
   getAnalysisTracking: vi.fn(),
@@ -56,6 +60,10 @@ const summary: SavedAnalysisSummary = {
 };
 
 beforeEach(() => {
+  vi.mocked(getApplicationPipelineOverview).mockReset();
+  // Isolate existing list/detail tests from the independently loading overview.
+  // The overview integration tests below provide their own explicit responses.
+  vi.mocked(getApplicationPipelineOverview).mockReturnValue(new Promise(() => {}));
   vi.mocked(getAnalysisFollowUp).mockReset();
   vi.mocked(getAnalysisFollowUp).mockResolvedValue({ analysis_id: summary.analysis_id, follow_up_on: null, updated_at: null });
   vi.mocked(updateAnalysisFollowUp).mockReset();
@@ -137,7 +145,7 @@ describe('AnalysisHistory', () => {
     let resolveHistory!: (value: { items: SavedAnalysisSummary[] }) => void;
     vi.mocked(getAnalysisHistory).mockReturnValue(new Promise((resolve) => { resolveHistory = resolve; }));
     render(<AnalysisHistory />);
-    expect(screen.getByRole('status')).toHaveTextContent('Loading saved analyses');
+    expect(screen.getByText(/Loading saved analyses/)).toHaveAttribute('role', 'status');
     resolveHistory({ items: [] });
     expect(await screen.findByText('No saved analyses yet.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Previous' })).toBeDisabled();
@@ -1239,5 +1247,138 @@ describe('follow-up history worklist', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
     await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { sort: 'follow_up_asc' }));
     expect(await screen.findByText('No saved analyses yet.')).toBeInTheDocument();
+  });
+});
+
+
+describe('pipeline overview integration with History', () => {
+  const overview: PipelineOverview = {
+    total_analyses: 1,
+    status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'not_applied' ? 1 : 0 })),
+    scheduled_follow_up_count: 1, unscheduled_follow_up_count: 0,
+    earliest_follow_ups: [{ analysis_id: summary.analysis_id, job_title: 'Pipeline role', company_name: null,
+      application_status: 'not_applied', follow_up_on: '2000-02-29' }],
+  };
+  const changed: PipelineOverview = { ...overview, earliest_follow_ups: [{ ...overview.earliest_follow_ups[0], job_title: 'Updated pipeline role' }] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValue(overview);
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+  });
+
+  it('opens existing Detail directly from an overview entry and reloads on Back', async () => {
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValueOnce(overview).mockResolvedValue(changed);
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Pipeline role/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    expect(getSavedAnalysis).toHaveBeenCalledExactlyOnceWith(summary.analysis_id);
+    expect(screen.queryByRole('heading', { name: 'Application Pipeline Overview' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    expect(await screen.findByRole('button', { name: /Updated pipeline role/ })).toBeInTheDocument();
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps History usable while overview loads and recovers independently', async () => {
+    let resolve!: (value: PipelineOverview) => void;
+    vi.mocked(getApplicationPipelineOverview).mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    expect(screen.getByText('Loading application pipeline overview...')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Application status'), { target: { value: 'applied' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { application_status: 'applied' }));
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(1);
+    await act(async () => resolve(overview));
+    expect(await screen.findByRole('button', { name: /Pipeline role/ })).toBeInTheDocument();
+  });
+
+  it('keeps overview usable while History loads or fails', async () => {
+    let reject!: (reason: unknown) => void;
+    vi.mocked(getAnalysisHistory).mockReturnValueOnce(new Promise((_, rejectPromise) => { reject = rejectPromise; }));
+    render(<AnalysisHistory />);
+    expect(await screen.findByRole('button', { name: /Pipeline role/ })).toBeEnabled();
+    expect(screen.getByText(/Loading saved analyses/)).toBeInTheDocument();
+    await act(async () => reject(new Error('PRIVATE list failure')));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not load analysis history');
+    expect(screen.getByRole('button', { name: /Pipeline role/ })).toBeEnabled();
+  });
+
+  it('recovers overview failure independently, then Refresh reloads both resources', async () => {
+    vi.mocked(getApplicationPipelineOverview).mockRejectedValueOnce(new Error('PRIVATE'));
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not load the application pipeline overview');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry overview' }));
+    await screen.findByRole('button', { name: /Pipeline role/ });
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(3));
+    expect(await screen.findByRole('button', { name: /Pipeline role/ })).toBeInTheDocument();
+  });
+
+  it('reloads persisted overview after an application status update', async () => {
+    const after: PipelineOverview = { ...changed,
+      status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'offer' ? 1 : 0 })),
+      earliest_follow_ups: [{ ...changed.earliest_follow_ups[0], application_status: 'offer' }],
+    };
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValueOnce(overview).mockResolvedValue(after);
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'offer', updated_at: '2026-01-01T00:00:00Z' });
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Pipeline role/ }));
+    await screen.findByText('Current status: Not applied');
+    fireEvent.change(screen.getByLabelText('Choose application status'), { target: { value: 'offer' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /Back to History/ })).toBeEnabled());
+    expect(screen.getByText('Application status updated.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    expect(await screen.findByRole('button', { name: /Updated pipeline role/ })).toHaveTextContent('Offer');
+  });
+
+  it.each(['save', 'change', 'clear'])('reloads persisted overview after follow-up %s', async (action) => {
+    const saved = { analysis_id: summary.analysis_id, follow_up_on: '2099-12-31', updated_at: '2026-01-01T00:00:00Z' };
+    const after: PipelineOverview = action === 'clear' ? { ...changed, scheduled_follow_up_count: 0, unscheduled_follow_up_count: 1, earliest_follow_ups: [] }
+      : { ...changed, earliest_follow_ups: [{ ...changed.earliest_follow_ups[0], follow_up_on: saved.follow_up_on }] };
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValueOnce(overview).mockResolvedValue(after);
+    if (action !== 'save') vi.mocked(getAnalysisFollowUp).mockResolvedValue({ ...saved, follow_up_on: '2000-02-29' });
+    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(saved);
+    vi.mocked(clearAnalysisFollowUp).mockResolvedValue();
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Pipeline role/ }));
+    const input = await screen.findByLabelText('Follow-up date');
+    if (action === 'clear') {
+      fireEvent.click(screen.getByRole('button', { name: 'Clear follow-up' }));
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Clear follow-up' }));
+      await screen.findByText('Follow-up date cleared.');
+    } else {
+      fireEvent.change(input, { target: { value: saved.follow_up_on } });
+      fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+      await screen.findByText('Follow-up date saved.');
+    }
+    await waitFor(() => expect(screen.getByRole('button', { name: /Back to History/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    if (action === 'clear') expect(await screen.findByText('No scheduled follow-ups.')).toBeInTheDocument();
+    else expect(await screen.findByRole('button', { name: /Updated pipeline role/ })).toHaveTextContent(formatCalendarDate(saved.follow_up_on));
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloads overview after successful deletion', async () => {
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValueOnce(overview).mockResolvedValue({ ...overview,
+      total_analyses: 0, scheduled_follow_up_count: 0, earliest_follow_ups: [],
+      status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: 0 })),
+    });
+    vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [summary] }).mockResolvedValue({ items: [] });
+    vi.mocked(deleteSavedAnalysis).mockResolvedValue();
+    render(<AnalysisHistory />);
+    fireEvent.click(await screen.findByRole('button', { name: /Pipeline role/ }));
+    await screen.findByRole('heading', { name: 'Candidate Profile' });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    await screen.findByText('No saved analyses yet.');
+    const totals = within(await screen.findByRole('region', { name: 'Application totals' }));
+    expect(totals.getAllByRole('definition').map((value) => value.textContent)).toEqual(['0', '0', '0']);
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(2);
   });
 });

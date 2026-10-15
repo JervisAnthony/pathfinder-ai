@@ -18,6 +18,7 @@ import {
   AnalysisNote,
   AnalysisFollowUp,
   ApplicationStatusHistoryResponse,
+  ApplicationPipelineOverview,
 } from '../types/api'
 
 export class ApiError extends Error {
@@ -276,6 +277,10 @@ export function getAnalysisHistory(
   if (filters.follow_up_to) query.set('follow_up_to', filters.follow_up_to);
   if (filters.sort) query.set('sort', filters.sort);
   return requestJson(`/api/v1/analyses?${query.toString()}`);
+}
+
+export function getApplicationPipelineOverview(): Promise<ApplicationPipelineOverview> {
+  return requestJson('/api/v1/analyses/overview', { method: 'GET', cache: 'no-store' });
 }
 
 export function getSavedAnalysis(analysisId: string): Promise<SavedAnalysisDetail> {
