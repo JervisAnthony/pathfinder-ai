@@ -8,10 +8,12 @@ These rules apply to every coding agent working in this repository.
 2. Never work directly on `main`.
 3. Create one fresh feature branch per roadmap task.
 4. Branch names use the semantic form `feature/<short-kebab-description>`.
-5. Open a pull request back into `main`.
+5. The human maintainer opens one pull request per feature back into `main`.
 6. Never merge a pull request. The human maintainer performs merges after review.
 7. Never force-push or rewrite shared history.
 8. Keep each roadmap task atomic and scoped to its stated objective.
+9. Prepare one complete implementation commit per feature; no artificial checkpoint commits.
+10. Codex edits, tests, validates, reviews, and stages locally. The human maintainer creates commits, pushes, creates PRs, and merges. Agents must not perform these Git publication actions.
 
 ## Repository State Preflight
 
@@ -67,64 +69,37 @@ Examples:
 
 ## Agent Responsibility
 
-Jules is the primary implementation agent for Pathfinder AI unless a task explicitly assigns another agent.
+Codex is the local implementation agent for authorized tasks.
 
-For a normal roadmap task, Jules is expected to own the implementation lifecycle:
+Codex owns inspection of the current repository and verified base, scoped
+implementation, tests, full validation, diff review, documentation, and staging.
+Report the branch, base SHA, staged changes, validation, and unresolved issues.
+Stop with a cohesive change set ready for one human-created implementation commit.
 
-1. inspect current `main`
-2. verify `PROJECT_STATE.md`
-3. restate the scoped implementation plan
-4. implement only the requested milestone
-5. add or update tests
-6. run the full validation suite
-7. review the final diff
-8. publish the feature branch
-9. open the pull request
-10. respond to maintainer review feedback
-11. push corrections to the existing PR
-12. report the actual resulting commit SHA
-
-The human maintainer retains:
-
-- scope approval
-- architectural review
-- code review
-- approval/rejection authority
-- merge authority
-
-Jules must never merge.
+The human maintainer retains scope approval, architectural and code review,
+commit creation, pushes, PR creation, approval/rejection, and merge authority.
+Do not create or amend commits, push, submit reviews, create PRs, or merge.
+Never rewrite shared history.
 
 ## Pull Request Lifecycle
 
-Unless the task explicitly says otherwise, the expected lifecycle is:
+One meaningful feature uses one branch, one complete implementation commit,
+and one pull request. No artificial checkpoint commits are permitted.
+The lifecycle is local implementation, validation, staging, human commit
+and publication, human PR creation, review, requested local corrections
+and re-validation, human publication of corrections, human approval and merge.
 
-implementation
-→ validation
-→ branch publication
-→ pull request
-→ human review
-→ Jules correction if requested
-→ re-validation
-→ human approval
-→ human merge
-
-Review corrections should update the existing PR.
-
-Do not open replacement PRs for review feedback unless the human maintainer explicitly requests one.
+Do not add a documentation-only commit solely to record the PR number.
+Record the actual PR number in GitHub PR metadata and description. Reconcile
+merged milestone history in the next authorized implementation commit when needed.
 
 ## Review Feedback
 
-When the maintainer addresses feedback to `@jules`:
-
-- read the complete requested correction
-- preserve already-approved behavior
-- change only the requested scope
-- rerun the complete validation suite
-- push to the existing PR
-- report the actual new Git commit SHA
-- never merge
-
-Do not report a commit SHA until it exists on the remote PR branch.
+Read the complete requested correction, preserve approved behavior, change only
+the requested scope, rerun the complete validation suite, and stage corrections
+for the human maintainer to publish to the existing PR. Do not open a replacement
+PR unless explicitly requested. Report only actual verified Git state; never
+invent a commit SHA or PR number. Never merge.
 
 ## Scope Discipline
 
@@ -196,5 +171,5 @@ For every task:
 6. run validation
 7. review the final diff against `main`
 8. summarize changed files, decisions, and validation results
-9. publish the branch / PR unless the task explicitly says not to
+9. stage the complete intended change set for the human maintainer to commit and publish
 10. never merge

@@ -301,6 +301,10 @@ def test_follow_up_errors_and_openapi(tmp_path: Path) -> None:
         "min_score",
         "max_score",
         "application_status",
+        "has_follow_up",
+        "follow_up_from",
+        "follow_up_to",
+        "sort",
     }
 
 
@@ -390,3 +394,105 @@ def test_follow_up_history_filters_order_and_pagination(
                 for item in expected["items"]
             ]
         }
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {"sort": "unknown"},
+        {"has_follow_up": "maybe"},
+        {"follow_up_from": "2026-02-29"},
+        {"follow_up_to": "2026-13-01"},
+        {"follow_up_from": "2026-01-01T00:00:00"},
+        {"follow_up_to": "2026-01-01T00:00:00Z"},
+        {"follow_up_from": "2026-01-01+00:00"},
+        {"follow_up_to": "20260101"},
+        {"follow_up_from": "2026-W01-1"},
+        {"follow_up_from": "2026-1-01"},
+        {"follow_up_to": " 2026-01-01"},
+        {"follow_up_from": "1767225600"},
+        {"follow_up_from": "2026-01-02", "follow_up_to": "2026-01-01"},
+        {"has_follow_up": "false", "follow_up_from": "2026-01-01"},
+        {"has_follow_up": "false", "follow_up_to": "2026-01-01"},
+    ],
+)
+def test_worklist_api_rejects_invalid_query(parameters: dict[str, str]) -> None:
+    client = TestClient(create_app())
+    assert client.get("/api/v1/analyses", params=parameters).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "parameters",
+    [
+        {},
+        {"has_follow_up": "true"},
+        {"has_follow_up": "false"},
+        {"follow_up_from": "2000-02-29"},
+        {"follow_up_to": "2099-12-31"},
+        {"sort": "created_desc"},
+        {"sort": "follow_up_asc"},
+    ],
+)
+def test_worklist_persistence_disabled(parameters: dict[str, str]) -> None:
+    assert (
+        TestClient(create_app()).get("/api/v1/analyses", params=parameters).status_code
+        == 503
+    )
+
+
+@pytest.mark.parametrize(
+    ("parameters", "matches"),
+    [
+        ({}, True),
+        ({"has_follow_up": "true"}, True),
+        ({"has_follow_up": "false"}, False),
+        ({"follow_up_from": "2000-02-29"}, True),
+        ({"follow_up_to": "2000-02-29"}, True),
+        ({"follow_up_from": "2000-03-01"}, False),
+        ({"follow_up_to": "2000-02-28"}, False),
+        (
+            {
+                "follow_up_from": "2000-02-29",
+                "follow_up_to": "2000-02-29",
+                "has_follow_up": "true",
+                "sort": "follow_up_asc",
+                "query": "Engineer",
+                "ai_enriched": "false",
+                "application_status": "not_applied",
+                "min_score": "0",
+                "max_score": "100",
+            },
+            True,
+        ),
+    ],
+)
+def test_worklist_api_filters_persisted_dates(
+    saved_follow_up_client: tuple[TestClient, str, Path],
+    parameters: dict[str, str],
+    matches: bool,
+) -> None:
+    client, identifier, _ = saved_follow_up_client
+    assert (
+        client.put(
+            f"/api/v1/analyses/{identifier}/follow-up",
+            json={"follow_up_on": "2000-02-29"},
+        ).status_code
+        == 200
+    )
+    baseline = client.get("/api/v1/analyses").json()["items"][0]
+    response = client.get("/api/v1/analyses", params=parameters)
+    assert response.status_code == 200
+    assert response.json() == {"items": [baseline] if matches else []}
+
+
+def test_worklist_openapi_query_contract() -> None:
+    schema = TestClient(create_app()).get("/openapi.json").json()
+    parameters = schema["paths"]["/api/v1/analyses"]["get"]["parameters"]
+    by_name = {item["name"]: item["schema"] for item in parameters}
+    for name in ("follow_up_from", "follow_up_to"):
+        assert {"type": "string", "format": "date"} in by_name[name]["anyOf"]
+    assert by_name["sort"]["default"] == "created_desc"
+    assert schema["components"]["schemas"]["AnalysisHistorySort"]["enum"] == [
+        "created_desc",
+        "follow_up_asc",
+    ]

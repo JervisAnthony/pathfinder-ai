@@ -492,3 +492,26 @@ describe('application follow-up client', () => {
     await expect(clearAnalysisFollowUp('id')).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
   });
 });
+
+
+describe('follow-up worklist query serialization', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each([
+    {}, { has_follow_up: true }, { has_follow_up: false },
+    { follow_up_from: '2000-02-29' }, { follow_up_to: '2099-12-31' },
+    { follow_up_from: '2000-02-29', follow_up_to: '2000-02-29' },
+    { sort: 'created_desc' as const }, { sort: 'follow_up_asc' as const },
+    { has_follow_up: true, follow_up_from: '2000-02-29', follow_up_to: '2099-12-31',
+      sort: 'follow_up_asc' as const, query: 'Example & Co', ai_enriched: false,
+      min_score: 0, max_score: 100, application_status: 'applied' as const },
+  ])('serializes date-only values and explicit booleans: %j', async (filters) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [] }));
+    await getAnalysisHistory(7, 14, filters);
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      limit: '7', offset: '14',
+      ...Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, String(value)])),
+    });
+  });
+});

@@ -2,13 +2,14 @@
 
 import uuid
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
 
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
+    AnalysisHistorySort,
     AnalysisRepository,
     ApplicationStatus,
     ApplicationStatusEvent,
@@ -475,3 +476,68 @@ def test_tracking_activity_pagination_validation(fake_repo: FakeRepository) -> N
         service.list_tracking_events(identifier, limit=101)
     with pytest.raises(ValueError, match="Offset"):
         service.list_tracking_events(identifier, offset=-1)
+
+
+@pytest.mark.parametrize("presence", [None, True, False])
+def test_worklist_filter_defaults_and_presence(presence: bool | None) -> None:
+    criteria = AnalysisHistoryFilter(has_follow_up=presence)
+    assert criteria.has_follow_up is presence
+    assert criteria.sort is AnalysisHistorySort.CREATED_DESC
+    assert criteria.follow_up_from is criteria.follow_up_to is None
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {"follow_up_from": date(2000, 2, 29)},
+        {"follow_up_to": date(2099, 12, 31)},
+        {"follow_up_from": date(2000, 2, 29), "follow_up_to": date(2000, 2, 29)},
+    ],
+)
+def test_worklist_valid_bounds(bounds: dict[str, date]) -> None:
+    criteria = AnalysisHistoryFilter(**bounds)
+    assert criteria.sort is AnalysisHistorySort.CREATED_DESC
+
+
+@pytest.mark.parametrize(
+    "bounds",
+    [
+        {"follow_up_from": date(2000, 1, 1)},
+        {"follow_up_to": date(2000, 1, 1)},
+        {"follow_up_from": date(2000, 1, 1), "follow_up_to": date(2000, 1, 1)},
+    ],
+)
+def test_worklist_conflicting_presence(bounds: dict[str, date]) -> None:
+    with pytest.raises(ValueError, match="scheduled"):
+        AnalysisHistoryFilter(has_follow_up=False, **bounds)
+
+
+def test_worklist_rejects_inversion_invalid_sort_and_datetime() -> None:
+    with pytest.raises(ValueError, match="follow_up_from"):
+        AnalysisHistoryFilter(
+            follow_up_from=date(2026, 1, 1), follow_up_to=date(2025, 12, 31)
+        )
+    with pytest.raises(ValueError):
+        AnalysisHistoryFilter(sort="arbitrary SQL")
+    with pytest.raises(ValueError, match="calendar date"):
+        AnalysisHistoryFilter(follow_up_from=datetime(2026, 1, 1))
+    assert (
+        AnalysisHistoryFilter(sort="follow_up_asc").sort
+        is AnalysisHistorySort.FOLLOW_UP_ASC
+    )
+
+
+def test_worklist_delegates_complete_criteria_and_pagination() -> None:
+    from unittest.mock import Mock
+
+    repository = Mock()
+    repository.list_recent.return_value = ()
+    criteria = AnalysisHistoryFilter(
+        has_follow_up=True,
+        follow_up_from=date(2000, 2, 29),
+        sort=AnalysisHistorySort.FOLLOW_UP_ASC,
+    )
+    assert AnalysisHistoryService(repository).list_history(7, 14, criteria) == ()
+    repository.list_recent.assert_called_once_with(
+        limit=7, offset=14, history_filter=criteria
+    )

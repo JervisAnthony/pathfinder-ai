@@ -11,6 +11,7 @@ from math import isfinite
 from typing import Protocol
 
 from pathfinder_ai.application.ai_enrichment import AIEnrichmentResult
+from pathfinder_ai.application.analysis_follow_up import validate_follow_up_date
 from pathfinder_ai.application.interview_preparation import InterviewPreparation
 from pathfinder_ai.application.learning_recommendations import LearningRecommendations
 from pathfinder_ai.domain.candidate_profile import CandidateProfile
@@ -61,6 +62,11 @@ class ApplicationStatusEvent:
         object.__setattr__(self, "changed_at", self.changed_at.astimezone(UTC))
 
 
+class AnalysisHistorySort(StrEnum):
+    CREATED_DESC = "created_desc"
+    FOLLOW_UP_ASC = "follow_up_asc"
+
+
 @dataclass(frozen=True, slots=True)
 class AnalysisHistoryFilter:
     """Optional deterministic criteria for saved-analysis history."""
@@ -70,8 +76,28 @@ class AnalysisHistoryFilter:
     min_score: float | None = None
     max_score: float | None = None
     application_status: ApplicationStatus | None = None
+    has_follow_up: bool | None = None
+    follow_up_from: date | None = None
+    follow_up_to: date | None = None
+    sort: AnalysisHistorySort = AnalysisHistorySort.CREATED_DESC
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "sort", AnalysisHistorySort(self.sort))
+        for bound in (self.follow_up_from, self.follow_up_to):
+            if bound is not None:
+                validate_follow_up_date(bound)
+        if self.has_follow_up is False and (
+            self.follow_up_from is not None or self.follow_up_to is not None
+        ):
+            raise ValueError("Date bounds require scheduled follow-ups")
+        if (
+            self.follow_up_from is not None
+            and self.follow_up_to is not None
+            and self.follow_up_from > self.follow_up_to
+        ):
+            raise ValueError(
+                "follow_up_from must be less than or equal to follow_up_to"
+            )
         normalized_query = (
             " ".join(self.query.split()) if self.query is not None else None
         )

@@ -1,13 +1,15 @@
 """FastAPI routes for Pathfinder AI analysis."""
 
 import json
+import re
 import uuid
 from dataclasses import asdict
+from datetime import date
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 from starlette.concurrency import run_in_threadpool
 
 from pathfinder_ai.api.errors import (
@@ -55,6 +57,7 @@ from pathfinder_ai.application.analysis_follow_up import AnalysisFollowUpService
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
+    AnalysisHistorySort,
     AnalysisRepository,
     ApplicationStatus,
     SavedAnalysis,
@@ -69,6 +72,19 @@ from pathfinder_ai.application.learning_recommendations import (
 from pathfinder_ai.domain.matching import DeterministicMatcher
 
 router = APIRouter(prefix="/api/v1")
+
+
+def parse_history_date(value: object) -> date:
+    """Accept only canonical calendar dates at the query boundary."""
+    if (
+        not isinstance(value, str)
+        or re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value) is None
+    ):
+        raise ValueError("Expected an ISO calendar date (YYYY-MM-DD)")
+    return date.fromisoformat(value)
+
+
+HistoryDate = Annotated[date, BeforeValidator(parse_history_date)]
 
 
 class HealthResponse(BaseModel):
@@ -208,6 +224,10 @@ async def list_analyses(
     min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
     max_score: Annotated[float | None, Query(ge=0, le=100)] = None,
     application_status: ApplicationStatus | None = None,
+    has_follow_up: bool | None = None,
+    follow_up_from: HistoryDate | None = None,
+    follow_up_to: HistoryDate | None = None,
+    sort: AnalysisHistorySort = AnalysisHistorySort.CREATED_DESC,
 ) -> AnalysisHistoryResponseSchema:
     """List recent saved analyses."""
     try:
@@ -217,6 +237,10 @@ async def list_analyses(
             min_score=min_score,
             max_score=max_score,
             application_status=application_status,
+            has_follow_up=has_follow_up,
+            follow_up_from=follow_up_from,
+            follow_up_to=follow_up_to,
+            sort=sort,
         )
     except ValueError as exc:
         raise RequestValidationError(

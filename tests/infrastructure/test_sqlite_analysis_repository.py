@@ -18,6 +18,7 @@ from pathfinder_ai.application.analysis_follow_up import (
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
     AnalysisHistoryService,
+    AnalysisHistorySort,
     AnalysisTracking,
     ApplicationStatus,
     ApplicationStatusEvent,
@@ -1305,3 +1306,144 @@ def test_follow_up_history_preserves_filters_order_and_pagination(
         replace(item, follow_up_on=scheduled.get(item.analysis_id))
         for item in expected_page
     )
+
+
+@pytest.mark.parametrize(
+    ("criteria", "expected"),
+    [
+        (AnalysisHistoryFilter(), [6, 5, 4, 3, 2, 1]),
+        (AnalysisHistoryFilter(has_follow_up=True), [5, 4, 3, 2, 1]),
+        (AnalysisHistoryFilter(has_follow_up=False), [6]),
+        (AnalysisHistoryFilter(follow_up_from=date(2024, 2, 29)), [5, 4, 3, 2]),
+        (AnalysisHistoryFilter(follow_up_to=date(2024, 2, 29)), [4, 3, 2, 1]),
+        (
+            AnalysisHistoryFilter(
+                follow_up_from=date(2024, 2, 29), follow_up_to=date(2024, 2, 29)
+            ),
+            [4, 3, 2],
+        ),
+        (
+            AnalysisHistoryFilter(sort=AnalysisHistorySort.FOLLOW_UP_ASC),
+            [1, 4, 3, 2, 5, 6],
+        ),
+        (
+            AnalysisHistoryFilter(
+                has_follow_up=False, sort=AnalysisHistorySort.FOLLOW_UP_ASC
+            ),
+            [6],
+        ),
+        (
+            AnalysisHistoryFilter(
+                has_follow_up=True,
+                follow_up_to=date(2024, 2, 29),
+                sort=AnalysisHistorySort.FOLLOW_UP_ASC,
+            ),
+            [1, 4, 3, 2],
+        ),
+        (
+            AnalysisHistoryFilter(
+                query="Backend",
+                ai_enriched=True,
+                min_score=0,
+                max_score=100,
+                application_status=ApplicationStatus.APPLIED,
+                has_follow_up=True,
+                follow_up_from=date(2024, 2, 29),
+                follow_up_to=date(2024, 2, 29),
+                sort=AnalysisHistorySort.FOLLOW_UP_ASC,
+            ),
+            [4, 3, 2],
+        ),
+    ],
+)
+def test_worklist_sql_order_filters_and_immutability(
+    tmp_path: Path,
+    sample_analysis: SavedAnalysis,
+    criteria: AnalysisHistoryFilter,
+    expected: list[int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "worklist.db"
+    repo = SQLiteAnalysisRepository(path)
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    dates = [
+        date(1999, 12, 31),
+        date(2024, 2, 29),
+        date(2024, 2, 29),
+        date(2024, 2, 29),
+        date(2099, 1, 1),
+        None,
+    ]
+    for index, follow_up in enumerate(dates, 1):
+        # IDs 2 and 3 tie on creation; ID 4 has the newer creation timestamp.
+        created = timestamp + timedelta(days=0 if index == 3 else index - 2)
+        record = replace(
+            sample_analysis, analysis_id=uuid.UUID(int=index), created_at=created
+        )
+        repo.save(record)
+        repo.upsert_tracking(
+            AnalysisTracking(record.analysis_id, ApplicationStatus.APPLIED, timestamp)
+        )
+        if follow_up is not None:
+            repo.upsert_follow_up(
+                AnalysisFollowUp(record.analysis_id, follow_up, timestamp)
+            )
+    with closing(sqlite3.connect(path)) as connection:
+        before = connection.execute(
+            "SELECT * FROM saved_analyses ORDER BY analysis_id"
+        ).fetchall()
+        metadata = connection.execute(
+            "SELECT * FROM analysis_follow_ups ORDER BY analysis_id"
+        ).fetchall()
+    monkeypatch.setattr(
+        "pathfinder_ai.infrastructure.sqlite_analysis_repository.decode_analysis",
+        lambda *_: pytest.fail("History must not decode snapshots"),
+    )
+    results = repo.list_recent(limit=100, offset=0, history_filter=criteria)
+    assert [item.analysis_id.int for item in results] == expected
+    for page_size in (1, 2, 3):
+        pages = [
+            item
+            for offset in range(0, len(expected) + 1, page_size)
+            for item in repo.list_recent(
+                limit=page_size, offset=offset, history_filter=criteria
+            )
+        ]
+        assert pages == list(results)
+    assert repo.list_recent(limit=100, offset=0, history_filter=criteria) == results
+    with closing(sqlite3.connect(path)) as connection:
+        assert (
+            connection.execute(
+                "SELECT * FROM saved_analyses ORDER BY analysis_id"
+            ).fetchall()
+            == before
+        )
+        assert (
+            connection.execute(
+                "SELECT * FROM analysis_follow_ups ORDER BY analysis_id"
+            ).fetchall()
+            == metadata
+        )
+
+
+def test_worklist_null_dates_use_creation_and_id_tiebreakers(
+    tmp_path: Path,
+    sample_analysis: SavedAnalysis,
+) -> None:
+    repo = SQLiteAnalysisRepository(tmp_path / "unscheduled-worklist.db")
+    timestamp = datetime(2026, 1, 1, tzinfo=UTC)
+    for index in (1, 3, 2):
+        repo.save(
+            replace(
+                sample_analysis,
+                analysis_id=uuid.UUID(int=index),
+                created_at=timestamp + timedelta(days=1 if index == 1 else 0),
+            )
+        )
+    criteria = AnalysisHistoryFilter(sort=AnalysisHistorySort.FOLLOW_UP_ASC)
+    assert [
+        repo.list_recent(limit=1, offset=offset, history_filter=criteria)[
+            0
+        ].analysis_id.int
+        for offset in range(3)
+    ] == [1, 3, 2]

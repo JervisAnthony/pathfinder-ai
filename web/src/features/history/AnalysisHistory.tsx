@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AnalysisHistoryFilters } from '../../api/pathfinder';
+import type { AnalysisHistoryFilters, AnalysisHistorySort } from '../../api/pathfinder';
 import {
   ApiError,
   compareSavedAnalyses,
@@ -39,6 +39,10 @@ export function AnalysisHistory() {
   const [query, setQuery] = useState('');
   const [ai, setAi] = useState('all');
   const [status, setStatus] = useState<ApplicationStatus | 'all'>('all');
+  const [followUp, setFollowUp] = useState('all');
+  const [followUpFrom, setFollowUpFrom] = useState('');
+  const [followUpTo, setFollowUpTo] = useState('');
+  const [sort, setSort] = useState<AnalysisHistorySort>('created_desc');
   const [minScore, setMinScore] = useState('');
   const [maxScore, setMaxScore] = useState('');
   const [filters, setFilters] = useState<AnalysisHistoryFilters>({});
@@ -49,7 +53,7 @@ export function AnalysisHistory() {
   const [comparing, setComparing] = useState(false);
   const [comparisonError, setComparisonError] = useState<string | null>(null);
   const comparisonPending = useRef(false);
-  const filtered = Object.keys(filters).length > 0;
+  const filtered = Object.keys(filters).some((key) => key !== 'sort');
 
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
@@ -62,6 +66,14 @@ export function AnalysisHistory() {
       setFilterError('Use a search of at most 200 characters and scores from 0 to 100, with minimum no greater than maximum.');
       return;
     }
+    if (followUpFrom && followUpTo && followUpFrom > followUpTo) {
+      setFilterError('Follow-up from must be on or before Follow-up to.');
+      return;
+    }
+    if (followUp === 'no' && (followUpFrom || followUpTo)) {
+      setFilterError('Choose Scheduled or All follow-ups when using follow-up date bounds.');
+      return;
+    }
     setFilterError(null);
     setOffset(0);
     setFilters({
@@ -70,10 +82,15 @@ export function AnalysisHistory() {
       ...(min === undefined ? {} : { min_score: min }),
       ...(max === undefined ? {} : { max_score: max }),
       ...(status === 'all' ? {} : { application_status: status }),
+      ...(followUp === 'all' ? {} : { has_follow_up: followUp === 'yes' }),
+      ...(followUpFrom ? { follow_up_from: followUpFrom } : {}),
+      ...(followUpTo ? { follow_up_to: followUpTo } : {}),
+      ...(sort === 'created_desc' ? {} : { sort }),
     });
   };
 
   const clearFilters = () => {
+    setFollowUp('all'); setFollowUpFrom(''); setFollowUpTo(''); setSort('created_desc');
     setQuery(''); setAi('all'); setStatus('all'); setMinScore(''); setMaxScore('');
     setFilterError(null); setOffset(0); setFilters({});
   };
@@ -227,6 +244,25 @@ export function AnalysisHistory() {
         </label>
         <label>Maximum score
           <input type="number" min="0" max="100" step="any" value={maxScore} onChange={(event) => setMaxScore(event.target.value)} />
+        </label>
+        <label>Follow-up status
+          <select value={followUp} onChange={(event) => setFollowUp(event.target.value)}>
+            <option value="all">All follow-ups</option>
+            <option value="yes">Scheduled</option>
+            <option value="no">Not scheduled</option>
+          </select>
+        </label>
+        <label>Follow-up from
+          <input type="date" min="0001-01-01" max="9999-12-31" value={followUpFrom} onChange={(event) => setFollowUpFrom(event.target.value)} />
+        </label>
+        <label>Follow-up to
+          <input type="date" min="0001-01-01" max="9999-12-31" value={followUpTo} onChange={(event) => setFollowUpTo(event.target.value)} />
+        </label>
+        <label>Sort order
+          <select value={sort} onChange={(event) => setSort(event.target.value as AnalysisHistorySort)}>
+            <option value="created_desc">Newest saved first</option>
+            <option value="follow_up_asc">Earliest follow-up first</option>
+          </select>
         </label>
         <button type="submit">Apply filters</button>
         <button type="button" onClick={clearFilters}>Clear filters</button>
