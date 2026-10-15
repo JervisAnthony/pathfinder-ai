@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   analyzeCandidateJob,
@@ -1124,5 +1124,120 @@ describe('application follow-up workflow', () => {
     const rows = screen.getAllByRole('listitem');
     expect(rows[0]).toHaveTextContent('Platform Engineer');
     expect(rows[1]).toHaveTextContent('Second role');
+  });
+});
+
+
+describe('follow-up history worklist', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [] });
+  });
+
+  it('keeps drafts until Apply, combines filters, and clears every control', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    expect(screen.getByLabelText('Follow-up status')).toHaveValue('all');
+    expect(screen.getByLabelText('Sort order')).toHaveValue('created_desc');
+    expect(screen.getByLabelText('Follow-up from')).toHaveAttribute('type', 'date');
+    expect(screen.getByLabelText('Follow-up to')).toHaveValue('');
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'yes' } });
+    fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '2000-02-29' } });
+    fireEvent.change(screen.getByLabelText('Follow-up to'), { target: { value: '2000-02-29' } });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'Example' } });
+    fireEvent.change(screen.getByLabelText('AI enrichment'), { target: { value: 'no' } });
+    fireEvent.change(screen.getByLabelText('Application status'), { target: { value: 'applied' } });
+    fireEvent.change(screen.getByLabelText('Minimum score'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Maximum score'), { target: { value: '100' } });
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await screen.findByText('No saved analyses match these filters.');
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, {
+      has_follow_up: true, follow_up_from: '2000-02-29', follow_up_to: '2000-02-29',
+      sort: 'follow_up_asc', query: 'Example', ai_enriched: false, application_status: 'applied',
+      min_score: 0, max_score: 100,
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await screen.findByText('No saved analyses yet.');
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0);
+    for (const label of ['Follow-up from', 'Follow-up to', 'Minimum score', 'Maximum score', 'Search job title or company']) {
+      expect(screen.getByLabelText(label)).toHaveValue(label.includes('score') ? null : '');
+    }
+    expect(screen.getByLabelText('Follow-up status')).toHaveValue('all');
+    expect(screen.getByLabelText('Sort order')).toHaveValue('created_desc');
+    expect(screen.getByLabelText('Application status')).toHaveValue('all');
+    expect(screen.getByLabelText('AI enrichment')).toHaveValue('all');
+  });
+
+  it.each(['Follow-up from', 'Follow-up to'])('rejects Not scheduled with %s without discarding dates', async (label) => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'no' } });
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '2024-02-29' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('Choose Scheduled or All follow-ups');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText(label)).toHaveValue('2024-02-29');
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { has_follow_up: false }));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('rejects inverted dates and accepts a single date bound', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '2027-01-01' } });
+    fireEvent.change(screen.getByLabelText('Follow-up to'), { target: { value: '2026-12-31' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('on or before');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { follow_up_to: '2026-12-31' }));
+  });
+
+  it('resets pagination on Apply and Clear and retains applied order on Next and Refresh', async () => {
+    const page = Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: String(index), job_title: `Worklist ${index}` }));
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: page });
+    render(<AnalysisHistory />);
+    await screen.findByText('Worklist 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { sort: 'follow_up_asc' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { sort: 'follow_up_asc' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled());
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { sort: 'follow_up_asc' });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0));
+    expect(screen.getByText('Page 1')).toBeInTheDocument();
+  });
+
+  it('ignores an older pending response after follow-up criteria change', async () => {
+    let resolveOld!: (value: { items: SavedAnalysisSummary[] }) => void;
+    vi.mocked(getAnalysisHistory).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
+    render(<AnalysisHistory />);
+    fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '2024-02-29' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await screen.findByText('No saved analyses match these filters.');
+    await act(async () => { resolveOld({ items: [summary] }); });
+    expect(screen.queryByText('Platform Engineer')).not.toBeInTheDocument();
+  });
+
+  it('uses the unfiltered empty state when only the order changes', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('No saved analyses yet.');
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { sort: 'follow_up_asc' }));
+    expect(await screen.findByText('No saved analyses yet.')).toBeInTheDocument();
   });
 });

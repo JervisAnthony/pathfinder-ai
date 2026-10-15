@@ -11,6 +11,7 @@ from typing import Any
 from pathfinder_ai.application.analysis_follow_up import AnalysisFollowUp
 from pathfinder_ai.application.analysis_history import (
     AnalysisHistoryFilter,
+    AnalysisHistorySort,
     AnalysisRepository,
     AnalysisTracking,
     ApplicationStatus,
@@ -455,6 +456,28 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 predicates.append("COALESCE(t.application_status, 'not_applied') = ?")
                 parameters.append(history_filter.application_status.value)
 
+            if history_filter.has_follow_up is not None:
+                predicates.append(
+                    "f.follow_up_on IS NOT NULL"
+                    if history_filter.has_follow_up
+                    else "f.follow_up_on IS NULL"
+                )
+            if history_filter.follow_up_from is not None:
+                predicates.append("f.follow_up_on >= ?")
+                parameters.append(history_filter.follow_up_from.isoformat())
+            if history_filter.follow_up_to is not None:
+                predicates.append("f.follow_up_on <= ?")
+                parameters.append(history_filter.follow_up_to.isoformat())
+
+        order_by = "s.created_at DESC, s.analysis_id DESC"
+        if (
+            history_filter is not None
+            and history_filter.sort is AnalysisHistorySort.FOLLOW_UP_ASC
+        ):
+            order_by = (
+                "CASE WHEN f.follow_up_on IS NULL THEN 1 ELSE 0 END, "
+                "f.follow_up_on ASC, s.created_at DESC, s.analysis_id DESC"
+            )
         where_clause = f"WHERE {' AND '.join(predicates)}" if predicates else ""
         parameters.extend((limit, offset))
 
@@ -475,7 +498,7 @@ class SQLiteAnalysisRepository(AnalysisRepository):
                 LEFT JOIN analysis_tracking AS t ON t.analysis_id = s.analysis_id
                 LEFT JOIN analysis_follow_ups AS f ON f.analysis_id = s.analysis_id
                 {where_clause}
-                ORDER BY s.created_at DESC, s.analysis_id DESC
+                ORDER BY {order_by}
                 LIMIT ? OFFSET ?
                 """,
                 parameters,

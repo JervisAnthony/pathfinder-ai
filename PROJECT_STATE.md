@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-03
+Last updated: 2026-10-15
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Starting main:
+Latest verified completed main (PR #29 merge):
 
-`7fd4a7d16b1f5b8b04bd19e517fa998abed78fc1`
+`466f7b6406de373f92c388bd03dc28d15bc2377d`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 24 — Saved Analysis Application Notes**
+**Commit 25 — Application Follow-Up Date**
 
 ## Completed MVP-1 Roadmap
 
@@ -48,29 +48,29 @@ These milestones must not be replayed or rebuilt.
 - Commit 22 — Saved Analysis Application Status Tracking — complete (PR #26 merged)
 - Commit 23 — Application Status Activity Timeline — complete (PR #27 merged)
 - Commit 24 — Saved Analysis Application Notes — complete (PR #28 merged)
+- Commit 25 — Application Follow-Up Date — complete (PR #29 merged on 2026-10-03)
 
 ## Post-MVP Active Work
 
-**Commit 25 — Application Follow-Up Date**
+**Commit 26 — Follow-Up History Worklist**
 
-Status: **PR under review**
+Status: **Authorized active development; local implementation prepared for human review**
 
-Active pull request:
+This milestone extends persisted History with follow-up presence filters,
+inclusive date-only bounds, and deterministic earliest-follow-up ordering with
+nulls last. Filters compose with existing search, AI, score, and application
+status criteria before database pagination. The Web retains explicit draft,
+Apply, and Clear workflows. No reminders, calendar integration, due-date
+classifications, automatic status changes, additional follow-up events, or AI
+behavior are introduced. Immutable snapshots and payload version 2 remain
+unchanged; follow-up metadata and update timestamps remain separate.
 
-**PR #29**
-
-https://github.com/JervisAnthony/pathfinder-ai/pull/29
-
-This authorized post-MVP milestone adds one optional, user-managed calendar
-follow-up date to each saved analysis. Additive SQLite metadata remains separate
-from the immutable snapshot, status, activity, notes, exports, comparison,
-deterministic analysis, and optional AI. The Web provides explicit Save and
-confirmation-gated Clear actions and displays dates in History.
-
-The maintainer explicitly authorized reconciliation of the stale Commit 24
-state: PR #28 merged at main `7fd4a7d16b1f5b8b04bd19e517fa998abed78fc1`.
-Human-owned checkpoint commits and staging do not mark this milestone complete;
-review and merge remain pending.
+The maintainer authorized reconciliation of the stale Commit 25 state:
+PR #29 merged at `466f7b6406de373f92c388bd03dc28d15bc2377d` on
+2026-10-03. Codex performs local implementation, validation, and staging.
+The human maintainer owns the single implementation commit, publication,
+pull request, review, and merge. No Commit 26 PR has been created.
+Local implementation does not mark the milestone merged or complete.
 
 ## Existing Capabilities
 
@@ -102,6 +102,7 @@ The repository already contains:
 - explicit saved-analysis application status with server-side History filtering
 - paginated application-status activity for saved analysis detail
 - private, user-authored application notes on saved analysis detail
+- one optional user-managed follow-up calendar date per saved analysis
 
 ## Architectural Boundary
 
@@ -127,7 +128,11 @@ None currently authorized.
 
 ## State Update Rule
 
-After every merged roadmap or authorized post-MVP pull request:
+Reconcile merged milestone history in the next authorized implementation commit;
+do not create a separate documentation commit solely to record a PR number.
+Record the actual PR number in GitHub PR metadata and description.
+
+When reconciling a merged roadmap or authorized post-MVP pull request:
 
 1. update the `main` SHA above
 2. mark the merged milestone complete

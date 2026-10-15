@@ -243,12 +243,18 @@ export function importResumeFileSkills(
   return requestJson('/api/v1/resume/file-skill-import', { method: 'POST', body });
 }
 
+export type AnalysisHistorySort = 'created_desc' | 'follow_up_asc';
+
 export interface AnalysisHistoryFilters {
   query?: string;
   ai_enriched?: boolean;
   min_score?: number;
   max_score?: number;
   application_status?: ApplicationStatus;
+  has_follow_up?: boolean;
+  follow_up_from?: string;
+  follow_up_to?: string;
+  sort?: AnalysisHistorySort;
 }
 
 export function getAnalysisHistory(
@@ -265,6 +271,10 @@ export function getAnalysisHistory(
   if (filters.min_score !== undefined) query.set('min_score', String(filters.min_score));
   if (filters.max_score !== undefined) query.set('max_score', String(filters.max_score));
   if (filters.application_status !== undefined) query.set('application_status', filters.application_status);
+  if (filters.has_follow_up !== undefined) query.set('has_follow_up', String(filters.has_follow_up));
+  if (filters.follow_up_from) query.set('follow_up_from', filters.follow_up_from);
+  if (filters.follow_up_to) query.set('follow_up_to', filters.follow_up_to);
+  if (filters.sort) query.set('sort', filters.sort);
   return requestJson(`/api/v1/analyses?${query.toString()}`);
 }
 

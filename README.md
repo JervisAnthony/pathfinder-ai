@@ -423,13 +423,38 @@ follow-up history or revision recovery.
 The date is explicit user-managed workflow metadata in `YYYY-MM-DD` form, with
 no time-of-day or timezone attached. Display preserves the calendar day across
 browser timezones. Past dates are allowed and are never automatically cleared.
-History rows show **Follow up: <date>** when a date exists; existing ordering,
-search, filters, and pagination remain unchanged.
+History rows show **Follow up: <date>** when a date exists. By default, existing
+ordering, search, filters, and pagination remain unchanged.
 
 Pathfinder does not send reminder notifications, scheduled notifications, email,
 SMS, or WhatsApp reminders. There is no calendar integration, automatic status
-change, AI-suggested follow-up date, follow-up automation, overdue classification,
-follow-up filter, or follow-up sorting.
+change, AI-suggested follow-up date, follow-up automation, or overdue classification.
+
+History also provides a follow-up worklist. Choose **All follow-ups**, **Scheduled**,
+or **Not scheduled**, optional **Follow-up from** and **Follow-up to** calendar
+bounds, and **Newest saved first** or **Earliest follow-up first**. Draft changes
+only take effect with **Apply filters**. **Clear filters** resets all controls;
+both actions restart pagination at page one. Date bounds are inclusive, work
+independently, and select scheduled records even with All follow-ups. A reversed
+range or Not scheduled combined with a date bound produces a validation error.
+
+`GET /api/v1/analyses` accepts optional `has_follow_up=true|false`,
+`follow_up_from=YYYY-MM-DD`, `follow_up_to=YYYY-MM-DD`, and
+`sort=created_desc|follow_up_asc`. Dates must be canonical calendar dates;
+timestamps and timezone offsets are rejected with HTTP 422. Historical dates
+and leap days are supported without timezone conversion. These filters combine
+with title/company search, AI presence, score bounds, and application status.
+SQLite filters and orders persisted metadata before pagination. Earliest-follow-up
+order places scheduled dates first, ascending, and null dates last. Ties use
+creation timestamp descending, then analysis ID descending, so pagination is
+deterministic. Omitting the new parameters preserves the response structure and
+existing `created_at DESC, analysis_id DESC` ordering.
+
+Filter state stays in component memory and is not stored in browser storage.
+Worklist reads do not change follow-up timestamps or immutable snapshot payloads,
+and do not call AI or external services. Dates remain private workflow metadata;
+this feature adds no reminders, calendar sync, due-date classifications, automatic
+status changes, additional follow-up events, or recruiter contact.
 
 `GET`, `PUT`, and `DELETE /api/v1/analyses/{analysis_id}/follow-up` manage the
 separate resource with no-store responses. PUT accepts a strict ISO calendar
