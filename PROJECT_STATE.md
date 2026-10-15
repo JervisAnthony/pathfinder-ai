@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-15
+Last updated: 2026-10-16
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #30 merge):
+Latest verified completed main (PR #31 merge):
 
-`1afeb4c79c4650c1ddda80314fd47a20bf1503d5`
+`1f25a2830a2b06ce893979843d8c84d09117b6c2`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 26 — Follow-Up History Worklist**
+**Commit 27 — Application Pipeline Dashboard**
 
 ## Completed MVP-1 Roadmap
 
@@ -50,30 +50,32 @@ These milestones must not be replayed or rebuilt.
 - Commit 24 — Saved Analysis Application Notes — complete (PR #28 merged)
 - Commit 25 — Application Follow-Up Date — complete (PR #29 merged on 2026-10-03)
 - Commit 26 — Follow-Up History Worklist — complete (PR #30 merged)
+- Commit 27 — Application Pipeline Dashboard — complete (PR #31 merged)
 
 ## Post-MVP Active Work
 
-**Commit 27 — Application Pipeline Dashboard**
+**Commit 28 — Application Pipeline CSV Export**
 
 Status: **Authorized active development; local implementation prepared for human review**
 
-The read-only Application Pipeline Overview summarizes all saved analysis records,
-independently of History filters. It shows totals, all seven effective application
-status counts, scheduled/unscheduled follow-up counts, and the five earliest
-scheduled dates with existing Saved Analysis Detail navigation. Past dates remain
-eligible; multiple saved snapshots count separately. SQLite aggregates persisted
-metadata and selects five entries in one consistent read transaction without
-snapshot decoding, writes, schema changes, or changes to payload version 2.
-The Web loads the overview independently, guards stale requests, supports retry,
-and refreshes both resources explicitly and the overview on return from Detail.
-No reminders, urgency classifications, deduplication, predictions, AI/provider
-calls, external integrations, polling, or browser storage are introduced.
+History offers explicit all-record and applied-filter CSV downloads spanning all
+matching pages. The read-only export API shares History validation and SQLite
+query construction, retrieves at most 10,001 lightweight summaries in one SELECT,
+and rejects more than 10,000 records with a safe HTTP 413 instead of truncating.
+The fixed metadata-only schema uses UTF-8 BOM, CRLF CSV quoting, canonical UTC
+and calendar-date formats, and formula-prefix protection for untrusted text.
+Downloads use fixed filenames, independent progress/errors, duplicate guards,
+and temporary Blob/anchor cleanup without browser storage or late unmount actions.
+Snapshots, metadata timestamps, dashboard behavior, individual JSON/Markdown
+exports, schemas, and payload version 2 remain unchanged. No AI, scoring,
+notes/candidate bulk export, CSV import, cloud transfer, scheduled reporting,
+external spreadsheet integration, or new dependency is introduced.
 
-The maintainer authorized reconciliation of Commit 26 following the verified
-merge of PR #30 at `1afeb4c79c4650c1ddda80314fd47a20bf1503d5`.
+The maintainer authorized reconciliation of Commit 27 following the verified
+merge of PR #31 at `1f25a2830a2b06ce893979843d8c84d09117b6c2`.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 27 PR number is assigned.
+pull request, review, and merge. No Commit 28 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -108,6 +110,7 @@ The repository already contains:
 - private, user-authored application notes on saved analysis detail
 - one optional user-managed follow-up calendar date per saved analysis
 - persisted follow-up presence/date filters and stable earliest-follow-up History ordering
+- read-only pipeline dashboard with seven status counts and five earliest follow-ups
 
 ## Architectural Boundary
 

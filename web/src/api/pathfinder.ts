@@ -258,15 +258,7 @@ export interface AnalysisHistoryFilters {
   sort?: AnalysisHistorySort;
 }
 
-export function getAnalysisHistory(
-  limit = 20,
-  offset = 0,
-  filters: AnalysisHistoryFilters = {},
-): Promise<AnalysisHistoryResponse> {
-  const query = new URLSearchParams({
-    limit: String(limit),
-    offset: String(offset),
-  });
+function appendHistoryFilters(query: URLSearchParams, filters: AnalysisHistoryFilters): void {
   if (filters.query) query.set('query', filters.query);
   if (filters.ai_enriched !== undefined) query.set('ai_enriched', String(filters.ai_enriched));
   if (filters.min_score !== undefined) query.set('min_score', String(filters.min_score));
@@ -276,7 +268,26 @@ export function getAnalysisHistory(
   if (filters.follow_up_from) query.set('follow_up_from', filters.follow_up_from);
   if (filters.follow_up_to) query.set('follow_up_to', filters.follow_up_to);
   if (filters.sort) query.set('sort', filters.sort);
+}
+
+export function getAnalysisHistory(
+  limit = 20,
+  offset = 0,
+  filters: AnalysisHistoryFilters = {},
+): Promise<AnalysisHistoryResponse> {
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  appendHistoryFilters(query, filters);
   return requestJson(`/api/v1/analyses?${query.toString()}`);
+}
+
+export function downloadApplicationPipelineCsv(filters: AnalysisHistoryFilters = {}): Promise<Blob> {
+  const query = new URLSearchParams();
+  appendHistoryFilters(query, filters);
+  const suffix = query.size ? `?${query.toString()}` : '';
+  return requestBlob(`/api/v1/analyses/export.csv${suffix}`);
 }
 
 export function getApplicationPipelineOverview(): Promise<ApplicationPipelineOverview> {
@@ -393,11 +404,12 @@ export async function downloadSavedAnalysis(
   analysisId: string,
   format: SavedAnalysisExportFormat,
 ): Promise<Blob> {
+  return requestBlob(`/api/v1/analyses/${encodeURIComponent(analysisId)}/export?format=${format}`);
+}
+
+async function requestBlob(url: string): Promise<Blob> {
   try {
-    const response = await fetch(
-      `/api/v1/analyses/${encodeURIComponent(analysisId)}/export?format=${format}`,
-      { method: 'GET', cache: 'no-store' },
-    );
+    const response = await fetch(url, { method: 'GET', cache: 'no-store' });
     if (!response.ok) {
       let errorData: unknown;
       try {

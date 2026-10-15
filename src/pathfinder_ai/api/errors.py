@@ -40,7 +40,6 @@ def create_error_response(
 async def validation_exception_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
-    del request
     validation_error = cast(RequestValidationError, exc)
     safe_details = [
         ValidationDetailSchema(
@@ -51,12 +50,15 @@ async def validation_exception_handler(
         for error in validation_error.errors()
     ]
 
-    return create_error_response(
+    response = create_error_response(
         status_code=422,
         code="validation_error",
         message="Request validation failed.",
         details=safe_details,
     )
+    if request.url.path == "/api/v1/analyses/export.csv":
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 class DomainValidationError(Exception):

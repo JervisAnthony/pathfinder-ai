@@ -25,6 +25,7 @@ from pathfinder_ai.application.analysis_overview import (
     ApplicationStatusCount,
     PipelineFollowUpItem,
 )
+from pathfinder_ai.application.analysis_pipeline_csv import PipelineCsvUnavailableError
 from pathfinder_ai.infrastructure._analysis_codec import (
     CURRENT_PAYLOAD_VERSION,
     decode_analysis,
@@ -484,7 +485,33 @@ class SQLiteAnalysisRepository(AnalysisRepository):
         offset: int,
         history_filter: AnalysisHistoryFilter | None = None,
     ) -> tuple[SavedAnalysisSummary, ...]:
-        """List lightweight analysis summaries."""
+        """List lightweight analysis summaries with History pagination."""
+        return self._list_summaries(
+            limit=limit, offset=offset, history_filter=history_filter
+        )
+
+    def list_export_summaries(
+        self,
+        *,
+        history_filter: AnalysisHistoryFilter,
+        max_rows: int,
+    ) -> tuple[SavedAnalysisSummary, ...]:
+        """Use one bounded SELECT, with an extra row to detect export overflow."""
+        try:
+            return self._list_summaries(
+                limit=max_rows + 1, offset=0, history_filter=history_filter
+            )
+        except sqlite3.Error as exc:
+            raise PipelineCsvUnavailableError() from exc
+
+    def _list_summaries(
+        self,
+        *,
+        limit: int,
+        offset: int,
+        history_filter: AnalysisHistoryFilter | None,
+    ) -> tuple[SavedAnalysisSummary, ...]:
+        """Share predicates, ordering, selection, and mapping for both reads."""
         predicates: list[str] = []
         parameters: list[str | float | int] = []
 
