@@ -8,6 +8,7 @@ vi.mock('./api/pathfinder', () => ({
   analyzeCandidateJob: vi.fn(),
   getCapabilities: vi.fn(),
   getAnalysisHistory: vi.fn(),
+  getApplicationPipelineOverview: vi.fn(),
   getSavedAnalysis: vi.fn(),
   ApiError: class ApiError extends Error {
     public readonly code?: string;
@@ -21,6 +22,10 @@ vi.mock('./api/pathfinder', () => ({
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getApplicationPipelineOverview).mockResolvedValue({
+      total_analyses: 0, status_counts: [], scheduled_follow_up_count: 0,
+      unscheduled_follow_up_count: 0, earliest_follow_ups: [],
+    });
     vi.mocked(api.getCapabilities).mockResolvedValue({ ai_enrichment_available: false, job_description_import_available: false, candidate_profile_import_available: false, persistence_available: false });
   });
 

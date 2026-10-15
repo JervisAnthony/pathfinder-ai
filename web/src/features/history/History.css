@@ -278,3 +278,30 @@
 .application-follow-up button {
   margin-right: 0.75rem;
 }
+
+
+.pipeline-overview {
+  background: #fff;
+  border: 1px solid #d8e0e8;
+  border-radius: 8px;
+  margin-block: 1.5rem;
+  padding: 1.25rem;
+}
+
+.pipeline-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.75rem;
+}
+
+.pipeline-counts > div {
+  background: #f5f7fa;
+  border-radius: 6px;
+  padding: 0.75rem;
+}
+
+.pipeline-counts dt { color: #5b6470; }
+.pipeline-counts dd { margin: 0.3rem 0 0; font-size: 1.4rem; font-weight: 700; }
+.pipeline-follow-ups { grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr)); }
+.pipeline-follow-ups button { gap: 1rem; height: 100%; overflow-wrap: anywhere; }
+.pipeline-overview button:focus-visible { outline: 3px solid #0066cc; outline-offset: 3px; }

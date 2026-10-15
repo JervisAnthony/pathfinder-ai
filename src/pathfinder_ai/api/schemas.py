@@ -483,6 +483,27 @@ class SavedAnalysisSummarySchema(BaseStrictModel):
     follow_up_on: date | None
 
 
+class ApplicationStatusCountSchema(BaseStrictModel):
+    status: ApplicationStatus
+    count: int
+
+
+class PipelineFollowUpItemSchema(BaseStrictModel):
+    analysis_id: uuid.UUID
+    job_title: str
+    company_name: str | None
+    application_status: ApplicationStatus
+    follow_up_on: date
+
+
+class ApplicationPipelineOverviewSchema(BaseStrictModel):
+    total_analyses: int
+    status_counts: tuple[ApplicationStatusCountSchema, ...]
+    scheduled_follow_up_count: int
+    unscheduled_follow_up_count: int
+    earliest_follow_ups: tuple[PipelineFollowUpItemSchema, ...]
+
+
 class AnalysisFollowUpSchema(BaseStrictModel):
     analysis_id: uuid.UUID
     follow_up_on: date | None

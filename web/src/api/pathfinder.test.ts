@@ -6,6 +6,7 @@ import {
   deleteSavedAnalysis,
   downloadSavedAnalysis,
   getAnalysisHistory,
+  getApplicationPipelineOverview,
   getAnalysisTracking,
   getAnalysisTrackingHistory,
   getAnalysisNote,
@@ -512,6 +513,33 @@ describe('follow-up worklist query serialization', () => {
     expect(Object.fromEntries(url.searchParams)).toEqual({
       limit: '7', offset: '14',
       ...Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, String(value)])),
+    });
+  });
+});
+
+
+describe('application pipeline overview client', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reads the typed overview with GET and no-store', async () => {
+    const overview = { total_analyses: 0, status_counts: [], scheduled_follow_up_count: 0,
+      unscheduled_follow_up_count: 0, earliest_follow_ups: [] };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json(overview));
+    await expect(getApplicationPipelineOverview()).resolves.toEqual(overview);
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/v1/analyses/overview', { method: 'GET', cache: 'no-store' });
+  });
+
+  it('preserves the safe persistence error envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorResponse(503, 'persistence_unavailable', 'Analysis persistence is unavailable.'));
+    await expect(getApplicationPipelineOverview()).rejects.toMatchObject({
+      status: 503, code: 'persistence_unavailable', message: 'Analysis persistence is unavailable.',
+    });
+  });
+
+  it('masks transport details', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('PRIVATE transport'));
+    await expect(getApplicationPipelineOverview()).rejects.toMatchObject({
+      message: 'Unable to reach Pathfinder. Check your connection and try again.',
     });
   });
 });

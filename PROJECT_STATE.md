@@ -7,13 +7,13 @@ Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #29 merge):
+Latest verified completed main (PR #30 merge):
 
-`466f7b6406de373f92c388bd03dc28d15bc2377d`
+`1afeb4c79c4650c1ddda80314fd47a20bf1503d5`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 25 — Application Follow-Up Date**
+**Commit 26 — Follow-Up History Worklist**
 
 ## Completed MVP-1 Roadmap
 
@@ -49,28 +49,32 @@ These milestones must not be replayed or rebuilt.
 - Commit 23 — Application Status Activity Timeline — complete (PR #27 merged)
 - Commit 24 — Saved Analysis Application Notes — complete (PR #28 merged)
 - Commit 25 — Application Follow-Up Date — complete (PR #29 merged on 2026-10-03)
+- Commit 26 — Follow-Up History Worklist — complete (PR #30 merged)
 
 ## Post-MVP Active Work
 
-**Commit 26 — Follow-Up History Worklist**
+**Commit 27 — Application Pipeline Dashboard**
 
 Status: **Authorized active development; local implementation prepared for human review**
 
-This milestone extends persisted History with follow-up presence filters,
-inclusive date-only bounds, and deterministic earliest-follow-up ordering with
-nulls last. Filters compose with existing search, AI, score, and application
-status criteria before database pagination. The Web retains explicit draft,
-Apply, and Clear workflows. No reminders, calendar integration, due-date
-classifications, automatic status changes, additional follow-up events, or AI
-behavior are introduced. Immutable snapshots and payload version 2 remain
-unchanged; follow-up metadata and update timestamps remain separate.
+The read-only Application Pipeline Overview summarizes all saved analysis records,
+independently of History filters. It shows totals, all seven effective application
+status counts, scheduled/unscheduled follow-up counts, and the five earliest
+scheduled dates with existing Saved Analysis Detail navigation. Past dates remain
+eligible; multiple saved snapshots count separately. SQLite aggregates persisted
+metadata and selects five entries in one consistent read transaction without
+snapshot decoding, writes, schema changes, or changes to payload version 2.
+The Web loads the overview independently, guards stale requests, supports retry,
+and refreshes both resources explicitly and the overview on return from Detail.
+No reminders, urgency classifications, deduplication, predictions, AI/provider
+calls, external integrations, polling, or browser storage are introduced.
 
-The maintainer authorized reconciliation of the stale Commit 25 state:
-PR #29 merged at `466f7b6406de373f92c388bd03dc28d15bc2377d` on
-2026-10-03. Codex performs local implementation, validation, and staging.
+The maintainer authorized reconciliation of Commit 26 following the verified
+merge of PR #30 at `1afeb4c79c4650c1ddda80314fd47a20bf1503d5`.
+Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 26 PR has been created.
-Local implementation does not mark the milestone merged or complete.
+pull request, review, and merge. No Commit 27 PR number is assigned.
+Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
 
@@ -103,6 +107,7 @@ The repository already contains:
 - paginated application-status activity for saved analysis detail
 - private, user-authored application notes on saved analysis detail
 - one optional user-managed follow-up calendar date per saved analysis
+- persisted follow-up presence/date filters and stable earliest-follow-up History ordering
 
 ## Architectural Boundary
 

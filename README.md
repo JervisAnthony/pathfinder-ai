@@ -88,6 +88,7 @@ Endpoints:
 - `POST /api/v1/resume/skill-import`
 - `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
+- `GET /api/v1/analyses/overview`
 - `GET /api/v1/analyses/{analysis_id}`
 - `DELETE /api/v1/analyses/{analysis_id}`
 
@@ -410,6 +411,52 @@ interpreted as HTML or Markdown. This feature does not store notes or drafts in
 the browser or deliberately log note content. Notes are excluded from History
 summaries and search, snapshot JSON and Markdown exports, and saved-analysis
 comparison. There is no note export or note comparison.
+
+### Application pipeline overview
+
+Analysis History includes an **Application Pipeline Overview** above its filters.
+It summarizes all saved analysis records in the configured database, independently
+of the current History filters and pagination. Multiple snapshots of the same job
+count separately; these totals do not represent deduplicated job applications or
+unique employers.
+
+The overview shows the total saved analyses, scheduled and unscheduled follow-up
+counts, and counts for all seven application statuses: Not applied, Applied,
+Interviewing, Offer, Accepted, Rejected, and Withdrawn. Missing tracking metadata
+counts as Not applied. All status counts sum to the total; scheduled plus
+unscheduled follow-ups also sum to the total, including terminal statuses.
+
+**Earliest scheduled follow-ups** lists at most five records, ordered by stored
+calendar date ascending, creation timestamp descending, then analysis ID descending.
+Past dates remain eligible. There are no overdue, due-today, due-soon, or upcoming
+classifications. Each entry opens the existing Saved Analysis Detail. Dates retain
+their date-only semantics and are never converted between timezones.
+
+The overview loads independently of History, with explicit loading, safe errors,
+and **Retry overview**. History remains usable if overview loading fails, and a
+successful overview remains usable if the list fails. **Refresh** reloads both
+resources independently. Returning from Detail reloads the overview, including
+after status changes, follow-up saves/changes/clears, and deletions. There is no
+polling or scheduled refresh. An empty database displays genuine zero counts for
+all categories and a clear follow-up empty state; loading does not show false zeros.
+
+`GET /api/v1/analyses/overview` is read-only and accepts no filter parameters.
+HTTP 200 returns `total_analyses`, ordered `status_counts` (each with `status` and
+`count`), `scheduled_follow_up_count`, `unscheduled_follow_up_count`, and
+`earliest_follow_ups`. Each follow-up contains only its analysis ID, job title,
+nullable company name, effective application status, and follow-up calendar date.
+The endpoint sends `Cache-Control: no-store`. Unavailable persistence returns the
+existing safe HTTP 503 error envelope without storage or configuration details.
+
+SQLite performs one grouped metadata aggregation and one query limited to five
+records in an explicit, consistent read transaction. Reads neither decode saved
+payloads nor modify snapshots, notes, workflow timestamps, schema, or payload
+version 2. No candidate profile, resume source, note, or AI content is retrieved
+for the overview. Dashboard data stays in ordinary React memory without browser
+storage, cookies, telemetry, external services, or new dependencies. Existing
+installation privacy limits still apply. This dashboard adds no reminders,
+notifications, calendar sync, automated applications, AI calls, hiring predictions,
+success rates, or application success probabilities.
 
 ### Saved analysis application follow-up date
 
