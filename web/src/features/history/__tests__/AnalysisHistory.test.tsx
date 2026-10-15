@@ -6,6 +6,7 @@ import {
   compareSavedAnalyses,
   deleteSavedAnalysis,
   downloadSavedAnalysis,
+  downloadApplicationPipelineCsv,
   getAnalysisHistory,
   getApplicationPipelineOverview,
   getAnalysisTracking,
@@ -44,6 +45,7 @@ vi.mock('../../../api/pathfinder', async (importOriginal) => ({
   updateAnalysisTracking: vi.fn(),
   deleteSavedAnalysis: vi.fn(),
   downloadSavedAnalysis: vi.fn(),
+  downloadApplicationPipelineCsv: vi.fn(),
   analyzeCandidateJob: vi.fn(),
 }));
 
@@ -1380,5 +1382,182 @@ describe('pipeline overview integration with History', () => {
     const totals = within(await screen.findByRole('region', { name: 'Application totals' }));
     expect(totals.getAllByRole('definition').map((value) => value.textContent)).toEqual(['0', '0', '0']);
     expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(2);
+  });
+});
+
+
+describe('application pipeline CSV downloads', () => {
+  const createObjectURL = vi.fn(() => 'blob:pipeline-csv');
+  const revokeObjectURL = vi.fn();
+  let downloaded: Array<{ filename: string; href: string; connected: boolean }>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(downloadApplicationPipelineCsv).mockReset();
+    vi.mocked(downloadApplicationPipelineCsv).mockResolvedValue(new Blob(['CSV']));
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [summary] });
+    downloaded = [];
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloaded.push({ filename: this.download, href: this.href, connected: this.isConnected });
+    });
+  });
+
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('offers explicit exports and privacy copy with no automatic download', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    expect(screen.getByRole('button', { name: 'Download all CSV' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeDisabled();
+    expect(screen.getByText('CSV exports include every matching saved analysis, not just the current page. Downloaded files may contain job and company information; store and share them carefully.')).toBeInTheDocument();
+    expect(screen.getByText(/regardless of current History filters/)).toBeInTheDocument();
+    expect(downloadApplicationPipelineCsv).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'draft only' } });
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeDisabled();
+  });
+
+  it('uses applied criteria across pages, ignores drafts, and full export stays unfiltered', async () => {
+    const page = Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: String(index), job_title: `Role ${index}` }));
+    vi.mocked(getAnalysisHistory).mockResolvedValue({ items: page });
+    const storage = vi.spyOn(Storage.prototype, 'setItem');
+    render(<AnalysisHistory />);
+    await screen.findByText('Role 0');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'Example' } });
+    fireEvent.change(screen.getByLabelText('AI enrichment'), { target: { value: 'no' } });
+    fireEvent.change(screen.getByLabelText('Application status'), { target: { value: 'applied' } });
+    fireEvent.change(screen.getByLabelText('Minimum score'), { target: { value: '0' } });
+    fireEvent.change(screen.getByLabelText('Maximum score'), { target: { value: '100' } });
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'yes' } });
+    fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '2000-02-29' } });
+    fireEvent.change(screen.getByLabelText('Follow-up to'), { target: { value: '2099-12-31' } });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, expect.any(Object)));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unapplied draft' } });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'created_desc' } });
+    const historyCalls = vi.mocked(getAnalysisHistory).mock.calls.length;
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Download filtered CSV' }));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledTimes(1));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ query: 'Example', ai_enriched: false,
+      application_status: 'applied', min_score: 0, max_score: 100, has_follow_up: true,
+      follow_up_from: '2000-02-29', follow_up_to: '2099-12-31', sort: 'follow_up_asc' });
+    fireEvent.click(screen.getByRole('button', { name: 'Download all CSV' }));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledTimes(2));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({});
+    expect(downloaded).toEqual([
+      { filename: 'pathfinder-application-pipeline-filtered.csv', href: 'blob:pipeline-csv', connected: true },
+      { filename: 'pathfinder-application-pipeline.csv', href: 'blob:pipeline-csv', connected: true },
+    ]);
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');
+    expect(screen.getByLabelText('Sort order')).toHaveValue('created_desc');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(historyCalls);
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    expect(updateAnalysisTracking).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+    expect(storage).not.toHaveBeenCalled();
+    expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0); expect(document.cookie).toBe('');
+    storage.mockRestore();
+  });
+
+  it('offers filtered downloads for applied sort-only criteria and resets on Clear', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download filtered CSV' }));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalled());
+    expect(downloadApplicationPipelineCsv).toHaveBeenCalledExactlyOnceWith({ sort: 'follow_up_asc' });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeDisabled();
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+  });
+
+  it('keeps modes independent and suppresses repeated clicks while downloads are pending', async () => {
+    let resolveAll!: (blob: Blob) => void; let resolveFiltered!: (blob: Blob) => void;
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValueOnce(new Promise((resolve) => { resolveAll = resolve; }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveFiltered = resolve; }));
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'no' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    const all = screen.getByRole('button', { name: 'Download all CSV' });
+    const filtered = screen.getByRole('button', { name: 'Download filtered CSV' });
+    fireEvent.click(all); fireEvent.click(all);
+    expect(downloadApplicationPipelineCsv).toHaveBeenCalledTimes(1);
+    expect(all).toBeDisabled(); expect(filtered).toBeEnabled();
+    fireEvent.click(filtered); fireEvent.click(filtered);
+    expect(downloadApplicationPipelineCsv).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Preparing all records CSV...')).toHaveAttribute('role', 'status');
+    expect(screen.getByText('Preparing filtered records CSV...')).toHaveAttribute('role', 'status');
+    await act(async () => resolveAll(new Blob(['all'])));
+    expect(all).toBeEnabled(); expect(filtered).toBeDisabled();
+    await act(async () => resolveFiltered(new Blob(['filtered'])));
+    expect(filtered).toBeEnabled();
+    expect(downloaded).toHaveLength(2);
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: false });
+  });
+
+  it.each([
+    [new ApiError('PRIVATE', 413, 'export_limit_exceeded'), 'Too many records to export at once. Apply narrower filters and try again.'],
+    [new ApiError('PRIVATE', 503, 'persistence_unavailable'), 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'],
+    [new ApiError('PRIVATE', 422, 'validation_error'), 'Pathfinder could not export the application pipeline. Please try again.'],
+    [new Error('PRIVATE'), 'Pathfinder could not export the application pipeline. Please try again.'],
+  ])('keeps state and supports retry after a safe export failure', async (failure, message) => {
+    vi.mocked(downloadApplicationPipelineCsv).mockRejectedValueOnce(failure);
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'applied' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'applied' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'draft' } });
+    const calls = vi.mocked(getAnalysisHistory).mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Download filtered CSV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.queryByText('PRIVATE')).not.toBeInTheDocument();
+    expect(createObjectURL).not.toHaveBeenCalled(); expect(downloaded).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeEnabled();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('draft');
+    expect(screen.getByText('Page 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Download filtered CSV' }));
+    await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledTimes(1));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ query: 'applied' });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(calls);
+  });
+
+  it('cleans up the URL and anchor if the browser download fails', async () => {
+    vi.mocked(HTMLAnchorElement.prototype.click).mockImplementationOnce(() => { throw new Error('PRIVATE browser'); });
+    render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Download all CSV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not export the application pipeline');
+    expect(revokeObjectURL).toHaveBeenCalledExactlyOnceWith('blob:pipeline-csv');
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Download all CSV' })).toBeEnabled();
+  });
+
+  it.each(['success', 'failure'])('ignores a late export %s after unmount without downloading', async (outcome) => {
+    let resolve!: (blob: Blob) => void; let reject!: (reason: unknown) => void;
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValueOnce(new Promise((resolvePromise, rejectPromise) => { resolve = resolvePromise; reject = rejectPromise; }));
+    const consoleError = vi.spyOn(console, 'error');
+    const { unmount } = render(<AnalysisHistory />);
+    await screen.findByRole('button', { name: /Platform Engineer/ });
+    fireEvent.click(screen.getByRole('button', { name: 'Download all CSV' }));
+    unmount();
+    await act(async () => { if (outcome === 'success') resolve(new Blob(['CSV'])); else reject(new Error('PRIVATE')); });
+    expect(createObjectURL).not.toHaveBeenCalled(); expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(document.querySelector('a[download]')).toBeNull();
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import {
   compareSavedAnalyses,
   deleteSavedAnalysis,
   downloadSavedAnalysis,
+  downloadApplicationPipelineCsv,
   getAnalysisHistory,
   getApplicationPipelineOverview,
   getAnalysisTracking,
@@ -541,5 +542,61 @@ describe('application pipeline overview client', () => {
     await expect(getApplicationPipelineOverview()).rejects.toMatchObject({
       message: 'Unable to reach Pathfinder. Check your connection and try again.',
     });
+  });
+});
+
+
+describe('application pipeline CSV client', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('downloads an unfiltered CSV Blob using GET and no-store without pagination', async () => {
+    const response = new Response('analysis_id,job_title\r\nfictional,Engineer\r\n');
+    const blobRead = vi.spyOn(response, 'blob');
+    const jsonRead = vi.spyOn(response, 'json');
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    const blob = await downloadApplicationPipelineCsv();
+    expect(blob.size).toBeGreaterThan(0);
+    expect(blobRead).toHaveBeenCalledTimes(1);
+    expect(jsonRead).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/v1/analyses/export.csv', { method: 'GET', cache: 'no-store' });
+  });
+
+  it.each([
+    { ai_enriched: false, min_score: 0, max_score: 0, has_follow_up: false },
+    { query: '100% Data_Engineer & "Example" \u5de5\u7a0b\u5e08', ai_enriched: true, min_score: 0, max_score: 100,
+      application_status: 'applied' as const, has_follow_up: true, follow_up_from: '2000-02-29', follow_up_to: '2099-12-31', sort: 'follow_up_asc' as const },
+    { sort: 'created_desc' as const }, { sort: 'follow_up_asc' as const },
+  ])('serializes the same complete criteria as History: %j', async (filters) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response('CSV')).mockResolvedValueOnce(Response.json({ items: [] }));
+    await downloadApplicationPipelineCsv(filters);
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost');
+    expect(url.pathname).toBe('/api/v1/analyses/export.csv');
+    expect(Object.fromEntries(url.searchParams)).toEqual(Object.fromEntries(Object.entries(filters).map(([key, value]) => [key, String(value)])));
+    expect(url.searchParams.has('limit')).toBe(false);
+    expect(url.searchParams.has('offset')).toBe(false);
+    await getAnalysisHistory(20, 40, filters);
+    const listing = new URL(String(fetchMock.mock.calls[1][0]), 'http://localhost');
+    listing.searchParams.delete('limit'); listing.searchParams.delete('offset');
+    expect(listing.searchParams.toString()).toBe(url.searchParams.toString());
+  });
+
+  it.each([[413, 'export_limit_exceeded'], [422, 'validation_error'], [503, 'persistence_unavailable']])('handles HTTP %i without downloading error content', async (status, code) => {
+    const response = errorResponse(Number(status), String(code), 'Safe failure');
+    const blobRead = vi.spyOn(response, 'blob');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(response);
+    await expect(downloadApplicationPipelineCsv()).rejects.toMatchObject({ status, code, message: 'Safe failure' });
+    expect(blobRead).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['<html>PRIVATE</html>', 'unreadable'], ['{"private":"wrong shape"}', 'invalid'],
+  ])('masks malformed server errors', async (body, description) => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(body, { status: 500 }));
+    await expect(downloadApplicationPipelineCsv()).rejects.toMatchObject({ message: `Pathfinder returned an ${description} error response.` });
+  });
+
+  it('masks network failures', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new Error('PRIVATE network'));
+    await expect(downloadApplicationPipelineCsv()).rejects.toMatchObject({ message: 'Unable to reach Pathfinder. Check your connection and try again.' });
   });
 });

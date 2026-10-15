@@ -4,6 +4,7 @@ import {
   ApiError,
   compareSavedAnalyses,
   deleteSavedAnalysis,
+  downloadApplicationPipelineCsv,
   getAnalysisHistory,
   getSavedAnalysis,
 } from '../../api/pathfinder';
@@ -16,6 +17,7 @@ import { ApplicationPipelineOverview } from './ApplicationPipelineOverview';
 import './History.css';
 
 const PAGE_SIZE = 20;
+type CsvMode = 'all' | 'filtered';
 
 function errorMessage(error: unknown, action: 'history' | 'detail'): string {
   if (error instanceof ApiError && error.code === 'persistence_unavailable') {
@@ -29,7 +31,27 @@ function errorMessage(error: unknown, action: 'history' | 'detail'): string {
     : 'Pathfinder could not load this saved analysis. Please try again.';
 }
 
+function csvErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.code === 'export_limit_exceeded') {
+    return 'Too many records to export at once. Apply narrower filters and try again.';
+  }
+  if (error instanceof ApiError && error.code === 'persistence_unavailable') {
+    return 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.';
+  }
+  return 'Pathfinder could not export the application pipeline. Please try again.';
+}
+
 export function AnalysisHistory() {
+  const csvRequests = useRef(new Set<CsvMode>());
+  const csvMounted = useRef(true);
+  const [csvDownloading, setCsvDownloading] = useState({ all: false, filtered: false });
+  const [csvErrors, setCsvErrors] = useState<Record<CsvMode, string | null>>({ all: null, filtered: null });
+
+  useEffect(() => {
+    csvMounted.current = true;
+    return () => { csvMounted.current = false; };
+  }, []);
+
   const [overviewRefreshKey, setOverviewRefreshKey] = useState(0);
   const [items, setItems] = useState<SavedAnalysisSummary[]>([]);
   const [offset, setOffset] = useState(0);
@@ -56,6 +78,33 @@ export function AnalysisHistory() {
   const [comparisonError, setComparisonError] = useState<string | null>(null);
   const comparisonPending = useRef(false);
   const filtered = Object.keys(filters).some((key) => key !== 'sort');
+
+  const downloadCsv = async (mode: CsvMode) => {
+    if (csvRequests.current.has(mode)) return;
+    csvRequests.current.add(mode);
+    setCsvDownloading((current) => ({ ...current, [mode]: true }));
+    setCsvErrors((current) => ({ ...current, [mode]: null }));
+    try {
+      const blob = await downloadApplicationPipelineCsv(mode === 'all' ? {} : filters);
+      if (!csvMounted.current) return;
+      const anchor = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      try {
+        anchor.href = url;
+        anchor.download = mode === 'all' ? 'pathfinder-application-pipeline.csv' : 'pathfinder-application-pipeline-filtered.csv';
+        document.body.appendChild(anchor);
+        anchor.click();
+      } finally {
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (caught) {
+      if (csvMounted.current) setCsvErrors((current) => ({ ...current, [mode]: csvErrorMessage(caught) }));
+    } finally {
+      csvRequests.current.delete(mode);
+      if (csvMounted.current) setCsvDownloading((current) => ({ ...current, [mode]: false }));
+    }
+  };
 
   const applyFilters = (event: React.FormEvent) => {
     event.preventDefault();
@@ -222,6 +271,20 @@ export function AnalysisHistory() {
         Saved analyses remain in configured persistence until deleted. Deletion removes one selected
         snapshot from Pathfinder history; it is not a secure filesystem wipe.
       </p>
+
+      <section className="saved-export" aria-labelledby="pipeline-csv-title">
+        <h3 id="pipeline-csv-title">Application pipeline CSV export</h3>
+        <p>CSV exports include every matching saved analysis, not just the current page. Downloaded files may contain job and company information; store and share them carefully.</p>
+        <p>Download all CSV includes all saved records in newest-first order, regardless of current History filters. Download filtered CSV uses applied filters and ordering. Each export supports up to 10,000 records.</p>
+        <div className="export-actions">
+          <button type="button" disabled={csvDownloading.all} onClick={() => void downloadCsv('all')}>Download all CSV</button>
+          <button type="button" disabled={csvDownloading.filtered || Object.keys(filters).length === 0} onClick={() => void downloadCsv('filtered')}>Download filtered CSV</button>
+        </div>
+        {csvDownloading.all && <p role="status">Preparing all records CSV...</p>}
+        {csvDownloading.filtered && <p role="status">Preparing filtered records CSV...</p>}
+        {csvErrors.all && <p role="alert">{csvErrors.all}</p>}
+        {csvErrors.filtered && <p role="alert">{csvErrors.filtered}</p>}
+      </section>
 
       <ApplicationPipelineOverview refreshKey={overviewRefreshKey} onOpen={(id) => void openDetail(id)} opening={detailLoading} />
 

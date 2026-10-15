@@ -220,6 +220,15 @@ class AnalysisRepository(Protocol):
         """Return recorded transitions, or None if the analysis does not exist."""
         ...
 
+    def list_export_summaries(
+        self,
+        *,
+        history_filter: AnalysisHistoryFilter,
+        max_rows: int,
+    ) -> tuple[SavedAnalysisSummary, ...]:
+        """Read at most max_rows + 1 summaries for complete-export limit detection."""
+        ...
+
     def get_pipeline_overview(self) -> "ApplicationPipelineOverview":
         """Summarize all saved analyses using persisted metadata only."""
         ...

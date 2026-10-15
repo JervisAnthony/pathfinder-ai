@@ -89,6 +89,7 @@ Endpoints:
 - `POST /api/v1/resume/file-skill-import`
 - `GET /api/v1/analyses`
 - `GET /api/v1/analyses/overview`
+- `GET /api/v1/analyses/export.csv`
 - `GET /api/v1/analyses/{analysis_id}`
 - `DELETE /api/v1/analyses/{analysis_id}`
 
@@ -296,6 +297,75 @@ not delete previously downloaded copies.
 No schema migration, version-2 persistence change, or additional dependency is
 required. Existing deterministic analysis, AI behavior, history search/filter
 semantics, and individual deletion remain unchanged.
+
+### Application pipeline CSV export
+
+History provides two explicit spreadsheet downloads. **Download all CSV** includes
+all saved analyses in default newest-first order, regardless of History filters.
+**Download filtered CSV** includes every record matching the currently applied
+History filters and ordering, across all pages. It becomes available for applied
+filters or nondefault ordering, including sort-only criteria. Editing draft controls
+does not change export criteria until **Apply filters**. Exporting does not reset
+pagination, refresh the dashboard, navigate, or change saved workflow data.
+
+`GET /api/v1/analyses/export.csv` accepts the same `query`, `ai_enriched`,
+`min_score`, `max_score`, `application_status`, `has_follow_up`, `follow_up_from`,
+`follow_up_to`, and `sort` parameters as History. It shares canonical calendar-date
+validation, literal substring matching and wildcard escaping, AND composition,
+inclusive bounds, effective status fallback, and deterministic ordering with the
+History API. No pagination parameters affect export. Default order is creation
+timestamp descending, then analysis ID descending. Earliest-follow-up order places
+non-null dates first, ascending, with the same creation/ID tie-breakers; nulls are
+last. Each saved snapshot contributes one row, without job/employer deduplication.
+
+The fixed column order is:
+
+```text
+analysis_id,created_at,job_title,company_name,match_score,ai_enriched,application_status,status_updated_at,follow_up_on
+```
+
+UUIDs are canonical strings. Creation and status timestamps are ISO 8601 UTC
+values; follow-up dates remain `YYYY-MM-DD` calendar dates without timezone
+conversion. Scores retain their stored numeric precision without recomputation.
+AI presence is lowercase `true` or `false`. Missing company, score, status-update
+timestamp, and follow-up date cells are blank. Missing tracking metadata means
+`not_applied`.
+
+Files use UTF-8 with a BOM, standard CSV quoting, and CRLF record separators for
+spreadsheet interoperability. Commas, quotation marks, embedded line breaks, and
+Unicode text are preserved as cells. Title/company values that begin with `=`,
+`+`, `-`, or `@`, including after leading whitespace or control/format characters,
+receive an apostrophe prefix before CSV quoting to keep them inert spreadsheet
+text. This transformation affects only exported text, never stored values or
+numeric/date fields. Empty results still download the header.
+
+Each export permits at most **10,000 data rows**, excluding the header. SQLite
+retrieves at most 10,001 lightweight summaries in one SELECT to detect overflow.
+More than 10,000 matches returns HTTP 413 with `export_limit_exceeded` before any
+CSV content is sent; there is no silent truncation. Apply narrower filters and
+retry. Invalid filters return HTTP 422; unavailable persistence returns the safe
+HTTP 503 envelope. Successful responses use `text/csv; charset=utf-8`, an attachment
+filename of `pathfinder-application-pipeline.csv`, `Cache-Control: no-store`, and
+`X-Content-Type-Options: nosniff`. Export errors also use no-store. The filtered
+browser download uses `pathfinder-application-pipeline-filtered.csv`.
+
+Downloads have independent progress/error states and suppress repeated requests
+for the same mode. Failed downloads preserve applied filters, unsaved drafts,
+pagination, History, and dashboard data and allow retry. Temporary anchors and
+object URLs are removed/revoked after download attempts; late responses after
+unmount do not start downloads. CSV data is not persisted in browser storage or
+cookies, nor is an export file saved on the server.
+
+**CSV privacy:** Downloaded files contain job/company information and become the
+user's responsibility outside Pathfinder. Store and share them carefully; deleting
+a saved record does not remove existing downloaded copies. CSV excludes candidate
+profiles, raw resume text, complete job descriptions, interview preparation,
+learning recommendations, AI text, notes, activity history, snapshot payloads,
+credentials, and internal configuration. The feature reads summary metadata only,
+without snapshot decoding, database writes, score changes, AI calls, third-party
+data transfer, schema changes, or new dependencies. Individual JSON/Markdown
+snapshot exports retain their existing content and behavior. No CSV import,
+cloud upload, spreadsheet API integration, or scheduled reporting is introduced.
 
 ### Saved analysis search and filters
 

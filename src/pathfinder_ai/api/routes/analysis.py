@@ -7,7 +7,7 @@ from dataclasses import asdict
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, BeforeValidator
@@ -20,6 +20,7 @@ from pathfinder_ai.api.errors import (
     DomainValidationError,
     ErrorResponseSchema,
     PersistenceUnavailableError,
+    create_error_response,
     persistence_unavailable_handler,
 )
 from pathfinder_ai.api.schemas import (
@@ -68,6 +69,11 @@ from pathfinder_ai.application.analysis_history import (
 from pathfinder_ai.application.analysis_notes import AnalysisNoteService
 from pathfinder_ai.application.analysis_overview import (
     ApplicationPipelineOverviewService,
+)
+from pathfinder_ai.application.analysis_pipeline_csv import (
+    ApplicationPipelineCsvService,
+    ExportLimitExceededError,
+    PipelineCsvUnavailableError,
 )
 from pathfinder_ai.application.interview_preparation import (
     DeterministicInterviewPreparer,
@@ -207,6 +213,39 @@ async def analyze(
     )
 
 
+def get_history_filter(
+    query: str | None = None,
+    ai_enriched: bool | None = None,
+    min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
+    max_score: Annotated[float | None, Query(ge=0, le=100)] = None,
+    application_status: ApplicationStatus | None = None,
+    has_follow_up: bool | None = None,
+    follow_up_from: HistoryDate | None = None,
+    follow_up_to: HistoryDate | None = None,
+    sort: AnalysisHistorySort = AnalysisHistorySort.CREATED_DESC,
+) -> AnalysisHistoryFilter:
+    """Shared query validation for History and complete pipeline exports."""
+    try:
+        return AnalysisHistoryFilter(
+            query=query,
+            ai_enriched=ai_enriched,
+            min_score=min_score,
+            max_score=max_score,
+            application_status=application_status,
+            has_follow_up=has_follow_up,
+            follow_up_from=follow_up_from,
+            follow_up_to=follow_up_to,
+            sort=sort,
+        )
+    except ValueError as exc:
+        raise RequestValidationError(
+            [{"loc": ("query",), "msg": str(exc), "type": "value_error"}]
+        ) from exc
+
+
+HistoryFilterQuery = Annotated[AnalysisHistoryFilter, Depends(get_history_filter)]
+
+
 @router.get(
     "/analyses",
     response_model=AnalysisHistoryResponseSchema,
@@ -223,35 +262,11 @@ async def analyze(
 )
 async def list_analyses(
     request: Request,
+    history_filter: HistoryFilterQuery,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
-    query: str | None = None,
-    ai_enriched: bool | None = None,
-    min_score: Annotated[float | None, Query(ge=0, le=100)] = None,
-    max_score: Annotated[float | None, Query(ge=0, le=100)] = None,
-    application_status: ApplicationStatus | None = None,
-    has_follow_up: bool | None = None,
-    follow_up_from: HistoryDate | None = None,
-    follow_up_to: HistoryDate | None = None,
-    sort: AnalysisHistorySort = AnalysisHistorySort.CREATED_DESC,
 ) -> AnalysisHistoryResponseSchema:
     """List recent saved analyses."""
-    try:
-        history_filter = AnalysisHistoryFilter(
-            query=query,
-            ai_enriched=ai_enriched,
-            min_score=min_score,
-            max_score=max_score,
-            application_status=application_status,
-            has_follow_up=has_follow_up,
-            follow_up_from=follow_up_from,
-            follow_up_to=follow_up_to,
-            sort=sort,
-        )
-    except ValueError as exc:
-        raise RequestValidationError(
-            [{"loc": ("query",), "msg": str(exc), "type": "value_error"}]
-        ) from exc
 
     repository = getattr(request.app.state, "analysis_repository", None)
     if repository is None:
@@ -277,6 +292,58 @@ async def list_analyses(
             )
             for s in summaries
         ]
+    )
+
+
+@router.get(
+    "/analyses/export.csv",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Complete pipeline CSV, at most 10,000 data rows.",
+            "content": {"text/csv": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        413: {
+            "model": ErrorResponseSchema,
+            "description": "Export row limit exceeded.",
+        },
+        422: {"model": ErrorResponseSchema, "description": "Invalid history filters."},
+        503: {"model": ErrorResponseSchema, "description": "Persistence unavailable."},
+    },
+)
+async def export_application_pipeline_csv(
+    request: Request,
+    history_filter: HistoryFilterQuery,
+) -> Response:
+    repository: AnalysisRepository | None = getattr(
+        request.app.state, "analysis_repository", None
+    )
+    try:
+        if repository is None:
+            raise PersistenceUnavailableError()
+        content = ApplicationPipelineCsvService(repository).export(history_filter)
+    except ExportLimitExceededError:
+        error = create_error_response(
+            413,
+            "export_limit_exceeded",
+            "Too many records to export at once. Apply narrower filters and try again.",
+        )
+        error.headers["Cache-Control"] = "no-store"
+        return error
+    except (PersistenceUnavailableError, PipelineCsvUnavailableError) as exc:
+        error = await persistence_unavailable_handler(request, exc)
+        error.headers["Cache-Control"] = "no-store"
+        return error
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="pathfinder-application-pipeline.csv"'
+            ),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
     )
 
 
