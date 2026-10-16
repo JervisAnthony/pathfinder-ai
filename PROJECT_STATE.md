@@ -7,13 +7,13 @@ Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #31 merge):
+Latest verified completed main (PR #32 merge):
 
-`1f25a2830a2b06ce893979843d8c84d09117b6c2`
+`b93d7cdee49a939a795eb17e2b79559d7321a018`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 27 — Application Pipeline Dashboard**
+**Commit 28 — Application Pipeline CSV Export**
 
 ## Completed MVP-1 Roadmap
 
@@ -51,31 +51,42 @@ These milestones must not be replayed or rebuilt.
 - Commit 25 — Application Follow-Up Date — complete (PR #29 merged on 2026-10-03)
 - Commit 26 — Follow-Up History Worklist — complete (PR #30 merged)
 - Commit 27 — Application Pipeline Dashboard — complete (PR #31 merged)
+- Commit 28 — Application Pipeline CSV Export — complete (PR #32 merged)
 
 ## Post-MVP Active Work
 
-**Commit 28 — Application Pipeline CSV Export**
+**Commit 29 — Application Pipeline Kanban Board**
 
 Status: **Authorized active development; local implementation prepared for human review**
 
-History offers explicit all-record and applied-filter CSV downloads spanning all
-matching pages. The read-only export API shares History validation and SQLite
-query construction, retrieves at most 10,001 lightweight summaries in one SELECT,
-and rejects more than 10,000 records with a safe HTTP 413 instead of truncating.
-The fixed metadata-only schema uses UTF-8 BOM, CRLF CSV quoting, canonical UTC
-and calendar-date formats, and formula-prefix protection for untrusted text.
-Downloads use fixed filenames, independent progress/errors, duplicate guards,
-and temporary Blob/anchor cleanup without browser storage or late unmount actions.
-Snapshots, metadata timestamps, dashboard behavior, individual JSON/Markdown
-exports, schemas, and payload version 2 remain unchanged. No AI, scoring,
-notes/candidate bulk export, CSV import, cloud transfer, scheduled reporting,
-external spreadsheet integration, or new dependency is introduced.
+History defaults to List and offers a Board view containing all seven recorded
+application-status lanes independently of History filters. Each lane reuses the
+History API with limit 11 to display ten cards, independent offset pagination,
+Load more, loading, empty, error, and Retry states. Cards show persisted summary
+metadata and open existing Saved Analysis Detail. View switching preserves List
+filters, drafts, page, comparison selection, Overview, and CSV state. Returning
+from Detail reloads board metadata, including status, follow-up, and deletion.
 
-The maintainer authorized reconciliation of Commit 27 following the verified
-merge of PR #31 at `1f25a2830a2b06ce893979843d8c84d09117b6c2`.
+Status changes require selecting a target, Review change, and explicit
+confirmation. Existing tracking GET verifies the displayed status immediately
+before tracking PUT; stale status blocks overwriting and requires a new action.
+This is best-effort verification, not atomic compare-and-swap. Immediate guards
+permit only one board mutation. Success refreshes initial lane pages, Overview,
+and the current History page. Failed updates preserve cards and permit retry or
+cancel. Request generations prevent stale loads after refresh or unmount.
+Offset pagination can require manual refresh after changes in other sessions.
+
+The responsive board uses keyboard-accessible native controls, semantic headings,
+focus management, status messages, and error alerts. Existing status activity,
+notes, follow-ups, exports, snapshots, matching, schemas, and APIs are reused.
+No backend source, new dependency, drag-and-drop, bulk operation, automatic
+transition, AI behavior, external integration, or browser persistence is added.
+
+The maintainer authorized reconciliation of Commit 28 following the verified
+merge of PR #32 at `b93d7cdee49a939a795eb17e2b79559d7321a018`.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 28 PR number is assigned.
+pull request, review, and merge. No Commit 29 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -111,6 +122,8 @@ The repository already contains:
 - one optional user-managed follow-up calendar date per saved analysis
 - persisted follow-up presence/date filters and stable earliest-follow-up History ordering
 - read-only pipeline dashboard with seven status counts and five earliest follow-ups
+- bounded, metadata-only all-record and applied-filter application pipeline CSV export
+- application pipeline Board view with seven independently paginated lanes and confirmed status changes (authorized local implementation)
 
 ## Architectural Boundary
 

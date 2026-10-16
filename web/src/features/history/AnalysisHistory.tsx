@@ -14,6 +14,7 @@ import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationPipelineOverview } from './ApplicationPipelineOverview';
+import { ApplicationPipelineBoard } from './ApplicationPipelineBoard';
 import './History.css';
 
 const PAGE_SIZE = 20;
@@ -53,6 +54,8 @@ export function AnalysisHistory() {
   }, []);
 
   const [overviewRefreshKey, setOverviewRefreshKey] = useState(0);
+  const [boardRefreshKey, setBoardRefreshKey] = useState(0);
+  const [view, setView] = useState<'list' | 'board'>('list');
   const [items, setItems] = useState<SavedAnalysisSummary[]>([]);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -262,7 +265,7 @@ export function AnalysisHistory() {
           <p className="eyebrow">Local snapshots</p>
           <h2 id="history-title">Analysis History</h2>
         </div>
-        <button type="button" className="secondary-btn" onClick={() => { void loadHistory(); setOverviewRefreshKey((current) => current + 1); }} disabled={loading}>
+        <button type="button" className="secondary-btn" onClick={() => { void loadHistory(); setOverviewRefreshKey((current) => current + 1); setBoardRefreshKey((current) => current + 1); }} disabled={loading && view === 'list'}>
           Refresh
         </button>
       </div>
@@ -288,6 +291,16 @@ export function AnalysisHistory() {
 
       <ApplicationPipelineOverview refreshKey={overviewRefreshKey} onOpen={(id) => void openDetail(id)} opening={detailLoading} />
 
+      <div className="history-view-selector" role="group" aria-label="History view">
+        <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List view</button>
+        <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>Board view</button>
+      </div>
+      {detailLoading && <p role="status">Loading saved analysis…</p>}
+      {detailError && <div className="history-message error-message" role="alert">{detailError}</div>}
+      {view === 'board' && <ApplicationPipelineBoard refreshKey={boardRefreshKey} opening={detailLoading}
+        onOpen={(id) => void openDetail(id)} onStatusChanged={() => { void loadHistory(); setOverviewRefreshKey((current) => current + 1); }} />}
+
+      <div hidden={view !== 'list'}>
       {selection && <div className="comparison-selection"><p role="status">Selected for comparison: {selection.title}</p><button type="button" onClick={clearComparison}>Clear comparison selection</button></div>}
       <form className="history-filters" onSubmit={applyFilters}>
         <label>Search job title or company
@@ -339,8 +352,6 @@ export function AnalysisHistory() {
 
       {loading && <p role="status">Loading saved analyses…</p>}
       {!loading && error && <div className="history-message error-message" role="alert">{error}</div>}
-      {detailLoading && <p role="status">Loading saved analysis…</p>}
-      {detailError && <div className="history-message error-message" role="alert">{detailError}</div>}
 
       {!loading && !error && items.length === 0 && (
         <div className="history-message">
@@ -378,6 +389,7 @@ export function AnalysisHistory() {
           <button type="button" onClick={() => setOffset(offset + PAGE_SIZE)} disabled={items.length < PAGE_SIZE}>Next</button>
         </nav>
       )}
+      </div>
     </section>
   );
 }
