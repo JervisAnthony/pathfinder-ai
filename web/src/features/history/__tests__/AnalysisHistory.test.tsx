@@ -136,6 +136,157 @@ const detail: SavedAnalysisDetail = {
   ai_enrichment: { provider_name: 'OpenAI', content: 'Historical insight' },
 };
 
+describe('History board integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({
+      items: !filters?.application_status || filters.application_status === 'not_applied' ? [summary] : [],
+    }));
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+  });
+
+  it('defaults to List and preserves applied filters, drafts, page, and comparison selection across view changes', async () => {
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({
+      items: limit === 20 ? Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
+        filters?.application_status === 'not_applied' ? [summary] : [],
+    }));
+    render(<AnalysisHistory />);
+    await screen.findByText('List role 0');
+    expect(screen.getByRole('button', { name: 'List view' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('heading', { name: 'Application Pipeline Board' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /List role 0/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Select for comparison' }));
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'applied search' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'applied search' }));
+    await screen.findByText('List role 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { query: 'applied search' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unapplied draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    await board.findByText('Platform Engineer');
+    const boardCalls = vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 11);
+    expect(boardCalls).toHaveLength(7);
+    expect(boardCalls.every(([, offset, filters]) => offset === 0 && Object.keys(filters ?? {}).join() === 'application_status')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByText('Selected for comparison: Platform Engineer')).toBeInTheDocument();
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20)).toHaveLength(3);
+  });
+
+  it('refreshes Board and Overview independently of a pending List request and keeps exports available', async () => {
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit) => limit === 20 ? new Promise(() => {}) : { items: [] });
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    await screen.findByText('No saved analyses in Applied.');
+    const calls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Refresh board' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Download all CSV' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 11)).toHaveLength(14));
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(calls + 1);
+  });
+
+  it('preserves loaded Overview data and in-flight CSV state across view switches', async () => {
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValue({
+      total_analyses: 1, status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'not_applied' ? 1 : 0 })),
+      scheduled_follow_up_count: 0, unscheduled_follow_up_count: 1, earliest_follow_ups: [],
+    });
+    let resolve!: (blob: Blob) => void;
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const { unmount } = render(<AnalysisHistory />);
+    await screen.findByRole('heading', { name: 'Application totals' });
+    fireEvent.click(screen.getByRole('button', { name: 'Download all CSV' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    await screen.findByRole('button', { name: 'Open details' });
+    expect(screen.getByText('Preparing all records CSV...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download all CSV' })).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Application totals' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(screen.getByRole('button', { name: 'Download all CSV' })).toBeDisabled();
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(1);
+    expect(downloadApplicationPipelineCsv).toHaveBeenCalledExactlyOnceWith({});
+    unmount();
+    await act(async () => resolve(new Blob(['CSV'])));
+  });
+
+  it('shows safe detail navigation errors without discarding Board view', async () => {
+    vi.mocked(getSavedAnalysis).mockRejectedValueOnce(new ApiError('private', 404, 'analysis_not_found'));
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open details' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This saved analysis could not be found.');
+    expect(screen.getByRole('heading', { name: 'Application Pipeline Board' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open details' })).toBeEnabled();
+  });
+
+  it('refreshes List and Overview after a confirmed board status update without resetting drafts or page', async () => {
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({ items: limit === 20 ?
+      Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
+      filters?.application_status === 'not_applied' ? [summary] : [],
+    }));
+    vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'applied', updated_at: null });
+    render(<AnalysisHistory />);
+    await screen.findByText('List role 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await screen.findByText('Page 2');
+    await screen.findByText('List role 0');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'preserve draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    await screen.findByRole('combobox', { name: 'New status for Platform Engineer' });
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    fireEvent.change(screen.getByRole('combobox', { name: 'New status for Platform Engineer' }), { target: { value: 'applied' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Review change' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    await screen.findByText('Application status changed to Applied.');
+    await waitFor(() => expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1));
+    expect(getAnalysisHistory).toHaveBeenCalledWith(20, 20);
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20)).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('preserve draft');
+  });
+
+  it.each(['status', 'follow-up', 'deletion'] as const)('opens existing Detail from Board and reloads persisted %s on return', async (action) => {
+    render(<AnalysisHistory />);
+    await screen.findByText('Platform Engineer');
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Open details' }));
+    expect(await screen.findByRole('heading', { name: 'Candidate Profile' })).toBeInTheDocument();
+    expect(getSavedAnalysis).toHaveBeenCalledWith(summary.analysis_id);
+    if (action === 'status') {
+      vi.mocked(updateAnalysisTracking).mockResolvedValue({ analysis_id: summary.analysis_id, application_status: 'offer', updated_at: null });
+      fireEvent.change(await screen.findByLabelText('Choose application status'), { target: { value: 'offer' } });
+      vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({ items: filters?.application_status === 'offer' ? [{ ...summary, application_status: 'offer' }] : [] }));
+      fireEvent.click(screen.getByRole('button', { name: 'Update status' }));
+      await screen.findByText('Application status updated.');
+    } else if (action === 'follow-up') {
+      vi.mocked(updateAnalysisFollowUp).mockResolvedValue({ analysis_id: summary.analysis_id, follow_up_on: '2026-10-20', updated_at: null });
+      fireEvent.change(await screen.findByLabelText('Follow-up date'), { target: { value: '2026-10-20' } });
+      vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({ items: filters?.application_status === 'not_applied' ? [{ ...summary, follow_up_on: '2026-10-20' }] : [] }));
+      fireEvent.click(screen.getByRole('button', { name: 'Save follow-up' }));
+      await screen.findByText('Follow-up date saved.');
+    } else {
+      vi.mocked(deleteSavedAnalysis).mockResolvedValue(undefined);
+      vi.mocked(getAnalysisHistory).mockResolvedValue({ items: [] });
+      fireEvent.click(screen.getByRole('button', { name: 'Delete saved analysis' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    }
+    if (action !== 'deletion') fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    expect(screen.getByRole('button', { name: 'Board view' })).toHaveAttribute('aria-pressed', 'true');
+    if (action === 'status') expect(await within(board.getByRole('region', { name: 'Offer' })).findByText('Platform Engineer')).toBeInTheDocument();
+    if (action === 'follow-up') expect(await board.findByText(`Follow up: ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
+    if (action === 'deletion') expect(await board.findAllByText(/No saved analyses in/)).toHaveLength(7);
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+});
+
 describe('AnalysisHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();

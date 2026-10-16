@@ -298,6 +298,58 @@ No schema migration, version-2 persistence change, or additional dependency is
 required. Existing deterministic analysis, AI behavior, history search/filter
 semantics, and individual deletion remain unchanged.
 
+### Application pipeline Kanban board
+
+Analysis History defaults to **List view**. Choose **Board view** for the
+**Application Pipeline Board**, with seven lanes in order: **Not applied**,
+**Applied**, **Interviewing**, **Offer**, **Accepted**, **Rejected**, and
+**Withdrawn**. Empty lanes stay visible. Each saved snapshot is a separate card;
+snapshots of the same role are not deduplicated. Missing tracking metadata means
+Not applied. Cards show stored job/company information, deterministic match score
+or Not scored, saved time, and any scheduled follow-up calendar date.
+
+The board always represents all saved records, independently of List filters.
+Switching views preserves applied filters, unapplied drafts, List pagination,
+comparison selection, Overview data, and CSV export state. Pipeline Overview and
+CSV controls remain above either view. **Open details** uses existing Saved
+Analysis Detail, including notes, follow-ups, activity, comparison, exports, and
+deletion. Returning restores Board view and reloads persisted metadata.
+
+Each lane independently requests `GET /api/v1/analyses` through
+`getAnalysisHistory(11, offset, { application_status })`, displays up to ten cards,
+and uses the eleventh only to detect another page. **Load more** advances the
+offset by ten and appends in existing `created_at DESC, analysis_id DESC` order,
+excluding duplicate IDs. This uses existing offset pagination, not snapshot-stable
+cursors: concurrent changes in other sessions may require **Refresh board**.
+Loading, empty, error, Retry, and Load more states are independent per lane.
+Refresh resets lane pages; older requests cannot overwrite newer results.
+
+To move one card, choose a new status, select **Review change**, then explicitly
+**Confirm status change** or **Cancel**. The confirmation identifies the snapshot
+and both statuses. Selecting a value, cancelling, or retaining the current status
+never changes persistence. Immediately before the existing tracking PUT, the
+board uses `getAnalysisTracking()` to verify the displayed status. A changed
+server status blocks the update, explains the conflict, and reloads the board for
+a new intentional action. This is a best-effort check, not atomic compare-and-swap.
+`updateAnalysisTracking()` reuses existing status activity recording and preserves
+notes, follow-ups, scores, and immutable snapshots. Only one board mutation may
+run at once. Failures retain cards and allow retry or cancellation; success is
+shown only after the server responds.
+
+A successful move reloads every lane from its first page and refreshes History
+and Overview while preserving List drafts, applied filters, and page. **Refresh
+board** works independently of List loading; History **Refresh** also updates
+Overview and the active board. There is no timer polling. Desktop lanes scroll
+horizontally when needed; mobile lanes stack. Semantic headings, labeled native
+selects, keyboard controls, visible focus indicators, focused confirmations,
+status messages, and error alerts support accessible use without relying on color.
+
+There is no drag-and-drop, bulk update, automatic status transition, AI invocation,
+browser storage, cookie write, third-party request, new endpoint, schema change,
+or dependency. All operations use existing Pathfinder APIs. Sensitive saved data
+remains subject to the existing persistence/privacy boundaries; deterministic
+scoring and AI enrichment remain independent of application management.
+
 ### Application pipeline CSV export
 
 History provides two explicit spreadsheet downloads. **Download all CSV** includes
