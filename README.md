@@ -336,6 +336,33 @@ notes, follow-ups, scores, and immutable snapshots. Only one board mutation may
 run at once. Failures retain cards and allow retry or cancellation; success is
 shown only after the server responds.
 
+Desktop users can also drag the **Drag to change status** handle to another lane.
+The handle alone is draggable, leaving card text, selects, and Open details
+available for their normal interactions. The source card gains an outline and a
+Dragging this card label; destination lanes show **Drop to review status change**
+and highlight on hover. A valid cross-lane drop opens the same confirmation as
+the selector. Dropping never reads tracking or writes status on its own, and the
+card stays in its original lane until confirmed persistence succeeds. Same-lane
+drops do nothing and do not reorder cards. External files/text, unknown markers,
+and canceled or refreshed drag sessions are ignored.
+
+Drag metadata stays in component memory; native DataTransfer contains only an
+opaque marker under a custom MIME type, never record IDs, titles, company names,
+notes, or analysis payloads. Drag end, Escape where delivered by the browser,
+refresh, detail loading, and unmount invalidate the session and clear feedback.
+Cancel restores focus to the initiating handle when available, falling back to
+Refresh board if the original card disappeared. Errors retain cards and allow
+retry or cancellation through the existing confirmation. The tracking GET/PUT,
+stale-status check, duplicate guard, activity history, and success refresh remain
+shared with the selector; concurrency verification remains best-effort.
+
+Dragging is a desktop enhancement, with no custom touch gestures or keyboard
+dragging. Keyboard and touch users can choose a new status on the card and select
+Review change, then confirm or cancel. Activating a drag handle by click or
+keyboard focuses that card's native status selector. Visible instructions explain
+the alternative; native touch drag support is not claimed. No drag library or
+new dependency is introduced.
+
 A successful move reloads every lane from its first page and refreshes History
 and Overview while preserving List drafts, applied filters, and page. **Refresh
 board** works independently of List loading; History **Refresh** also updates
@@ -344,7 +371,7 @@ horizontally when needed; mobile lanes stack. Semantic headings, labeled native
 selects, keyboard controls, visible focus indicators, focused confirmations,
 status messages, and error alerts support accessible use without relying on color.
 
-There is no drag-and-drop, bulk update, automatic status transition, AI invocation,
+There is no bulk update, automatic status transition, AI invocation,
 browser storage, cookie write, third-party request, new endpoint, schema change,
 or dependency. All operations use existing Pathfinder APIs. Sensitive saved data
 remains subject to the existing persistence/privacy boundaries; deterministic

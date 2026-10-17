@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-16
+Last updated: 2026-10-17
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #32 merge):
+Latest verified completed main (PR #33 merge):
 
-`b93d7cdee49a939a795eb17e2b79559d7321a018`
+`0b97a0a88e494be1f597fae3964596925fb8a0e5`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 28 — Application Pipeline CSV Export**
+**Commit 29 — Application Pipeline Kanban Board**
 
 ## Completed MVP-1 Roadmap
 
@@ -52,41 +52,43 @@ These milestones must not be replayed or rebuilt.
 - Commit 26 — Follow-Up History Worklist — complete (PR #30 merged)
 - Commit 27 — Application Pipeline Dashboard — complete (PR #31 merged)
 - Commit 28 — Application Pipeline CSV Export — complete (PR #32 merged)
+- Commit 29 — Application Pipeline Kanban Board — complete (PR #33 merged)
 
 ## Post-MVP Active Work
 
-**Commit 29 — Application Pipeline Kanban Board**
+**Commit 30 — Kanban Drag-and-Drop Status Changes**
 
 Status: **Authorized active development; local implementation prepared for human review**
 
-History defaults to List and offers a Board view containing all seven recorded
-application-status lanes independently of History filters. Each lane reuses the
-History API with limit 11 to display ten cards, independent offset pagination,
-Load more, loading, empty, error, and Retry states. Cards show persisted summary
-metadata and open existing Saved Analysis Detail. View switching preserves List
-filters, drafts, page, comparison selection, Overview, and CSV state. Returning
-from Detail reloads board metadata, including status, follow-up, and deletion.
+The existing seven-lane Kanban board gains native desktop drag handles. Valid
+cross-lane drops and selector Review change converge on one confirmation gate;
+drop itself never reads tracking or changes persistence. Same-lane, external,
+unknown, canceled, and stale-session drops are no-ops. Source and destination
+feedback includes textual instructions, while cards remain in their original
+lanes until confirmed persistence succeeds. Only an opaque custom MIME marker
+enters DataTransfer; all source metadata stays in component memory.
 
-Status changes require selecting a target, Review change, and explicit
-confirmation. Existing tracking GET verifies the displayed status immediately
-before tracking PUT; stale status blocks overwriting and requires a new action.
-This is best-effort verification, not atomic compare-and-swap. Immediate guards
-permit only one board mutation. Success refreshes initial lane pages, Overview,
-and the current History page. Failed updates preserve cards and permit retry or
-cancel. Request generations prevent stale loads after refresh or unmount.
-Offset pagination can require manual refresh after changes in other sessions.
+The existing tracking GET precheck, PUT, duplicate guard, safe errors, activity
+history, and post-mutation refresh are reused. Stale server statuses block
+overwriting and require a new intentional action. Verification remains
+best-effort, not atomic compare-and-swap. Refresh, detail loading, drag end,
+Escape where supported, and unmount invalidate drag sessions. Cancellation
+restores focus to the originating handle or a stable board control. Success
+focuses Refresh board and reloads initial lane pages, History, and Overview.
 
-The responsive board uses keyboard-accessible native controls, semantic headings,
-focus management, status messages, and error alerts. Existing status activity,
-notes, follow-ups, exports, snapshots, matching, schemas, and APIs are reused.
-No backend source, new dependency, drag-and-drop, bulk operation, automatic
-transition, AI behavior, external integration, or browser persistence is added.
+Keyboard and touch users retain native status selection and Review change.
+Activating a drag handle focuses that selector. Existing responsive layout,
+bounded offset pagination, filters, drafts, History page, comparison, CSV exports,
+Detail navigation, notes, follow-ups, deletion, and deterministic matching remain
+unchanged. No custom touch gestures, ordering, bulk operation, automatic status
+transition, backend source/schema/API change, dependency, AI behavior, telemetry,
+external integration, or browser persistence is introduced.
 
-The maintainer authorized reconciliation of Commit 28 following the verified
-merge of PR #32 at `b93d7cdee49a939a795eb17e2b79559d7321a018`.
+The maintainer authorized reconciliation of Commit 29 following the verified
+merge of PR #33 at `0b97a0a88e494be1f597fae3964596925fb8a0e5`.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 29 PR number is assigned.
+pull request, review, and merge. No Commit 30 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -123,7 +125,8 @@ The repository already contains:
 - persisted follow-up presence/date filters and stable earliest-follow-up History ordering
 - read-only pipeline dashboard with seven status counts and five earliest follow-ups
 - bounded, metadata-only all-record and applied-filter application pipeline CSV export
-- application pipeline Board view with seven independently paginated lanes and confirmed status changes (authorized local implementation)
+- application pipeline Board view with seven independently paginated lanes and confirmed status changes
+- native desktop Kanban drag handles feeding the existing confirmation workflow (authorized local implementation)
 
 ## Architectural Boundary
 

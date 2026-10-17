@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking } from '../../../api/pathfinder';
 import type { AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
@@ -30,6 +30,35 @@ const lane = (name = 'Not applied') => within(screen.getByRole('region', { name 
 const history = vi.mocked(getAnalysisHistory);
 const tracking = vi.mocked(getAnalysisTracking);
 const update = vi.mocked(updateAnalysisTracking);
+
+function dragData(initial: Record<string, string> = {}) {
+  let values = { ...initial };
+  return {
+    get types() { return Object.keys(values); },
+    clearData: vi.fn(() => { values = {}; }),
+    setData: vi.fn((type: string, value: string) => { values[type] = value; }),
+    getData: vi.fn((type: string) => values[type] ?? ''),
+    effectAllowed: 'uninitialized', dropEffect: 'none',
+  };
+}
+
+async function startDrag(id = 'record') {
+  const handle = await screen.findByRole('button', { name: `Drag to change status for Fictional Engineer ${id}` });
+  const dataTransfer = dragData();
+  fireEvent.dragStart(handle, { dataTransfer });
+  return { handle, dataTransfer };
+}
+
+function dropIn(label: string, dataTransfer: ReturnType<typeof dragData>) {
+  fireEvent.drop(screen.getByRole('region', { name: label }), { dataTransfer });
+}
+
+function leaveLane(target: HTMLElement, relatedTarget: HTMLElement, dataTransfer: ReturnType<typeof dragData>) {
+  // jsdom lacks DragEvent; EventInit otherwise silently drops relatedTarget.
+  const event = createEvent.dragLeave(target, { dataTransfer });
+  Object.defineProperty(event, 'relatedTarget', { value: relatedTarget });
+  fireEvent(target, event);
+}
 
 function supply(items: SavedAnalysisSummary[]) {
   history.mockImplementation(async (limit, offset, filters) => ({
@@ -379,5 +408,302 @@ describe('ApplicationPipelineBoard', () => {
     expect(tracking).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
     local.mockRestore(); cookie.mockRestore(); fetch.mockRestore();
+  });
+});
+
+describe('native board dragging', () => {
+  it('exposes only a dedicated draggable handle with instructions and a meaningful keyboard action', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const handle = await screen.findByRole('button', { name: 'Drag to change status for Fictional Engineer record' });
+    expect(handle).toHaveAttribute('draggable', 'true');
+    expect(handle).toHaveAccessibleDescription(/On keyboard or touch devices, choose a new status/);
+    expect(handle.closest('li')).not.toHaveAttribute('draggable');
+    expect(screen.getByRole('button', { name: 'Open details' })).not.toHaveAttribute('draggable');
+    expect(screen.getByRole('combobox')).not.toHaveAttribute('draggable');
+    fireEvent.click(handle);
+    expect(screen.getByRole('combobox')).toHaveFocus();
+    expect(handle.querySelector('button, select, input, a')).toBeNull();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    await review();
+    expect(screen.getByRole('region', { name: 'Confirm application status change' })).toHaveFocus();
+  });
+
+  it.each(applicationStatuses)('drops from a different lane into $label using the shared confirmation', async ({ value, label }) => {
+    const source = value === 'not_applied' ? 'applied' : 'not_applied';
+    supply([record('record', source)]);
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer, handle } = await startDrag();
+    const sourceLabel = applicationStatuses.find(({ value }) => value === source)!.label;
+    expect(handle.closest('li')).toHaveClass('pipeline-card-dragging');
+    expect(screen.getByText('Dragging this card')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: sourceLabel })).not.toHaveClass('pipeline-lane-drop-target');
+    const destination = screen.getByRole('region', { name: label });
+    expect(destination).toHaveClass('pipeline-lane-drop-target');
+    fireEvent.dragEnter(destination, { dataTransfer });
+    fireEvent.dragOver(destination, { dataTransfer });
+    expect(destination).toHaveClass('pipeline-lane-drag-over');
+    expect(within(destination).getByText('Drop to review status change')).toBeInTheDocument();
+    expect(dataTransfer.dropEffect).toBe('move');
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    dropIn(label, dataTransfer);
+    const confirmation = screen.getByRole('region', { name: 'Confirm application status change' });
+    expect(confirmation).toHaveTextContent(`from ${sourceLabel} to ${label}?`);
+    expect(confirmation).toHaveTextContent('ID: record');
+    expect(confirmation).toHaveFocus();
+    expect(screen.queryByText('Dragging this card')).not.toBeInTheDocument();
+    expect(document.querySelector('.pipeline-lane-drag-over, .pipeline-lane-drop-target, .pipeline-card-dragging')).toBeNull();
+    expect(lane(sourceLabel).getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(lane(label).queryByText('Fictional Engineer record')).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(history).toHaveBeenCalledTimes(7);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(handle).toHaveFocus();
+  });
+
+  it('uses only an opaque custom marker in DataTransfer and does not transfer record data', async () => {
+    supply([{ ...record(), company_name: 'Private fictional company', score: 73, follow_up_on: '2026-10-20' }]);
+    const storage = vi.spyOn(Storage.prototype, 'setItem');
+    const cookie = vi.spyOn(Document.prototype, 'cookie', 'set');
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    expect(dataTransfer.types).toEqual(['application/x-pathfinder-status-drag']);
+    expect(dataTransfer.setData).toHaveBeenCalledTimes(1);
+    const marker = dataTransfer.getData(dataTransfer.types[0]);
+    expect(marker).toMatch(/^[0-9a-f]{32}$/);
+    expect(marker).not.toContain('record');
+    expect(dataTransfer.effectAllowed).toBe('move');
+    expect(storage).not.toHaveBeenCalled(); expect(cookie).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled(); expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    storage.mockRestore(); cookie.mockRestore();
+  });
+
+  it('treats source-lane drops as no-ops without requests or refreshing', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    fireEvent.dragOver(screen.getByRole('region', { name: 'Not applied' }), { dataTransfer });
+    expect(dataTransfer.dropEffect).toBe('none');
+    dropIn('Not applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Dragging this card')).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(history).toHaveBeenCalledTimes(7);
+  });
+
+  it.each<Record<string, string>>([
+    { 'text/plain': 'record' },
+    { Files: 'record.pdf' },
+    { 'application/x-other-app': 'record' },
+    { 'application/x-pathfinder-status-drag': 'unknown' },
+  ])('ignores external and unknown data without an internal session: %j', async (payload) => {
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer record');
+    const dataTransfer = dragData(payload);
+    fireEvent.dragEnter(screen.getByRole('region', { name: 'Applied' }), { dataTransfer });
+    fireEvent.dragOver(screen.getByRole('region', { name: 'Applied' }), { dataTransfer });
+    dropIn('Applied', dataTransfer);
+    expect(document.querySelector('.pipeline-lane-drag-over')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a forged marker even during an internal drag', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    await startDrag();
+    dropIn('Applied', dragData({ 'application/x-pathfinder-status-drag': 'record' }));
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Dragging this card')).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('does not trust data that claims a different record, source, or unknown target status', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    // Destination status comes only from the established lane, never payload data.
+    dataTransfer.setData('text/plain', JSON.stringify({ analysis_id: 'other', from: 'offer', to: 'unknown' }));
+    dropIn('Applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it.each(['end', 'escape'] as const)('clears highlights and invalidates drops after drag %s', async (reason) => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer, handle } = await startDrag();
+    fireEvent.dragOver(screen.getByRole('region', { name: 'Applied' }), { dataTransfer });
+    if (reason === 'end') fireEvent.dragEnd(handle, { dataTransfer });
+    else fireEvent.keyDown(handle, { key: 'Escape' });
+    expect(document.querySelector('.pipeline-card-dragging, .pipeline-lane-drop-target, .pipeline-lane-drag-over')).toBeNull();
+    dropIn('Applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('handles repeated nested drag enter/leave events without stuck hover styling', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    const destination = screen.getByRole('region', { name: 'Applied' });
+    const heading = within(destination).getByRole('heading');
+    fireEvent.dragEnter(destination, { dataTransfer });
+    fireEvent.dragEnter(heading, { dataTransfer });
+    leaveLane(destination, heading, dataTransfer);
+    expect(destination).toHaveClass('pipeline-lane-drag-over');
+    leaveLane(heading, destination, dataTransfer);
+    expect(destination).toHaveClass('pipeline-lane-drag-over');
+    leaveLane(destination, document.body, dataTransfer);
+    expect(destination).not.toHaveClass('pipeline-lane-drag-over');
+    fireEvent.dragOver(destination, { dataTransfer });
+    expect(destination).toHaveClass('pipeline-lane-drag-over');
+    dropIn('Applied', dataTransfer);
+    expect(destination).not.toHaveClass('pipeline-lane-drag-over');
+  });
+
+  it.each(['button', 'external'] as const)('invalidates dragging on %s refresh', async (method) => {
+    const { rerender } = render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    if (method === 'button') fireEvent.click(screen.getByRole('button', { name: 'Refresh board' }));
+    else rerender(<ApplicationPipelineBoard {...props} refreshKey={1} />);
+    await screen.findByText('Fictional Engineer record');
+    expect(document.querySelector('.pipeline-card-dragging, .pipeline-lane-drop-target')).toBeNull();
+    dropIn('Applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('discards an internal drag during detail loading and rejects it when navigation finishes', async () => {
+    const { rerender } = render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    rerender(<ApplicationPipelineBoard {...props} opening />);
+    expect(screen.getByRole('button', { name: /Drag to change status for/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Drag to change status for/ })).toHaveAttribute('draggable', 'false');
+    dropIn('Applied', dataTransfer);
+    rerender(<ApplicationPipelineBoard {...props} opening={false} />);
+    dropIn('Applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('discards sessions on unmount and ignores old payloads in a newly mounted board', async () => {
+    const { unmount } = render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer, handle } = await startDrag();
+    const destination = screen.getByRole('region', { name: 'Applied' });
+    unmount();
+    fireEvent.drop(destination, { dataTransfer });
+    fireEvent.dragEnd(handle, { dataTransfer });
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer record');
+    dropIn('Applied', dataTransfer);
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('cancels to the initiating handle and permits a new deliberate drag without duplicate confirmations', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const first = await startDrag();
+    dropIn('Applied', first.dataTransfer);
+    dropIn('Offer', first.dataTransfer);
+    expect(screen.getAllByRole('region', { name: 'Confirm application status change' })).toHaveLength(1);
+    expect(screen.getByRole('region', { name: 'Confirm application status change' })).toHaveTextContent('to Applied?');
+    expect(first.handle).toBeDisabled();
+    const rejected = dragData();
+    fireEvent.dragStart(first.handle, { dataTransfer: rejected });
+    expect(rejected.setData).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(first.handle).toHaveFocus();
+    const second = await startDrag();
+    dropIn('Offer', second.dataTransfer);
+    expect(screen.getByRole('region', { name: 'Confirm application status change' })).toHaveTextContent('to Offer?');
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('reuses precheck, duplicate guards, success refresh, lane membership, and stable focus after confirmation', async () => {
+    const precheck = deferred<AnalysisTracking>();
+    const put = deferred<AnalysisTracking>();
+    tracking.mockReturnValueOnce(precheck.promise); update.mockReturnValueOnce(put.promise);
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer, handle } = await startDrag();
+    dropIn('Applied', dataTransfer);
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    const confirm = screen.getByRole('button', { name: 'Confirm status change' });
+    act(() => { confirm.click(); confirm.click(); });
+    expect(tracking).toHaveBeenCalledExactlyOnceWith('record');
+    expect(update).not.toHaveBeenCalled();
+    expect(handle).toBeDisabled(); expect(handle).toHaveAttribute('draggable', 'false');
+    fireEvent.dragStart(handle, { dataTransfer });
+    dropIn('Offer', dataTransfer);
+    expect(screen.getByRole('region', { name: 'Confirm application status change' })).toHaveTextContent('to Applied?');
+    await act(async () => precheck.resolve({ analysis_id: 'record', application_status: 'not_applied', updated_at: null }));
+    expect(update).toHaveBeenCalledExactlyOnceWith('record', 'applied');
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(screen.queryByText(/Application status changed to/)).not.toBeInTheDocument();
+    supply([record('record', 'applied')]);
+    await act(async () => put.resolve({ analysis_id: 'record', application_status: 'applied', updated_at: null }));
+    expect(screen.getByRole('status')).toHaveTextContent('Application status changed to Applied.');
+    expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(lane().queryByText('Fictional Engineer record')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh board' })).toHaveFocus();
+    expect(history).toHaveBeenCalledTimes(14); expect(onStatusChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks stale dragged source statuses, reloads, and requires a new action', async () => {
+    tracking.mockResolvedValue({ analysis_id: 'record', application_status: 'offer', updated_at: null });
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    dropIn('Applied', dataTransfer);
+    supply([record('record', 'offer')]);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('status changed elsewhere');
+    expect(update).not.toHaveBeenCalled(); expect(onStatusChanged).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Refresh board' })).toHaveFocus();
+    expect(screen.queryByRole('region', { name: 'Confirm application status change' })).not.toBeInTheDocument();
+    await waitFor(() => expect(lane('Offer').getByText('Fictional Engineer record')).toBeInTheDocument());
+  });
+
+  it.each(['precheck', 'put'] as const)('preserves original cards on failed %s and permits retry without optimistic success', async (phase) => {
+    if (phase === 'precheck') tracking.mockRejectedValueOnce(new Error('private'));
+    else update.mockRejectedValueOnce(new Error('private'));
+    render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    dropIn('Applied', dataTransfer);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not change');
+    expect(screen.queryByText('private')).not.toBeInTheDocument();
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(screen.queryByText(/Application status changed to/)).not.toBeInTheDocument();
+    expect(document.querySelector('.pipeline-card-dragging, .pipeline-lane-drag-over')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    await screen.findByText('Application status changed to Applied.');
+    expect(tracking).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenCalledTimes(phase === 'precheck' ? 1 : 2);
+  });
+
+  it('falls back to Refresh board on cancel when a refresh removed the original handle', async () => {
+    const put = deferred<AnalysisTracking>();
+    update.mockReturnValueOnce(put.promise);
+    const { rerender } = render(<ApplicationPipelineBoard {...props} />);
+    const { dataTransfer } = await startDrag();
+    dropIn('Applied', dataTransfer);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+    supply([]);
+    rerender(<ApplicationPipelineBoard {...props} refreshKey={1} />);
+    await act(async () => put.reject(new Error('private')));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByRole('button', { name: 'Refresh board' })).toHaveFocus();
+  });
+
+  it('allows dragging paginated cards into independently loading lanes without changing pagination', async () => {
+    const pendingLane = deferred<AnalysisHistoryResponse>();
+    supply(Array.from({ length: 12 }, (_, index) => record(String(index))));
+    const normal = history.getMockImplementation()!;
+    history.mockImplementation((limit, offset, filters) => filters?.application_status === 'applied' ? pendingLane.promise : normal(limit, offset, filters));
+    render(<ApplicationPipelineBoard {...props} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Load more Not applied' }));
+    const { dataTransfer } = await startDrag('11');
+    dropIn('Applied', dataTransfer);
+    expect(screen.getByRole('region', { name: 'Confirm application status change' })).toHaveTextContent('Fictional Engineer 11');
+    expect(history).toHaveBeenCalledTimes(8);
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied' });
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    await act(async () => pendingLane.resolve({ items: [] }));
   });
 });

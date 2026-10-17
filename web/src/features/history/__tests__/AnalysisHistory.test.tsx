@@ -225,6 +225,51 @@ describe('History board integration', () => {
     expect(screen.getByRole('button', { name: 'Open details' })).toBeEnabled();
   });
 
+  it('refreshes History and Overview after a confirmed drag without resetting filters, drafts, or pagination', async () => {
+    let persisted = summary.application_status;
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({ items: limit === 20 ?
+      Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
+      filters?.application_status === persisted ? [{ ...summary, application_status: persisted }] : [],
+    }));
+    vi.mocked(updateAnalysisTracking).mockImplementation(async (id, status) => {
+      persisted = status;
+      return { analysis_id: id, application_status: status, updated_at: null };
+    });
+    render(<AnalysisHistory />);
+    await screen.findByText('List role 0');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'applied criteria' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'applied criteria' }));
+    await screen.findByText('List role 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { query: 'applied criteria' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unapplied draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Board view' }));
+    const handle = await screen.findByRole('button', { name: 'Drag to change status for Platform Engineer' });
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    const payload: Record<string, string> = {};
+    const dataTransfer = {
+      get types() { return Object.keys(payload); },
+      clearData: vi.fn(), setData: (type: string, value: string) => { payload[type] = value; },
+      getData: (type: string) => payload[type] ?? '', effectAllowed: '',
+    };
+    fireEvent.dragStart(handle, { dataTransfer });
+    fireEvent.drop(screen.getByRole('region', { name: 'Interviewing' }), { dataTransfer });
+    expect(updateAnalysisTracking).not.toHaveBeenCalled();
+    expect(getAnalysisTracking).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm status change' }));
+    await screen.findByText('Application status changed to Interviewing.');
+    expect(updateAnalysisTracking).toHaveBeenCalledWith(summary.analysis_id, 'interviewing');
+    await waitFor(() => expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1));
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { query: 'applied criteria' });
+    const destination = within(screen.getByRole('region', { name: 'Interviewing' }));
+    expect(await destination.findByText('Platform Engineer')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'List view' }));
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');
+  });
+
   it('refreshes List and Overview after a confirmed board status update without resetting drafts or page', async () => {
     vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({ items: limit === 20 ?
       Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
