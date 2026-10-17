@@ -336,6 +336,14 @@
 .pipeline-board button:disabled { cursor: not-allowed; opacity: 0.6; }
 .pipeline-confirmation { border: 2px solid #0066cc; border-radius: 8px; padding: 1rem; margin-block: 1rem; overflow-wrap: anywhere; }
 .pipeline-board :focus-visible, .history-view-selector button:focus-visible { outline: 3px solid #0066cc; outline-offset: 3px; }
+.pipeline-drag-handle { cursor: grab; margin-top: 0.6rem; border: 1px dashed #506070; border-radius: 4px; background: #f5f7fa; }
+.pipeline-drag-handle:active { cursor: grabbing; }
+.pipeline-drag-handle:disabled { cursor: not-allowed; }
+.pipeline-card-dragging { outline: 2px dashed #506070; opacity: 0.8; }
+.pipeline-lane-drop-target { border: 2px dashed #506070; }
+.pipeline-lane-drag-over { border: 2px solid #0052a3; background: #e8f2fc; }
+.pipeline-drag-instructions { color: #445363; font-size: 0.9rem; }
+.pipeline-drop-instruction { font-weight: 600; }
 @media (max-width: 600px) {
   .pipeline-lanes { grid-template-columns: minmax(0, 1fr); overflow-x: visible; }
 }
