@@ -300,6 +300,36 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+Each card offers **Edit follow-up**, opening one **Quick follow-up** panel above
+the lanes without opening Detail. It reuses `ApplicationFollowUpEditor` and the
+existing follow-up GET/PUT/DELETE API. Opening fetches the authoritative persisted
+date, independently of lane loading. Choose a native date and explicitly **Save
+follow-up** to set or reschedule it; unchanged or empty dates cannot be saved.
+Dates remain `YYYY-MM-DD` calendar days without timezone conversion. **Clear
+follow-up** requires confirmation; Cancel leaves persistence unchanged. **Close
+editing** discards drafts and restores focus to the card action, falling back to
+Refresh board if the card disappeared. Switching cards discards the old draft;
+late responses cannot populate the new editor.
+
+Successful changes keep the panel and acknowledged result visible, reload initial
+lane pages, and refresh History and Overview without resetting List filters,
+drafts, pagination, or the selected Board view. Safe errors support intentional
+retry without optimistic card changes. If History refresh fails after persistence,
+the editor reports the saved/cleared result separately; use History **Refresh**
+to retry synchronization. Lane and Overview failures have independent Retry
+controls. External changes still require a manual refresh or reopening the editor.
+
+Opening the panel invalidates any drag session. Pending follow-up requests block
+status mutations, closing, switching editors, Detail navigation, and switching to
+List; status confirmation blocks follow-up mutations and competing quick-edit
+actions. After completion, normal dragging and status selection remain available.
+Native keyboard and touch controls, a focused heading, labeled date input, visible
+focus, accessible messages, and a wrapping mobile panel support accessible use.
+The existing Detail editor remains available. Follow-up metadata stays in existing
+persistence; no snapshots, status, or notes are rewritten. No automatic reminders,
+notifications, external calendar integration, browser storage, telemetry, or new
+dependency is introduced. Saved job/company metadata remains sensitive user data.
+
 Analysis History defaults to **List view**. Choose **Board view** for the
 **Application Pipeline Board**, with seven lanes in order: **Not applied**,
 **Applied**, **Interviewing**, **Offer**, **Accepted**, **Rejected**, and
