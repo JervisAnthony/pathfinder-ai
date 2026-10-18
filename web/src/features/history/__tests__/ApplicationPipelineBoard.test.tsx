@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp } from '../../../api/pathfinder';
-import type { AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
+import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking } from '../../../api/pathfinder';
+import type { AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
 import { ApplicationPipelineBoard } from '../ApplicationPipelineBoard';
 import { applicationStatuses } from '../status';
 import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
@@ -10,7 +10,6 @@ import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
 vi.mock('../../../api/pathfinder', async (original) => ({
   ...await original<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(), getAnalysisTracking: vi.fn(), updateAnalysisTracking: vi.fn(),
-  getAnalysisFollowUp: vi.fn(), updateAnalysisFollowUp: vi.fn(), clearAnalysisFollowUp: vi.fn(),
 }));
 
 const record = (id = 'record', status: ApplicationStatus = 'not_applied'): SavedAnalysisSummary => ({
@@ -27,11 +26,6 @@ const deferred = <T,>() => {
 const onOpen = vi.fn();
 const onStatusChanged = vi.fn();
 const props = { onOpen, onStatusChanged, opening: false, refreshKey: 0 };
-const followUpValue = (date: string | null = null, id = 'record'): AnalysisFollowUp => ({ analysis_id: id, follow_up_on: date, updated_at: null });
-async function openFollowUp(index = 0) {
-  fireEvent.click((await screen.findAllByRole('button', { name: 'Edit follow-up' }))[index]);
-  return await screen.findByLabelText('Follow-up date');
-}
 const lane = (name = 'Not applied') => within(screen.getByRole('region', { name }));
 const history = vi.mocked(getAnalysisHistory);
 const tracking = vi.mocked(getAnalysisTracking);
@@ -84,221 +78,6 @@ beforeEach(() => {
   supply([record()]);
   tracking.mockResolvedValue({ analysis_id: 'record', application_status: 'not_applied', updated_at: null });
   update.mockResolvedValue({ analysis_id: 'record', application_status: 'applied', updated_at: '2026-10-16T10:00:00Z' });
-  vi.mocked(getAnalysisFollowUp).mockImplementation(async (id) => ({ analysis_id: id, follow_up_on: null, updated_at: null }));
-});
-
-describe('Kanban quick follow-up', () => {
-  it('uses the authoritative GET instead of the summary and rejects lane responses from before a save', async () => {
-    const staleLane = deferred<AnalysisHistoryResponse>();
-    history.mockImplementation(async (_limit, _offset, filters) => {
-      if (filters?.application_status === 'applied') return staleLane.promise;
-      return { items: filters?.application_status === 'not_applied' ? [{ ...record(), follow_up_on: '2026-10-20' }] : [] };
-    });
-    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-21'));
-    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-22'));
-    render(<ApplicationPipelineBoard {...props} />);
-    const input = await openFollowUp();
-    expect(input).toHaveValue('2026-10-21');
-    fireEvent.change(input, { target: { value: '2026-10-22' } });
-    supply([{ ...record(), follow_up_on: '2026-10-22' }]);
-    fireEvent.click(screen.getByText('Save follow-up'));
-    await screen.findByText('Follow-up date saved.');
-    await lane().findByText(`Follow up: ${formatCalendarDate('2026-10-22')}`);
-    await act(async () => staleLane.resolve({ items: [record('stale', 'applied')] }));
-    expect(screen.queryByText('Fictional Engineer stale')).not.toBeInTheDocument();
-    expect(input).toHaveValue('2026-10-22');
-    expect(getAnalysisFollowUp).toHaveBeenCalledOnce();
-  });
-
-  it('loads only the selected record, focuses the panel, and closes without persistence', async () => {
-    supply([record(), { ...record('two'), company_name: 'Example Company' }]);
-    render(<ApplicationPipelineBoard {...props} />);
-    expect(await screen.findAllByRole('button', { name: 'Edit follow-up' })).toHaveLength(2);
-    expect(getAnalysisFollowUp).not.toHaveBeenCalled();
-    const input = await openFollowUp(1);
-    expect(screen.getByRole('heading', { name: 'Quick follow-up' })).toHaveFocus();
-    expect(screen.getByText('Fictional Engineer two — Example Company')).toBeInTheDocument();
-    expect(getAnalysisFollowUp).toHaveBeenCalledExactlyOnceWith('two');
-    expect(input).toHaveValue('');
-    expect(screen.getByText('No follow-up date set.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Clear follow-up' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save follow-up' })).toBeDisabled();
-    fireEvent.change(input, { target: { value: '2024-02-29' } });
-    fireEvent.click(screen.getByText('Close editing'));
-    expect(screen.queryByText('Quick follow-up')).not.toBeInTheDocument();
-    expect(screen.getAllByText('Edit follow-up')[1]).toHaveFocus();
-    expect(await openFollowUp(1)).toHaveValue('');
-    expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
-    expect(clearAnalysisFollowUp).not.toHaveBeenCalled();
-    expect(onOpen).not.toHaveBeenCalled();
-    expect(tracking).not.toHaveBeenCalled();
-  });
-
-  it('isolates loading, ignores an old selection response, and falls back to Refresh on close', async () => {
-    supply([record(), record('two')]);
-    const old = deferred<AnalysisFollowUp>();
-    vi.mocked(getAnalysisFollowUp).mockReturnValueOnce(old.promise).mockResolvedValueOnce(followUpValue('2027-01-01', 'two'));
-    render(<ApplicationPipelineBoard {...props} />);
-    fireEvent.click((await screen.findAllByText('Edit follow-up'))[0]);
-    expect(screen.getByText('Loading follow-up date…')).toBeInTheDocument();
-    expect(lane().getAllByRole('heading', { level: 5 })).toHaveLength(2);
-    await openFollowUp(1);
-    await act(async () => old.resolve(followUpValue('1999-12-31')));
-    expect(screen.getByLabelText('Follow-up date')).toHaveValue('2027-01-01');
-    expect(screen.getAllByRole('heading', { name: 'Quick follow-up' })).toHaveLength(1);
-    supply([]);
-    fireEvent.click(screen.getByText('Refresh board'));
-    await screen.findByText('No saved analyses in Not applied.');
-    fireEvent.click(screen.getByText('Close editing'));
-    expect(screen.getByText('Refresh board')).toHaveFocus();
-  });
-
-  it.each([
-    new ApiError('PRIVATE', 404, 'analysis_not_found'),
-    new ApiError('PRIVATE', 503, 'persistence_unavailable'), new Error('PRIVATE'),
-  ])('keeps lanes usable on a safe load error and retries only the editor', async (reason) => {
-    vi.mocked(getAnalysisFollowUp).mockRejectedValueOnce(reason);
-    render(<ApplicationPipelineBoard {...props} />);
-    fireEvent.click(await screen.findByText('Edit follow-up'));
-    expect(await screen.findByRole('alert')).not.toHaveTextContent('PRIVATE');
-    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
-    fireEvent.click(screen.getByText('Retry follow-up'));
-    expect(await screen.findByLabelText('Follow-up date')).toHaveValue('');
-    expect(history).toHaveBeenCalledTimes(7);
-  });
-
-  it.each(['2024-02-29', '2026-12-31', '2027-01-01'])('saves %s without timezone conversion or optimistic updates and coordinates pending workflows', async (date) => {
-    supply([record(), record('two')]);
-    const saved = deferred<AnalysisFollowUp>();
-    vi.mocked(updateAnalysisFollowUp).mockReturnValue(saved.promise);
-    const onFollowUpUpdated = vi.fn(async () => {});
-    render(<ApplicationPipelineBoard {...props} onFollowUpUpdated={onFollowUpUpdated} />);
-    fireEvent.change(await openFollowUp(), { target: { value: date } });
-    const save = screen.getByText('Save follow-up');
-    fireEvent.click(save); fireEvent.click(save);
-    expect(updateAnalysisFollowUp).toHaveBeenCalledExactlyOnceWith('record', date);
-    expect(screen.getByText('Saving follow-up…')).toBeInTheDocument();
-    expect(lane().getAllByText('No follow-up scheduled')).toHaveLength(2);
-    for (const name of ['Close editing', 'Refresh board']) expect(screen.getByText(name)).toBeDisabled();
-    for (const name of ['Open details', 'Edit follow-up', 'Review change']) {
-      screen.getAllByText(name).forEach((button) => expect(button).toBeDisabled());
-    }
-    const { dataTransfer } = await startDrag();
-    dropIn('Applied', dataTransfer);
-    expect(tracking).not.toHaveBeenCalled();
-    expect(onOpen).not.toHaveBeenCalled();
-    supply([{ ...record(), follow_up_on: date }, record('two')]);
-    await act(async () => saved.resolve(followUpValue(date)));
-    expect(screen.getByText('Follow-up date saved.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Follow-up date')).toHaveValue(date);
-    expect(lane().getByText(`Follow up: ${formatCalendarDate(date)}`)).toBeInTheDocument();
-    expect(history).toHaveBeenCalledTimes(14);
-    expect(onFollowUpUpdated).toHaveBeenCalledOnce();
-    expect(getAnalysisFollowUp).toHaveBeenCalledOnce();
-    expect(screen.getByText('Save follow-up')).toBeDisabled();
-    fireEvent.change(screen.getByLabelText('Follow-up date'), { target: { value: '' } });
-    expect(screen.getByText('Save follow-up')).toBeDisabled();
-  });
-
-  it.each([
-    new ApiError('PRIVATE', 404, 'analysis_not_found'), new ApiError('PRIVATE', 422, 'validation_error'),
-    new ApiError('PRIVATE', 503, 'persistence_unavailable'), new Error('PRIVATE'),
-  ])('preserves persisted and draft dates after failed save and permits intentional retry', async (reason) => {
-    supply([{ ...record(), follow_up_on: '2026-10-20' }]);
-    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-20'));
-    vi.mocked(updateAnalysisFollowUp).mockRejectedValueOnce(reason).mockResolvedValueOnce(followUpValue('2026-10-21'));
-    render(<ApplicationPipelineBoard {...props} />);
-    const input = await openFollowUp();
-    expect(screen.getByText('Save follow-up')).toBeDisabled();
-    fireEvent.click(screen.getByText('Save follow-up'));
-    expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: '2026-10-21' } });
-    fireEvent.click(screen.getByText('Save follow-up'));
-    expect(await screen.findByRole('alert')).not.toHaveTextContent('PRIVATE');
-    expect(input).toHaveValue('2026-10-21');
-    expect(screen.getByText(`Follow up on ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
-    expect(lane().getByText(`Follow up: ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
-    expect(history).toHaveBeenCalledTimes(7);
-    fireEvent.click(screen.getByText('Save follow-up'));
-    await screen.findByText('Follow-up date saved.');
-    expect(updateAnalysisFollowUp).toHaveBeenCalledTimes(2);
-  });
-
-  it('confirms clearing, preserves the card on failure, allows cancel/retry, and prevents duplicate DELETE', async () => {
-    supply([{ ...record(), follow_up_on: '2026-10-20' }]);
-    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-20'));
-    const clearing = deferred<void>();
-    vi.mocked(clearAnalysisFollowUp).mockRejectedValueOnce(new Error('PRIVATE')).mockReturnValueOnce(clearing.promise);
-    render(<ApplicationPipelineBoard {...props} />);
-    await openFollowUp();
-    fireEvent.click(screen.getByText('Clear follow-up'));
-    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Cancel'));
-    expect(clearAnalysisFollowUp).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Clear follow-up'));
-    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up'));
-    expect(await screen.findByRole('alert')).not.toHaveTextContent('PRIVATE');
-    expect(lane().getByText(`Follow up: ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
-    expect(clearAnalysisFollowUp).toHaveBeenCalledExactlyOnceWith('record');
-    fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Cancel'));
-    fireEvent.click(screen.getByText('Clear follow-up'));
-    const confirm = within(screen.getByRole('alertdialog')).getByText('Clear follow-up');
-    fireEvent.click(confirm); fireEvent.click(confirm);
-    expect(clearAnalysisFollowUp).toHaveBeenCalledTimes(2);
-    expect(screen.getByText('Close editing')).toBeDisabled();
-    expect(lane().getByText(`Follow up: ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
-    supply([record()]);
-    await act(async () => clearing.resolve());
-    expect(screen.getByText('Follow-up date cleared.')).toBeInTheDocument();
-    expect(lane().getByText('No follow-up scheduled')).toBeInTheDocument();
-    expect(screen.getByLabelText('Follow-up date')).toHaveValue('');
-    expect(screen.queryByText('Clear follow-up')).not.toBeInTheDocument();
-  });
-
-  it('invalidates drag on opening and coordinates status confirmation without discarding a draft', async () => {
-    render(<ApplicationPipelineBoard {...props} />);
-    const firstDrag = await startDrag();
-    fireEvent.change(await openFollowUp(), { target: { value: '2024-02-29' } });
-    dropIn('Applied', firstDrag.dataTransfer);
-    expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument();
-    expect(screen.queryByText('Dragging this card')).not.toBeInTheDocument();
-    await review();
-    expect(screen.getByText('Save follow-up')).toBeDisabled();
-    expect(screen.getByText('Edit follow-up')).toBeDisabled();
-    fireEvent.click(screen.getByText('Save follow-up'));
-    expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(screen.getByLabelText('Follow-up date')).toHaveValue('2024-02-29');
-    fireEvent.click(screen.getByText('Close editing'));
-    const secondDrag = await startDrag();
-    dropIn('Applied', secondDrag.dataTransfer);
-    fireEvent.click(screen.getByText('Confirm status change'));
-    await screen.findByText('Application status changed to Applied.');
-    expect(update).toHaveBeenCalledExactlyOnceWith('record', 'applied');
-  });
-
-  it.each(['save', 'clear'])('keeps an acknowledged %s when History synchronization fails', async (action) => {
-    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-20'));
-    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-21'));
-    vi.mocked(clearAnalysisFollowUp).mockResolvedValue(undefined);
-    const onFollowUpUpdated = vi.fn().mockRejectedValue(new Error('PRIVATE'));
-    render(<ApplicationPipelineBoard {...props} onFollowUpUpdated={onFollowUpUpdated} />);
-    const input = await openFollowUp();
-    if (action === 'save') {
-      fireEvent.change(input, { target: { value: '2026-10-21' } });
-      fireEvent.click(screen.getByText('Save follow-up'));
-    } else {
-      fireEvent.click(screen.getByText('Clear follow-up'));
-      fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up'));
-    }
-    expect(await screen.findByRole('alert')).toHaveTextContent(/History could not refresh/);
-    expect(screen.getByText(action === 'save' ? 'Follow-up date saved.' : 'Follow-up date cleared.')).toBeInTheDocument();
-    expect(input).toHaveValue(action === 'save' ? '2026-10-21' : '');
-    expect(screen.getByText('Close editing')).toBeEnabled();
-    fireEvent.click(screen.getByText('Refresh board'));
-    expect(screen.getByLabelText('Follow-up date')).toHaveValue(action === 'save' ? '2026-10-21' : '');
-    expect(getAnalysisFollowUp).toHaveBeenCalledOnce();
-    await screen.findByText('Fictional Engineer record');
-  });
 });
 
 describe('ApplicationPipelineBoard', () => {

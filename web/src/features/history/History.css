@@ -344,17 +344,6 @@
 .pipeline-lane-drag-over { border: 2px solid #0052a3; background: #e8f2fc; }
 .pipeline-drag-instructions { color: #445363; font-size: 0.9rem; }
 .pipeline-drop-instruction { font-weight: 600; }
-.pipeline-quick-follow-up {
-  border: 2px solid #0066cc;
-  border-radius: 8px;
-  background: #f5f9ff;
-  padding: 1rem;
-  margin-block: 1rem;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.pipeline-quick-follow-up input { box-sizing: border-box; min-width: 0; max-width: 100%; }
-.pipeline-quick-follow-up button { max-width: 100%; margin-block: 0.3rem; }
 @media (max-width: 600px) {
   .pipeline-lanes { grid-template-columns: minmax(0, 1fr); overflow-x: visible; }
 }

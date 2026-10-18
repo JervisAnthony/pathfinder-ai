@@ -43,8 +43,6 @@ function csvErrorMessage(error: unknown): string {
 }
 
 export function AnalysisHistory() {
-  const boardFollowUpPending = useRef(false);
-  const [boardFollowUpMutating, setBoardFollowUpMutating] = useState(false);
   const csvRequests = useRef(new Set<CsvMode>());
   const csvMounted = useRef(true);
   const [csvDownloading, setCsvDownloading] = useState({ all: false, filtered: false });
@@ -161,12 +159,10 @@ export function AnalysisHistory() {
         : getAnalysisHistory(PAGE_SIZE, offset));
       if (requestId !== historyRequest.current) return;
       setItems(response.items);
-      return true;
     } catch (caught) {
       if (requestId !== historyRequest.current) return;
       setItems([]);
       setError(errorMessage(caught, 'history'));
-      return false;
     } finally {
       if (requestId === historyRequest.current) setLoading(false);
     }
@@ -178,7 +174,6 @@ export function AnalysisHistory() {
   }, [loadHistory]);
 
   const openDetail = async (analysisId: string) => {
-    if (boardFollowUpPending.current) return;
     setDetailLoading(true);
     setDetailError(null);
     try {
@@ -294,20 +289,15 @@ export function AnalysisHistory() {
         {csvErrors.filtered && <p role="alert">{csvErrors.filtered}</p>}
       </section>
 
-      <ApplicationPipelineOverview refreshKey={overviewRefreshKey} onOpen={(id) => void openDetail(id)} opening={detailLoading || boardFollowUpMutating} />
+      <ApplicationPipelineOverview refreshKey={overviewRefreshKey} onOpen={(id) => void openDetail(id)} opening={detailLoading} />
 
       <div className="history-view-selector" role="group" aria-label="History view">
-        <button type="button" disabled={boardFollowUpMutating} aria-pressed={view === 'list'} onClick={() => { if (!boardFollowUpPending.current) setView('list'); }}>List view</button>
+        <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>List view</button>
         <button type="button" aria-pressed={view === 'board'} onClick={() => setView('board')}>Board view</button>
       </div>
       {detailLoading && <p role="status">Loading saved analysis…</p>}
       {detailError && <div className="history-message error-message" role="alert">{detailError}</div>}
       {view === 'board' && <ApplicationPipelineBoard refreshKey={boardRefreshKey} opening={detailLoading}
-        onFollowUpMutatingChange={(value) => { boardFollowUpPending.current = value; setBoardFollowUpMutating(value); }}
-        onFollowUpUpdated={async () => {
-          setOverviewRefreshKey((current) => current + 1);
-          if (await loadHistory() === false) throw new Error('History refresh failed');
-        }}
         onOpen={(id) => void openDetail(id)} onStatusChanged={() => { void loadHistory(); setOverviewRefreshKey((current) => current + 1); }} />}
 
       <div hidden={view !== 'list'}>
