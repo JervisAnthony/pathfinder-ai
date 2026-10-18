@@ -4,12 +4,15 @@ import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracki
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { applicationStatuses, statusLabel } from './status';
+import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 
 interface Props {
   onOpen: (analysisId: string) => void;
   onStatusChanged: () => void;
   opening: boolean;
   refreshKey: number;
+  onFollowUpUpdated?: () => Promise<void>;
+  onFollowUpMutatingChange?: (mutating: boolean) => void;
 }
 
 interface Lane {
@@ -53,7 +56,7 @@ function safeError(error: unknown, action: 'load' | 'update'): string {
     : 'Pathfinder could not change the application status. Please try again.';
 }
 
-function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd }: {
+function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd, onFollowUp }: {
   item: SavedAnalysisSummary;
   status: ApplicationStatus;
   disabled: boolean;
@@ -63,6 +66,7 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
   dragging: boolean;
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
+  onFollowUp: (item: SavedAnalysisSummary) => void;
 }) {
   const [target, setTarget] = useState(status);
   const selector = useRef<HTMLSelectElement>(null);
@@ -78,7 +82,9 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
     <p>{item.company_name ?? 'Company not supplied'}</p>
     <p>{item.score === null ? 'Not scored' : `${item.score}% match`}</p>
     <p>Saved: {formatSavedTimestamp(item.created_at)}</p>
-    {item.follow_up_on && <p>Follow up: {formatCalendarDate(item.follow_up_on)}</p>}
+    <p>{item.follow_up_on ? `Follow up: ${formatCalendarDate(item.follow_up_on)}` : 'No follow-up scheduled'}</p>
+    <button id={`follow-up-${item.analysis_id}`} type="button" disabled={opening || disabled}
+      onClick={() => onFollowUp(item)}>Edit follow-up</button>
     <button type="button" disabled={opening || disabled} onClick={() => onOpen(item.analysis_id)}>Open details</button>
     <label>New status for {item.job_title}
       <select ref={selector} value={target} disabled={disabled} onChange={(event) => setTarget(event.target.value as ApplicationStatus)}>
@@ -90,7 +96,11 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
   </li>;
 }
 
-export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey }: Props) {
+export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onFollowUpMutatingChange }: Props) {
+  const [selectedFollowUp, setSelectedFollowUp] = useState<SavedAnalysisSummary | null>(null);
+  const [followUpMutating, setFollowUpMutating] = useState(false);
+  const followUpPending = useRef(false);
+  const followUpHeading = useRef<HTMLHeadingElement>(null);
   const [lanes, setLanes] = useState(initialLanes);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
@@ -109,6 +119,16 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const refreshButton = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<string | null>(null);
   const focusRefresh = useRef(false);
+
+  useEffect(() => {
+    if (selectedFollowUp) followUpHeading.current?.focus();
+    else if (restoreFocus.current?.startsWith('follow-up-')) {
+      const action = document.getElementById(restoreFocus.current);
+      if (action instanceof HTMLButtonElement && !action.disabled) action.focus();
+      else refreshButton.current?.focus();
+      restoreFocus.current = null;
+    }
+  }, [selectedFollowUp]);
 
   useEffect(() => {
     mounted.current = true;
@@ -192,7 +212,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   // Both native drops and the selector use the same confirmation gate. Neither
   // path reads tracking or writes persistence until the user confirms.
   const prepareChange = (next: Change) => {
-    if (!mounted.current || opening || mutationPending.current || confirmationPending.current
+    if (!mounted.current || opening || followUpPending.current || mutationPending.current || confirmationPending.current
       || next.from === next.to || !applicationStatuses.some(({ value }) => value === next.to)
       || !lanes[next.from]?.items.some((item) => item.analysis_id === next.item.analysis_id)) return;
     confirmationPending.current = true;
@@ -203,7 +223,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   };
 
   const startDrag = (event: DragEvent<HTMLButtonElement>, item: SavedAnalysisSummary, from: ApplicationStatus) => {
-    if (!mounted.current || opening || mutationPending.current || confirmationPending.current
+    if (!mounted.current || opening || followUpPending.current || mutationPending.current || confirmationPending.current
       || !lanes[from].items.some((current) => current.analysis_id === item.analysis_id)) {
       event.preventDefault();
       return;
@@ -223,7 +243,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
 
   const validDestination = (event: DragEvent<HTMLElement>, to: ApplicationStatus) => {
     const session = dragSession.current;
-    return mounted.current && !opening && !mutationPending.current && !confirmationPending.current
+    return mounted.current && !opening && !followUpPending.current && !mutationPending.current && !confirmationPending.current
       && session !== null && session.epoch === generation.current && session.from !== to
       && applicationStatuses.some(({ value }) => value === to)
       && lanes[session.from].items.some((item) => item.analysis_id === session.item.analysis_id)
@@ -250,7 +270,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   };
 
   const submit = async () => {
-    if (!change || change.from === change.to || mutationPending.current) return;
+    if (!change || change.from === change.to || mutationPending.current || followUpPending.current) return;
     mutationPending.current = true;
     setUpdating(true);
     setError(null);
@@ -284,11 +304,29 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     onKeyDown={(event) => { if (event.key === 'Escape') clearDrag(); }}>
     <div className="history-heading">
       <h3 id="pipeline-board-title">Application Pipeline Board</h3>
-      <button ref={refreshButton} type="button" disabled={updating} onClick={() => { setError(null); setMessage(null); refresh(); }}>Refresh board</button>
+      <button ref={refreshButton} type="button" disabled={updating || followUpMutating} onClick={() => { if (followUpPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
     </div>
     <p>All saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
     <p>Each lane loads 10 cards at a time, newest saved first. Changes in other sessions may require Refresh board.</p>
     <p id="pipeline-drag-instructions" className="pipeline-drag-instructions">Use the Drag to change status handle to drag a card to another lane to review a status change. On keyboard or touch devices, choose a new status on the card and select Review change. Activating the handle focuses the status selector.</p>
+    {selectedFollowUp && <section className="pipeline-quick-follow-up" aria-labelledby="quick-follow-up-title">
+      <h4 id="quick-follow-up-title" tabIndex={-1} ref={followUpHeading}>Quick follow-up</h4>
+      <p>{selectedFollowUp.job_title} — {selectedFollowUp.company_name ?? 'Company not supplied'}</p>
+      <ApplicationFollowUpEditor key={selectedFollowUp.analysis_id} analysisId={selectedFollowUp.analysis_id}
+        disabled={opening || updating || change !== null}
+        canMutate={() => mounted.current && !opening && !mutationPending.current && !confirmationPending.current && !followUpPending.current}
+        onMutatingChange={(value) => {
+          followUpPending.current = value;
+          setFollowUpMutating(value);
+          onFollowUpMutatingChange?.(value);
+        }}
+        onUpdated={async () => { refresh(); await onFollowUpUpdated?.(); }} />
+      <button type="button" disabled={followUpMutating} onClick={() => {
+        if (followUpPending.current) return;
+        restoreFocus.current = `follow-up-${selectedFollowUp.analysis_id}`;
+        setSelectedFollowUp(null);
+      }}>Close editing</button>
+    </section>}
     {message && <p role="status">{message}</p>}
     {error && <p role="alert">{error}</p>}
     {change && <div className="pipeline-confirmation" role="region" aria-label="Confirm application status change" tabIndex={-1} ref={confirmation}>
@@ -322,7 +360,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {!lane.loading && !lane.error && lane.items.length === 0 && <p>No saved analyses in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
-              opening={opening} disabled={updating || change !== null} onOpen={onOpen}
+              opening={opening} disabled={updating || followUpMutating || change !== null}
+              onOpen={(id) => { if (!followUpPending.current) onOpen(id); }}
+              onFollowUp={(item) => {
+                if (opening || mutationPending.current || confirmationPending.current || followUpPending.current) return;
+                clearDrag();
+                setSelectedFollowUp(item);
+                followUpHeading.current?.focus();
+              }}
               dragging={dragged?.item.analysis_id === item.analysis_id && dragged.from === value}
               onDragStart={(event) => startDrag(event, item, value)} onDragEnd={clearDrag} onReview={prepareChange} />)}
           </ul>}

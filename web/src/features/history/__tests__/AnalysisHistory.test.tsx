@@ -332,6 +332,105 @@ describe('History board integration', () => {
   });
 });
 
+describe('Board quick follow-up integration', () => {
+  it.each(['set', 'reschedule', 'clear'] as const)('refreshes all surfaces after %s while preserving List state and guarding navigation', async (action) => {
+    let date: string | null = action === 'set' ? null : '2026-10-20';
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({ items: limit === 20 ?
+      Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}`, follow_up_on: date })) :
+      filters?.application_status === 'not_applied' ? [{ ...summary, follow_up_on: date }] : [],
+    }));
+    vi.mocked(getAnalysisFollowUp).mockImplementation(async () => ({ analysis_id: summary.analysis_id, follow_up_on: date, updated_at: null }));
+    const overview = (): PipelineOverview => ({
+      total_analyses: 1, status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'not_applied' ? 1 : 0 })),
+      scheduled_follow_up_count: date ? 1 : 0, unscheduled_follow_up_count: date ? 0 : 1,
+      earliest_follow_ups: date ? [{ analysis_id: summary.analysis_id, job_title: summary.job_title, company_name: null, application_status: 'not_applied', follow_up_on: date }] : [],
+    });
+    vi.mocked(getApplicationPipelineOverview).mockImplementation(async () => overview());
+    let complete!: () => void;
+    const pending = new Promise<void>((resolve) => { complete = resolve; });
+    vi.mocked(updateAnalysisFollowUp).mockImplementation(async (id, value) => {
+      await pending; date = value; return { analysis_id: id, follow_up_on: value, updated_at: null };
+    });
+    vi.mocked(clearAnalysisFollowUp).mockImplementation(async () => { await pending; date = null; });
+    render(<AnalysisHistory />);
+    await screen.findByText('List role 0');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'applied criteria' } });
+    fireEvent.click(screen.getByText('Apply filters'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'applied criteria' }));
+    await screen.findByText('List role 0');
+    fireEvent.click(screen.getByText('Next'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { query: 'applied criteria' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unapplied draft' } });
+    fireEvent.click(screen.getByText('Board view'));
+    fireEvent.click(await screen.findByText('Edit follow-up'));
+    const input = await screen.findByLabelText('Follow-up date');
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    if (action === 'clear') {
+      fireEvent.click(screen.getByText('Clear follow-up'));
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up'));
+    } else {
+      fireEvent.change(input, { target: { value: '2024-02-29' } });
+      fireEvent.click(screen.getByText('Save follow-up'));
+    }
+    expect(screen.getByText('List view')).toBeDisabled();
+    expect(screen.getByText('Open details')).toBeDisabled();
+    fireEvent.click(screen.getByText('List view'));
+    expect(screen.getByText('Board view')).toHaveAttribute('aria-pressed', 'true');
+    const overviewRegion = within(screen.getByRole('region', { name: 'Application Pipeline Overview' }));
+    if (action !== 'set') {
+      const detailButton = overviewRegion.getByRole('button');
+      expect(detailButton).toBeDisabled();
+      fireEvent.click(detailButton);
+    }
+    const detailCalls = vi.mocked(getSavedAnalysis).mock.calls.length;
+    fireEvent.click(screen.getByText('Open details'));
+    expect(getSavedAnalysis).toHaveBeenCalledTimes(detailCalls);
+    await act(async () => complete());
+    await screen.findByText(action === 'clear' ? 'Follow-up date cleared.' : 'Follow-up date saved.');
+    const board = within(screen.getByRole('region', { name: 'Application Pipeline Board' }));
+    await board.findByText(action === 'clear' ? 'No follow-up scheduled' : `Follow up: ${formatCalendarDate('2024-02-29')}`);
+    await waitFor(() => expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1));
+    expect(getAnalysisHistory).toHaveBeenCalledWith(20, 20, { query: 'applied criteria' });
+    expect(input).toHaveValue(action === 'clear' ? '' : '2024-02-29');
+    if (action === 'clear') expect(overviewRegion.getByText('No scheduled follow-ups.')).toBeInTheDocument();
+    else expect(overviewRegion.getByText(`Follow up: ${formatCalendarDate('2024-02-29')}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('List view'));
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');
+    expect(screen.getByText('Download filtered CSV')).toBeEnabled();
+    const list = within(screen.getByRole('button', { name: /List role 0/ }));
+    if (action === 'clear') expect(list.queryByText(/Follow up:/)).not.toBeInTheDocument();
+    else expect(list.getByText(`Follow up: ${formatCalendarDate('2024-02-29')}`)).toBeInTheDocument();
+  });
+
+  it('distinguishes a persisted save from failed History synchronization and lets Refresh recover', async () => {
+    let fail = false;
+    let date: string | null = null;
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => {
+      if (limit === 20 && fail) throw new Error('PRIVATE');
+      return { items: limit === 20 || filters?.application_status === 'not_applied' ? [{ ...summary, follow_up_on: date }] : [] };
+    });
+    vi.mocked(updateAnalysisFollowUp).mockImplementation(async (id, value) => {
+      date = value; fail = true; return { analysis_id: id, follow_up_on: value, updated_at: null };
+    });
+    render(<AnalysisHistory />);
+    fireEvent.click(screen.getByText('Board view'));
+    fireEvent.click(await screen.findByText('Edit follow-up'));
+    fireEvent.change(await screen.findByLabelText('Follow-up date'), { target: { value: '2024-02-29' } });
+    fireEvent.click(screen.getByText('Save follow-up'));
+    await screen.findByText('Follow-up date was saved, but History could not refresh. Please try refreshing History.');
+    expect(screen.getByText('Follow-up date saved.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Follow-up date')).toHaveValue(date);
+    expect(screen.getByText(`Follow up: ${formatCalendarDate('2024-02-29')}`)).toBeInTheDocument();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await within(screen.getByRole('region', { name: 'Application Pipeline Board' })).findByText(`Follow up: ${formatCalendarDate('2024-02-29')}`);
+    fireEvent.click(screen.getByText('List view'));
+    expect(screen.getByText(`Follow up: ${formatCalendarDate('2024-02-29')}`)).toBeInTheDocument();
+    expect(updateAnalysisFollowUp).toHaveBeenCalledOnce();
+  });
+});
+
 describe('AnalysisHistory', () => {
   beforeEach(() => {
     vi.clearAllMocks();
