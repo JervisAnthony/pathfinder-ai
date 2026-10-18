@@ -27,9 +27,10 @@ interface Props {
   disabled: boolean;
   onMutatingChange: (mutating: boolean) => void;
   onUpdated?: () => Promise<void>;
+  canMutate?: () => boolean;
 }
 
-export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChange, onUpdated }: Props) {
+export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChange, onUpdated, canMutate }: Props) {
   const [followUp, setFollowUp] = useState<AnalysisFollowUp | null>(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -40,6 +41,7 @@ export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChan
   const [message, setMessage] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const generation = useRef(0);
+  const dateInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -76,7 +78,7 @@ export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChan
   };
 
   const save = async () => {
-    if (disabled || pendingRef.current || followUp === null || !draft || draft === (followUp.follow_up_on ?? '')) return;
+    if (disabled || pendingRef.current || followUp === null || !draft || draft === (followUp.follow_up_on ?? '') || !dateInput.current?.reportValidity() || canMutate?.() === false) return;
     begin('save');
     const current = generation.current;
     try {
@@ -86,17 +88,17 @@ export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChan
       setDraft(updated.follow_up_on ?? '');
       setMessage('Follow-up date saved.');
       try { await onUpdated?.(); } catch {
-        setError('Follow-up date was saved, but History could not refresh. Please try refreshing History.');
+        if (generation.current === current) setError('Follow-up date was saved, but History could not refresh. Please try refreshing History.');
       }
     } catch (reason) {
       if (generation.current === current) setError(followUpError(reason, 'save'));
     } finally {
-      finish();
+      if (generation.current === current) finish();
     }
   };
 
   const clear = async () => {
-    if (disabled || pendingRef.current || !confirmingClear || followUp?.follow_up_on === null || !followUp) return;
+    if (disabled || pendingRef.current || !confirmingClear || followUp?.follow_up_on === null || !followUp || canMutate?.() === false) return;
     begin('clear');
     const current = generation.current;
     try {
@@ -107,12 +109,12 @@ export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChan
       setConfirmingClear(false);
       setMessage('Follow-up date cleared.');
       try { await onUpdated?.(); } catch {
-        setError('Follow-up date was cleared, but History could not refresh. Please try refreshing History.');
+        if (generation.current === current) setError('Follow-up date was cleared, but History could not refresh. Please try refreshing History.');
       }
     } catch (reason) {
       if (generation.current === current) setError(followUpError(reason, 'clear'));
     } finally {
-      finish();
+      if (generation.current === current) finish();
     }
   };
 
@@ -127,7 +129,7 @@ export function ApplicationFollowUpEditor({ analysisId, disabled, onMutatingChan
       {!followUp.follow_up_on ? <p>No follow-up date set.</p> : <p>Follow up on {formatCalendarDate(followUp.follow_up_on)}</p>}
       {followUp.updated_at && <p>Last updated {formatSavedTimestamp(followUp.updated_at)}</p>}
       <label htmlFor="application-follow-up-input">Follow-up date</label>
-      <input type="date" id="application-follow-up-input" value={draft}
+      <input ref={dateInput} type="date" max="9999-12-31" id="application-follow-up-input" value={draft}
         disabled={mutationDisabled} onChange={(event) => { setDraft(event.target.value); setMessage(null); }} />
       <button type="button" disabled={mutationDisabled || !draft || draft === (followUp.follow_up_on ?? '')}
         onClick={() => void save()}>Save follow-up</button>
