@@ -1856,3 +1856,65 @@ describe('application pipeline CSV downloads', () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 });
+
+
+describe('Board quick note integration', () => {
+  it.each(['create', 'edit', 'clear'])('keeps List state and Overview stable after note %s and guards navigation immediately', async (action) => {
+    vi.clearAllMocks();
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({ items: limit === 20
+      ? Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` }))
+      : filters?.application_status === 'not_applied' ? [summary] : [],
+    }));
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValue({
+      total_analyses: 1, status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'not_applied' ? 1 : 0 })),
+      scheduled_follow_up_count: 1, unscheduled_follow_up_count: 0,
+      earliest_follow_ups: [{ analysis_id: summary.analysis_id, job_title: 'Overview role', company_name: null, application_status: 'not_applied', follow_up_on: '2026-10-20' }],
+    });
+    vi.mocked(getAnalysisNote).mockResolvedValue({ analysis_id: summary.analysis_id, content: action === 'create' ? null : 'persisted', updated_at: null });
+    let complete!: () => void;
+    const pending = new Promise<void>((resolve) => { complete = resolve; });
+    vi.mocked(updateAnalysisNote).mockImplementation(async (id, content) => { await pending; return { analysis_id: id, content, updated_at: null }; });
+    vi.mocked(clearAnalysisNote).mockImplementation(async () => { await pending; });
+    render(<AnalysisHistory />);
+    await screen.findByText('List role 0');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'applied criteria' } });
+    fireEvent.click(screen.getByText('Apply filters'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'applied criteria' }));
+    await screen.findByText('List role 0');
+    fireEvent.click(screen.getByText('Next'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 20, { query: 'applied criteria' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unapplied draft' } });
+    fireEvent.click(screen.getByText('Board view'));
+    fireEvent.click(await screen.findByText('Edit note'));
+    const input = await screen.findByRole('textbox', { name: 'Application note' });
+    const historyCalls = vi.mocked(getAnalysisHistory).mock.calls.length;
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    const list = screen.getByText('List view');
+    const refresh = screen.getByRole('button', { name: 'Refresh' });
+    const detailButton = within(screen.getByRole('region', { name: 'Application Pipeline Overview' })).getByRole('button');
+    let button: HTMLElement;
+    if (action === 'clear') {
+      fireEvent.click(screen.getByText('Clear note'));
+      button = within(screen.getByRole('alertdialog')).getByText('Clear note');
+    } else {
+      fireEvent.change(input, { target: { value: '  exact\nnote  ' } });
+      button = screen.getByText('Save note');
+    }
+    act(() => { button.click(); list.click(); detailButton.click(); refresh.click(); });
+    expect(list).toBeDisabled(); expect(detailButton).toBeDisabled(); expect(refresh).toBeDisabled();
+    expect(screen.getByText('Board view')).toHaveAttribute('aria-pressed', 'true');
+    expect(getSavedAnalysis).not.toHaveBeenCalled();
+    expect(screen.getByText('Open details')).toBeDisabled();
+    await act(async () => complete());
+    await screen.findByText(action === 'clear' ? 'Application note cleared.' : 'Application note saved.');
+    expect(input).toHaveValue(action === 'clear' ? '' : '  exact\nnote  ');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(historyCalls);
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    expect(getAnalysisNote).toHaveBeenCalledOnce();
+    fireEvent.click(list);
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');
+    expect(screen.getByText('Download filtered CSV')).toBeEnabled();
+    expect(screen.getByRole('button', { name: /List role 0/ })).toBeInTheDocument();
+  });
+});

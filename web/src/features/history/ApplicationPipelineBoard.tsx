@@ -5,6 +5,9 @@ import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
+import { ApplicationNoteEditor } from './ApplicationNoteEditor';
+
+type QuickEditor = { mode: 'follow-up' | 'note'; item: SavedAnalysisSummary };
 
 interface Props {
   onOpen: (analysisId: string) => void;
@@ -12,7 +15,7 @@ interface Props {
   opening: boolean;
   refreshKey: number;
   onFollowUpUpdated?: () => Promise<void>;
-  onFollowUpMutatingChange?: (mutating: boolean) => void;
+  onQuickEditorMutatingChange?: (mutating: boolean) => void;
 }
 
 interface Lane {
@@ -56,7 +59,7 @@ function safeError(error: unknown, action: 'load' | 'update'): string {
     : 'Pathfinder could not change the application status. Please try again.';
 }
 
-function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd, onFollowUp }: {
+function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd, onFollowUp, onNote }: {
   item: SavedAnalysisSummary;
   status: ApplicationStatus;
   disabled: boolean;
@@ -67,6 +70,7 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
   onDragStart: (event: DragEvent<HTMLButtonElement>) => void;
   onDragEnd: () => void;
   onFollowUp: (item: SavedAnalysisSummary) => void;
+  onNote: (item: SavedAnalysisSummary) => void;
 }) {
   const [target, setTarget] = useState(status);
   const selector = useRef<HTMLSelectElement>(null);
@@ -85,6 +89,8 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
     <p>{item.follow_up_on ? `Follow up: ${formatCalendarDate(item.follow_up_on)}` : 'No follow-up scheduled'}</p>
     <button id={`follow-up-${item.analysis_id}`} type="button" disabled={opening || disabled}
       onClick={() => onFollowUp(item)}>Edit follow-up</button>
+    <button id={`note-${item.analysis_id}`} type="button" disabled={opening || disabled}
+      onClick={() => onNote(item)}>Edit note</button>
     <button type="button" disabled={opening || disabled} onClick={() => onOpen(item.analysis_id)}>Open details</button>
     <label>New status for {item.job_title}
       <select ref={selector} value={target} disabled={disabled} onChange={(event) => setTarget(event.target.value as ApplicationStatus)}>
@@ -96,11 +102,12 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
   </li>;
 }
 
-export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onFollowUpMutatingChange }: Props) {
-  const [selectedFollowUp, setSelectedFollowUp] = useState<SavedAnalysisSummary | null>(null);
-  const [followUpMutating, setFollowUpMutating] = useState(false);
-  const followUpPending = useRef(false);
-  const followUpHeading = useRef<HTMLHeadingElement>(null);
+export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onQuickEditorMutatingChange }: Props) {
+  const [selectedEditor, setSelectedEditor] = useState<QuickEditor | null>(null);
+  const selectedEditorRef = useRef<QuickEditor | null>(null);
+  const [quickEditorMutating, setQuickEditorMutating] = useState(false);
+  const quickEditorPending = useRef(false);
+  const quickEditorHeading = useRef<HTMLHeadingElement>(null);
   const [lanes, setLanes] = useState(initialLanes);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
@@ -121,14 +128,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const focusRefresh = useRef(false);
 
   useEffect(() => {
-    if (selectedFollowUp) followUpHeading.current?.focus();
-    else if (restoreFocus.current?.startsWith('follow-up-')) {
+    if (selectedEditor) quickEditorHeading.current?.focus();
+    else if (restoreFocus.current?.startsWith('follow-up-') || restoreFocus.current?.startsWith('note-')) {
       const action = document.getElementById(restoreFocus.current);
       if (action instanceof HTMLButtonElement && !action.disabled) action.focus();
       else refreshButton.current?.focus();
       restoreFocus.current = null;
     }
-  }, [selectedFollowUp]);
+  }, [selectedEditor]);
 
   useEffect(() => {
     mounted.current = true;
@@ -212,7 +219,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   // Both native drops and the selector use the same confirmation gate. Neither
   // path reads tracking or writes persistence until the user confirms.
   const prepareChange = (next: Change) => {
-    if (!mounted.current || opening || followUpPending.current || mutationPending.current || confirmationPending.current
+    if (!mounted.current || opening || quickEditorPending.current || mutationPending.current || confirmationPending.current
       || next.from === next.to || !applicationStatuses.some(({ value }) => value === next.to)
       || !lanes[next.from]?.items.some((item) => item.analysis_id === next.item.analysis_id)) return;
     confirmationPending.current = true;
@@ -223,7 +230,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   };
 
   const startDrag = (event: DragEvent<HTMLButtonElement>, item: SavedAnalysisSummary, from: ApplicationStatus) => {
-    if (!mounted.current || opening || followUpPending.current || mutationPending.current || confirmationPending.current
+    if (!mounted.current || opening || quickEditorPending.current || mutationPending.current || confirmationPending.current
       || !lanes[from].items.some((current) => current.analysis_id === item.analysis_id)) {
       event.preventDefault();
       return;
@@ -243,7 +250,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
 
   const validDestination = (event: DragEvent<HTMLElement>, to: ApplicationStatus) => {
     const session = dragSession.current;
-    return mounted.current && !opening && !followUpPending.current && !mutationPending.current && !confirmationPending.current
+    return mounted.current && !opening && !quickEditorPending.current && !mutationPending.current && !confirmationPending.current
       && session !== null && session.epoch === generation.current && session.from !== to
       && applicationStatuses.some(({ value }) => value === to)
       && lanes[session.from].items.some((item) => item.analysis_id === session.item.analysis_id)
@@ -270,7 +277,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   };
 
   const submit = async () => {
-    if (!change || change.from === change.to || mutationPending.current || followUpPending.current) return;
+    if (!change || change.from === change.to || mutationPending.current || quickEditorPending.current) return;
     mutationPending.current = true;
     setUpdating(true);
     setError(null);
@@ -300,31 +307,49 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     }
   };
 
+  const canEdit = () => mounted.current && !opening && !mutationPending.current
+    && !confirmationPending.current && !quickEditorPending.current;
+
+  const onEditorMutatingChange = (value: boolean) => {
+    quickEditorPending.current = value;
+    setQuickEditorMutating(value);
+    onQuickEditorMutatingChange?.(value);
+  };
+
+  const openEditor = (mode: QuickEditor['mode'], item: SavedAnalysisSummary) => {
+    if (!canEdit()) return;
+    clearDrag();
+    const next = { mode, item };
+    selectedEditorRef.current = next;
+    setSelectedEditor(next);
+    quickEditorHeading.current?.focus();
+  };
+
   return <section className="pipeline-board" aria-labelledby="pipeline-board-title"
     onKeyDown={(event) => { if (event.key === 'Escape') clearDrag(); }}>
     <div className="history-heading">
       <h3 id="pipeline-board-title">Application Pipeline Board</h3>
-      <button ref={refreshButton} type="button" disabled={updating || followUpMutating} onClick={() => { if (followUpPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
+      <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
     </div>
     <p>All saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
     <p>Each lane loads 10 cards at a time, newest saved first. Changes in other sessions may require Refresh board.</p>
     <p id="pipeline-drag-instructions" className="pipeline-drag-instructions">Use the Drag to change status handle to drag a card to another lane to review a status change. On keyboard or touch devices, choose a new status on the card and select Review change. Activating the handle focuses the status selector.</p>
-    {selectedFollowUp && <section className="pipeline-quick-follow-up" aria-labelledby="quick-follow-up-title">
-      <h4 id="quick-follow-up-title" tabIndex={-1} ref={followUpHeading}>Quick follow-up</h4>
-      <p>{selectedFollowUp.job_title} — {selectedFollowUp.company_name ?? 'Company not supplied'}</p>
-      <ApplicationFollowUpEditor key={selectedFollowUp.analysis_id} analysisId={selectedFollowUp.analysis_id}
-        disabled={opening || updating || change !== null}
-        canMutate={() => mounted.current && !opening && !mutationPending.current && !confirmationPending.current && !followUpPending.current}
-        onMutatingChange={(value) => {
-          followUpPending.current = value;
-          setFollowUpMutating(value);
-          onFollowUpMutatingChange?.(value);
-        }}
-        onUpdated={async () => { refresh(); await onFollowUpUpdated?.(); }} />
-      <button type="button" disabled={followUpMutating} onClick={() => {
-        if (followUpPending.current) return;
-        restoreFocus.current = `follow-up-${selectedFollowUp.analysis_id}`;
-        setSelectedFollowUp(null);
+    {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
+      <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>
+      <p>{selectedEditor.item.job_title} — {selectedEditor.item.company_name ?? 'Company not supplied'}</p>
+      <p>Close or switch editors to discard unsaved changes.</p>
+      {selectedEditor.mode === 'note'
+        ? <ApplicationNoteEditor key={`note-${selectedEditor.item.analysis_id}`} analysisId={selectedEditor.item.analysis_id}
+          disabled={opening || updating || change !== null} canMutate={() => canEdit() && selectedEditorRef.current === selectedEditor} onMutatingChange={onEditorMutatingChange}
+          refreshKey={revision} />
+        : <ApplicationFollowUpEditor key={`follow-up-${selectedEditor.item.analysis_id}`} analysisId={selectedEditor.item.analysis_id}
+          disabled={opening || updating || change !== null} canMutate={() => canEdit() && selectedEditorRef.current === selectedEditor} onMutatingChange={onEditorMutatingChange}
+          onUpdated={async () => { refresh(); await onFollowUpUpdated?.(); }} />}
+      <button type="button" disabled={quickEditorMutating} onClick={() => {
+        if (quickEditorPending.current) return;
+        restoreFocus.current = `${selectedEditor.mode}-${selectedEditor.item.analysis_id}`;
+        selectedEditorRef.current = null;
+        setSelectedEditor(null);
       }}>Close editing</button>
     </section>}
     {message && <p role="status">{message}</p>}
@@ -360,14 +385,10 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {!lane.loading && !lane.error && lane.items.length === 0 && <p>No saved analyses in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
-              opening={opening} disabled={updating || followUpMutating || change !== null}
-              onOpen={(id) => { if (!followUpPending.current) onOpen(id); }}
-              onFollowUp={(item) => {
-                if (opening || mutationPending.current || confirmationPending.current || followUpPending.current) return;
-                clearDrag();
-                setSelectedFollowUp(item);
-                followUpHeading.current?.focus();
-              }}
+              opening={opening} disabled={updating || quickEditorMutating || change !== null}
+              onOpen={(id) => { if (!quickEditorPending.current) onOpen(id); }}
+              onFollowUp={(item) => openEditor('follow-up', item)}
+              onNote={(item) => openEditor('note', item)}
               dragging={dragged?.item.analysis_id === item.analysis_id && dragged.from === value}
               onDragStart={(event) => startDrag(event, item, value)} onDragEnd={clearDrag} onReview={prepareChange} />)}
           </ul>}
