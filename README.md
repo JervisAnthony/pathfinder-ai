@@ -300,6 +300,48 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+Each card also offers **Edit note**, opening a **Quick application note** panel
+with the selected job and company above the seven lanes. Notes and follow-up
+editing share one selected editor: switching modes or cards, closing, or leaving
+Board view discards unsaved drafts without automatically saving. The panel reuses
+`ApplicationNoteEditor` and the existing GET, PUT, and DELETE
+`/api/v1/analyses/{analysis_id}/note` endpoints. Only the selected note is fetched
+on opening; ordinary Board loading never fetches notes for individual cards.
+
+Read the persisted note or explicit empty state, then explicitly **Save note** to
+create or edit it. Text is preserved exactly; blank, whitespace-only, unchanged,
+and over-10,000-character drafts cannot be submitted. **Clear note** opens a
+confirmation; only confirming removes the saved note. Cancel leaves it intact.
+Loading, last-updated information, acknowledged save/clear messages, safe errors,
+and **Retry note** remain in the panel. Failed writes preserve persisted content
+and the draft for intentional retry. No success is reported before the server
+acknowledges persistence.
+
+Opening focuses the quick-editor heading; **Close editing** restores focus to the
+initiating card action, or **Refresh board** if that card disappeared. Buttons,
+labelled text areas, accessible status/error messages, and the responsive panel
+support keyboard and narrow-screen use. Pending writes block editor switching,
+closing, dragging/dropping, status confirmation, Detail/Overview navigation, List
+view, and manual refresh. Late responses cannot populate a different record or
+emit callbacks after unmount.
+
+Note saves and clears preserve loaded lane pages, offsets, History filters and
+pagination, comparison selection, and Overview without refreshing metadata that
+does not depend on notes. Reopening fetches authoritative server content.
+**Refresh board** also reloads a pristine selected note; unsaved drafts survive
+refresh, so close and reopen after discarding a draft to see external changes.
+There is no background polling or conflict-resolution workflow for simultaneous
+edits from different sessions.
+
+Notes use existing server-side storage only. They are private user-authored
+context, separate from immutable analysis snapshots, matching, and AI. Notes are
+excluded from History summaries and CSV/JSON/Markdown exports; they are never
+sent to an LLM, browser storage, analytics, telemetry, or logs. This feature adds
+no authentication, encryption, multi-user isolation, reminders, notifications,
+backend/schema/API contract changes, or dependencies. Real-browser E2E testing
+has not been performed; interaction and lifecycle coverage uses deterministic
+component and integration tests.
+
 Each card offers **Edit follow-up**, opening one **Quick follow-up** panel above
 the lanes without opening Detail. It reuses `ApplicationFollowUpEditor` and the
 existing follow-up GET/PUT/DELETE API. Opening fetches the authoritative persisted

@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-18
+Last updated: 2026-10-19
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #34 merge):
+Latest verified completed main (PR #35 merge):
 
-`a4721639d8895067be68829bb986307de3b7610a`
+`52f5684a563fd7491237bf06a755a17dd08ec168`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 30 — Kanban Drag-and-Drop Status Changes**
+**Commit 31 — Kanban Quick Follow-Up Editing**
 
 ## Completed MVP-1 Roadmap
 
@@ -54,38 +54,46 @@ These milestones must not be replayed or rebuilt.
 - Commit 28 — Application Pipeline CSV Export — complete (PR #32 merged)
 - Commit 29 — Application Pipeline Kanban Board — complete (PR #33 merged)
 - Commit 30 — Kanban Drag-and-Drop Status Changes — complete (PR #34 merged)
+- Commit 31 — Kanban Quick Follow-Up Editing — COMPLETE (PR #35, merged 2026-10-18)
 
 ## Post-MVP Active Work
 
-**Commit 31 — Kanban Quick Follow-Up Management**
+**Commit 32 — Kanban Quick Application Notes**
 
-Status: **Authorized active development; local implementation prepared for human review**
+Status: **Authorized active development.**
 
-Each Kanban card gains Edit follow-up, opening one selected-analysis panel above
-all seven lanes. The existing ApplicationFollowUpEditor fetches the authoritative
-persisted date and reuses follow-up GET/PUT/DELETE for explicit set, reschedule,
-and confirmation-gated clear. Close discards drafts and restores focus. Switching
-records invalidates old loads. Calendar days retain YYYY-MM-DD semantics.
+Each Kanban card gains Edit note, opening one selected-analysis panel above all
+seven lanes. ApplicationNoteEditor lazily reads authoritative note content and
+reuses existing note GET/PUT/DELETE for explicit creation, editing, and
+confirmation-gated clearing. Exact text, nonempty validation, the 10,000-character
+limit, safe errors, Retry, timestamps, and Saved Analysis Detail behavior remain.
 
-Immediate guards coordinate follow-up mutations with status confirmation,
-status changes, dragging, editor switching, closing, and Detail navigation.
-Successful persistence keeps the panel and acknowledged result visible, refreshes
-lane metadata, History, and Overview, and preserves List filters, drafts, page,
-and Board selection. Safe load/mutation errors allow intentional retry;
-persistence success and synchronization failure are reported separately.
-Keyboard focus, native date controls, accessible messages, and a responsive panel
-preserve keyboard/mobile use and the existing Detail follow-up workflow.
+One type-safe selected editor coordinates notes and follow-up through the existing
+immediate mutation safeguards. Pending writes prevent conflicting editor,
+status, drag/drop, closing, Detail, List, Overview, and refresh actions. Closing
+or switching discards drafts and restores appropriate focus. Generation guards
+ignore stale loads and mutations and prevent late unmount callbacks.
+
+Acknowledged note writes remain visible without refreshing lane summaries,
+History, or Overview. Loaded lane pages, filters, drafts, pagination, comparison,
+and Board selection are preserved. Manual refresh reloads pristine selected
+notes without overwriting unsaved drafts; reopening always retrieves persisted
+content. Existing follow-up refresh behavior remains intact.
 
 No backend/schema/API change, dependency, automatic reminder, notification,
 calendar integration, browser persistence, telemetry, or deterministic matching
-change is introduced. Existing immutable snapshots, notes, status history,
-comparison, exports, and privacy boundaries remain intact.
+change is introduced. Notes stay out of History summaries, all exports, AI,
+matching, browser storage, telemetry, and logs. Immutable snapshots, status
+history, comparison, exports, and privacy boundaries remain intact. There is no
+background polling or simultaneous-edit conflict resolution. Real-browser E2E
+testing has not been performed; deterministic component/integration tests cover
+interaction, accessibility, and lifecycle safety.
 
-The maintainer authorized reconciliation of Commit 30 following the verified
-merge of PR #34 at `a4721639d8895067be68829bb986307de3b7610a`.
+The maintainer authorized reconciliation of Commit 31 following the verified
+merge of PR #35 at `52f5684a563fd7491237bf06a755a17dd08ec168` on 2026-10-18.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 31 PR number is assigned.
+pull request, review, and merge. No Commit 32 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -124,7 +132,8 @@ The repository already contains:
 - bounded, metadata-only all-record and applied-filter application pipeline CSV export
 - application pipeline Board view with seven independently paginated lanes and confirmed status changes
 - native desktop Kanban drag handles feeding the existing confirmation workflow
-- Kanban quick follow-up panel reusing the existing date editor (authorized local implementation)
+- Kanban quick follow-up panel reusing the existing date editor
+- Kanban quick application notes sharing one selected editor with follow-up (authorized active development)
 
 ## Architectural Boundary
 

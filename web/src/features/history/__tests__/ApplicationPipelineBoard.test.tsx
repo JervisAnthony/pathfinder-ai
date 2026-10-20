@@ -1,8 +1,8 @@
 import { StrictMode } from 'react';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp } from '../../../api/pathfinder';
-import type { AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
+import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
+import type { AnalysisNote, AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
 import { ApplicationPipelineBoard } from '../ApplicationPipelineBoard';
 import { applicationStatuses } from '../status';
 import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
@@ -10,6 +10,7 @@ import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
 vi.mock('../../../api/pathfinder', async (original) => ({
   ...await original<typeof import('../../../api/pathfinder')>(),
   getAnalysisHistory: vi.fn(), getAnalysisTracking: vi.fn(), updateAnalysisTracking: vi.fn(),
+  getAnalysisNote: vi.fn(), updateAnalysisNote: vi.fn(), clearAnalysisNote: vi.fn(),
   getAnalysisFollowUp: vi.fn(), updateAnalysisFollowUp: vi.fn(), clearAnalysisFollowUp: vi.fn(),
 }));
 
@@ -82,6 +83,7 @@ async function review(target = 'applied') {
 beforeEach(() => {
   vi.resetAllMocks();
   supply([record()]);
+  vi.mocked(getAnalysisNote).mockImplementation(async (id) => ({ analysis_id: id, content: null, updated_at: null }));
   tracking.mockResolvedValue({ analysis_id: 'record', application_status: 'not_applied', updated_at: null });
   update.mockResolvedValue({ analysis_id: 'record', application_status: 'applied', updated_at: '2026-10-16T10:00:00Z' });
   vi.mocked(getAnalysisFollowUp).mockImplementation(async (id) => ({ analysis_id: id, follow_up_on: null, updated_at: null }));
@@ -247,6 +249,7 @@ describe('Kanban quick follow-up', () => {
     expect(screen.getByText('Close editing')).toBeDisabled();
     expect(lane().getByText(`Follow up: ${formatCalendarDate('2026-10-20')}`)).toBeInTheDocument();
     supply([record()]);
+  vi.mocked(getAnalysisNote).mockImplementation(async (id) => ({ analysis_id: id, content: null, updated_at: null }));
     await act(async () => clearing.resolve());
     expect(screen.getByText('Follow-up date cleared.')).toBeInTheDocument();
     expect(lane().getByText('No follow-up scheduled')).toBeInTheDocument();
@@ -926,5 +929,174 @@ describe('native board dragging', () => {
     expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied' });
     expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
     await act(async () => pendingLane.resolve({ items: [] }));
+  });
+});
+
+
+const noteValue = (content: string | null = null, id = 'record'): AnalysisNote => ({ analysis_id: id, content, updated_at: null });
+async function openNote(index = 0) {
+  fireEvent.click((await screen.findAllByRole('button', { name: 'Edit note' }))[index]);
+  return await screen.findByRole('textbox', { name: 'Application note' });
+}
+
+describe('Kanban quick notes', () => {
+  it.each(['note', 'follow-up'].flatMap((mode) => ['switch', 'close'].map((action) => ({ mode, action }))))('rejects a stale $mode save in the same tick as $action', async ({ mode, action }) => {
+    render(<ApplicationPipelineBoard {...props} />);
+    if (mode === 'note') fireEvent.change(await openNote(), { target: { value: 'draft' } });
+    else fireEvent.change(await openFollowUp(), { target: { value: '2026-10-20' } });
+    const save = screen.getByText(mode === 'note' ? 'Save note' : 'Save follow-up');
+    const next = screen.getByText(action === 'close' ? 'Close editing' : mode === 'note' ? 'Edit follow-up' : 'Edit note');
+    act(() => { next.click(); save.click(); });
+    expect(updateAnalysisNote).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
+    if (action === 'switch') {
+      if (mode === 'note') await screen.findByLabelText('Follow-up date');
+      else await screen.findByRole('textbox', { name: 'Application note' });
+      expect(screen.getByText('Close editing')).toBeEnabled();
+    } else expect(screen.queryByText('Close editing')).not.toBeInTheDocument();
+  });
+
+  it('keeps lanes and follow-up editing functional after note loading fails and retries only the note', async () => {
+    vi.mocked(getAnalysisNote).mockRejectedValueOnce(new Error('PRIVATE'));
+    render(<ApplicationPipelineBoard {...props} />);
+    fireEvent.click(await screen.findByText('Edit note'));
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not load the application note');
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(screen.getByText('Edit follow-up')).toBeEnabled();
+    expect(screen.getByText('Open details')).toBeEnabled();
+    fireEvent.click(screen.getByText('Retry note'));
+    expect(await screen.findByRole('textbox', { name: 'Application note' })).toHaveValue('');
+    expect(history).toHaveBeenCalledTimes(7);
+    expect(getAnalysisNote).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers lazy selected-note access across all seven lanes and identifies the selected job and company', async () => {
+    supply(applicationStatuses.map(({ value }) => ({ ...record(value, value), company_name: 'Fictional Labs' })));
+    render(<ApplicationPipelineBoard {...props} />);
+    expect(await screen.findAllByText('Edit note')).toHaveLength(7);
+    expect(getAnalysisNote).not.toHaveBeenCalled();
+    for (const { value, label } of applicationStatuses) {
+      fireEvent.click(lane(label).getByText('Edit note'));
+      expect(await screen.findByRole('textbox', { name: 'Application note' })).toHaveValue('');
+      expect(screen.getByRole('region', { name: 'Quick application note' })).toHaveTextContent(`Fictional Engineer ${value} \u2014 Fictional Labs`);
+      expect(screen.getByRole('heading', { name: 'Quick application note' })).toHaveFocus();
+      expect(screen.getByText('No application note saved.')).toBeInTheDocument();
+      expect(getAnalysisNote).toHaveBeenLastCalledWith(value);
+      fireEvent.click(screen.getByText('Close editing'));
+      expect(lane(label).getByText('Edit note')).toHaveFocus();
+    }
+    expect(getAnalysisNote).toHaveBeenCalledTimes(7);
+    expect(history).toHaveBeenCalledTimes(7);
+    expect(onOpen).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+  });
+
+  it('loads persisted content, discards drafts on close or mode switch, and reopens authoritatively', async () => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('persisted'));
+    render(<ApplicationPipelineBoard {...props} />);
+    const input = await openNote();
+    expect(input).toHaveValue('persisted');
+    expect(screen.getByRole('region', { name: 'Quick application note' })).toHaveTextContent('Company not supplied');
+    fireEvent.change(input, { target: { value: 'draft' } });
+    await openFollowUp();
+    expect(screen.queryByRole('textbox', { name: 'Application note' })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Close editing')).toHaveLength(1);
+    await openNote();
+    expect(screen.queryByLabelText('Follow-up date')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Application note' }), { target: { value: 'discard' } });
+    fireEvent.click(screen.getByText('Close editing'));
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('changed elsewhere'));
+    expect(await openNote()).toHaveValue('changed elsewhere');
+    expect(updateAnalysisNote).not.toHaveBeenCalled(); expect(clearAnalysisNote).not.toHaveBeenCalled();
+  });
+
+  it.each(['save', 'clear'])('coordinates a pending %s immediately and preserves loaded pages without summary refresh', async (action) => {
+    supply(Array.from({ length: 12 }, (_, i) => record(String(i))));
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('persisted', '11'));
+    const put = deferred<AnalysisNote>(); const remove = deferred<void>();
+    vi.mocked(updateAnalysisNote).mockReturnValue(put.promise);
+    vi.mocked(clearAnalysisNote).mockReturnValue(remove.promise);
+    const mutating = vi.fn(); const followUpUpdated = vi.fn();
+    render(<ApplicationPipelineBoard {...props} onQuickEditorMutatingChange={mutating} onFollowUpUpdated={followUpUpdated} />);
+    fireEvent.click(await screen.findByText('Load more Not applied'));
+    await screen.findByText('Fictional Engineer 11');
+    const input = await openNote(11);
+    const drag = await startDrag('11');
+    let button: HTMLElement;
+    if (action === 'save') {
+      fireEvent.change(input, { target: { value: '  exact\n<script>text</script>  ' } });
+      button = screen.getByText('Save note');
+    } else {
+      fireEvent.click(screen.getByText('Clear note'));
+      button = within(screen.getByRole('alertdialog')).getByText('Clear note');
+    }
+    const other = screen.getAllByText('Edit follow-up')[0];
+    const close = screen.getByText('Close editing');
+    const open = screen.getAllByText('Open details')[0];
+    act(() => { button.click(); button.click(); other.click(); close.click(); open.click(); });
+    expect(action === 'save' ? updateAnalysisNote : clearAnalysisNote).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Application note saved.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Application note cleared.')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Follow-up date')).not.toBeInTheDocument();
+    expect(onOpen).not.toHaveBeenCalled();
+    dropIn('Applied', drag.dataTransfer);
+    expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument();
+    const rejected = dragData(); fireEvent.dragStart(drag.handle, { dataTransfer: rejected });
+    expect(rejected.setData).not.toHaveBeenCalled();
+    for (const name of ['Edit note', 'Edit follow-up', 'Open details', 'Review change']) {
+      screen.getAllByRole('button', { name }).forEach((control) => expect(control).toBeDisabled());
+    }
+    expect(close).toBeDisabled(); expect(screen.getByText('Refresh board')).toBeDisabled();
+    await act(async () => { if (action === 'save') put.resolve(noteValue('  exact\n<script>text</script>  ', '11')); else remove.resolve(); });
+    expect(screen.getByText(action === 'save' ? 'Application note saved.' : 'Application note cleared.')).toBeInTheDocument();
+    expect(input).toHaveValue(action === 'save' ? '  exact\n<script>text</script>  ' : '');
+    expect(mutating.mock.calls).toEqual([[true], [false]]);
+    expect(history).toHaveBeenCalledTimes(8); expect(followUpUpdated).not.toHaveBeenCalled();
+    expect(lane().getByText('Fictional Engineer 11')).toBeInTheDocument();
+    expect(getAnalysisNote).toHaveBeenCalledOnce();
+  });
+
+  it('preserves a note draft during status confirmation and retains status safeguards', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    fireEvent.change(await openNote(), { target: { value: 'draft' } });
+    await review();
+    expect(screen.getByText('Save note')).toBeDisabled();
+    expect(screen.getByText('Edit note')).toBeDisabled();
+    fireEvent.click(screen.getByText('Cancel'));
+    expect(screen.getByRole('textbox', { name: 'Application note' })).toHaveValue('draft');
+    fireEvent.click(screen.getByText('Close editing'));
+    const drag = await startDrag(); dropIn('Applied', drag.dataTransfer);
+    fireEvent.click(screen.getByText('Confirm status change'));
+    await screen.findByText('Application status changed to Applied.');
+    expect(update).toHaveBeenCalledExactlyOnceWith('record', 'applied');
+  });
+
+  it('refreshes authoritative notes when pristine, preserves unsaved drafts on refresh, and restores fallback focus', async () => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('original'));
+    render(<ApplicationPipelineBoard {...props} />);
+    await openNote();
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('elsewhere'));
+    fireEvent.click(screen.getByText('Refresh board'));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Application note' })).toHaveValue('elsewhere'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Application note' }), { target: { value: 'draft' } });
+    supply([]);
+    fireEvent.click(screen.getByText('Refresh board'));
+    await screen.findByText('No saved analyses in Not applied.');
+    expect(screen.getByRole('textbox', { name: 'Application note' })).toHaveValue('draft');
+    expect(getAnalysisNote).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByText('Close editing'));
+    expect(screen.getByText('Refresh board')).toHaveFocus();
+  });
+
+  it.each(['resolve', 'reject'])('ignores a stale selected-note GET %s while keeping lanes usable', async (outcome) => {
+    supply([record(), record('two')]);
+    const old = deferred<AnalysisNote>();
+    vi.mocked(getAnalysisNote).mockReturnValueOnce(old.promise).mockResolvedValueOnce(noteValue('second', 'two'));
+    render(<ApplicationPipelineBoard {...props} />);
+    fireEvent.click((await screen.findAllByText('Edit note'))[0]);
+    fireEvent.click(screen.getAllByText('Edit note')[1]);
+    await screen.findByRole('textbox', { name: 'Application note' });
+    await act(async () => { if (outcome === 'resolve') old.resolve(noteValue('stale')); else old.reject(new Error('PRIVATE')); });
+    expect(screen.getByRole('textbox', { name: 'Application note' })).toHaveValue('second');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Open details')[0]).toBeEnabled();
   });
 });

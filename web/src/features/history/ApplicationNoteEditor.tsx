@@ -14,7 +14,7 @@ function noteError(error: unknown, action: NoteAction): string {
   if (error instanceof ApiError && error.code === 'persistence_unavailable') {
     return 'Application notes are unavailable because persistence is not configured on this Pathfinder server.';
   }
-  if (action === 'save' && error instanceof ApiError && error.status === 422) {
+  if (action !== 'load' && error instanceof ApiError && error.status === 422) {
     return 'The application note is invalid. Check that it contains text and is no longer than 10,000 characters.';
   }
   return action === 'load'
@@ -28,9 +28,11 @@ interface Props {
   analysisId: string;
   disabled: boolean;
   onMutatingChange: (mutating: boolean) => void;
+  canMutate?: () => boolean;
+  refreshKey?: number;
 }
 
-export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }: Props) {
+export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange, canMutate, refreshKey = 0 }: Props) {
   const [note, setNote] = useState<AnalysisNote | null>(null);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
@@ -41,6 +43,16 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
   const [message, setMessage] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const generation = useRef(0);
+  const previousRefresh = useRef(refreshKey);
+  const dirty = useRef(false);
+
+  useEffect(() => { dirty.current = note !== null && draft !== (note.content ?? ''); }, [note, draft]);
+  useEffect(() => {
+    if (previousRefresh.current === refreshKey) return;
+    previousRefresh.current = refreshKey;
+    // Refresh authoritative content only when no unsaved draft would be lost.
+    if (!dirty.current && !pendingRef.current) setRetryKey((value) => value + 1);
+  }, [refreshKey]);
 
   useEffect(() => {
     const current = ++generation.current;
@@ -49,6 +61,9 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
     setDraft('');
     setError(null);
     setMessage(null);
+    setConfirmingClear(false);
+    pendingRef.current = false;
+    setPending(null);
     void getAnalysisNote(analysisId).then((value) => {
       if (generation.current !== current) return;
       setNote(value);
@@ -77,7 +92,7 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
 
   const save = async () => {
     if (disabled || pendingRef.current || note === null || !draft.trim()
-      || draft.length > MAX_NOTE_LENGTH || draft === (note.content ?? '')) return;
+      || draft.length > MAX_NOTE_LENGTH || draft === (note.content ?? '') || canMutate?.() === false) return;
     begin('save');
     const current = generation.current;
     try {
@@ -89,12 +104,12 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
     } catch (reason) {
       if (generation.current === current) setError(noteError(reason, 'save'));
     } finally {
-      finish();
+      if (generation.current === current) finish();
     }
   };
 
   const clear = async () => {
-    if (disabled || pendingRef.current || note?.content === null || !note) return;
+    if (disabled || pendingRef.current || !confirmingClear || note?.content === null || !note || canMutate?.() === false) return;
     begin('clear');
     const current = generation.current;
     try {
@@ -107,7 +122,7 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
     } catch (reason) {
       if (generation.current === current) setError(noteError(reason, 'clear'));
     } finally {
-      finish();
+      if (generation.current === current) finish();
     }
   };
 
@@ -125,7 +140,7 @@ export function ApplicationNoteEditor({ analysisId, disabled, onMutatingChange }
       <textarea id="application-note-input" value={draft} maxLength={MAX_NOTE_LENGTH}
         disabled={mutationDisabled} onChange={(event) => { setDraft(event.target.value); setMessage(null); }} />
       <p>{draft.length} / 10,000</p>
-      <button type="button" disabled={mutationDisabled || !draft.trim() || draft === (note.content ?? '')}
+      <button type="button" disabled={mutationDisabled || !draft.trim() || draft.length > MAX_NOTE_LENGTH || draft === (note.content ?? '')}
         onClick={() => void save()}>Save note</button>
       {note.content !== null && <button type="button" disabled={mutationDisabled}
         onClick={() => { setConfirmingClear(true); setError(null); setMessage(null); }}>Clear note</button>}
