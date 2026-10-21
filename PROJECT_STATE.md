@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-19
+Last updated: 2026-10-21
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #35 merge):
+Latest verified completed main (PR #36 merge, 2026-10-20):
 
-`52f5684a563fd7491237bf06a755a17dd08ec168`
+`9019d992cc31fc4e950a72a2c7fcf92121fe4120`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 31 — Kanban Quick Follow-Up Editing**
+**Commit 32 — Kanban Quick Application Notes**
 
 ## Completed MVP-1 Roadmap
 
@@ -55,45 +55,44 @@ These milestones must not be replayed or rebuilt.
 - Commit 29 — Application Pipeline Kanban Board — complete (PR #33 merged)
 - Commit 30 — Kanban Drag-and-Drop Status Changes — complete (PR #34 merged)
 - Commit 31 — Kanban Quick Follow-Up Editing — COMPLETE (PR #35, merged 2026-10-18)
+- Commit 32 — Kanban Quick Application Notes — COMPLETE (PR #36, merged 2026-10-20)
 
 ## Post-MVP Active Work
 
-**Commit 32 — Kanban Quick Application Notes**
+**Commit 33 — Kanban Board Search**
 
 Status: **Authorized active development.**
 
-Each Kanban card gains Edit note, opening one selected-analysis panel above all
-seven lanes. ApplicationNoteEditor lazily reads authoritative note content and
-reuses existing note GET/PUT/DELETE for explicit creation, editing, and
-confirmation-gated clearing. Exact text, nonempty validation, the 10,000-character
-limit, safe errors, Retry, timestamps, and Saved Analysis Detail behavior remain.
+The Board owns separate draft and applied title/company queries. Apply or Enter
+normalizes whitespace and enforces the existing 200-character maximum; Clear
+removes both values. Invalid input preserves results, and unchanged normalized
+queries avoid redundant requests. Every lane reuses the existing analyses API
+with its status and the applied query, retaining ten-card pages, lookahead,
+server ordering, deduplication, independent Load more, and safe lane Retry.
 
-One type-safe selected editor coordinates notes and follow-up through the existing
-immediate mutation safeguards. Pending writes prevent conflicting editor,
-status, drag/drop, closing, Detail, List, Overview, and refresh actions. Closing
-or switching discards drafts and restores appropriate focus. Generation guards
-ignore stale loads and mutations and prevent late unmount callbacks.
+Changed searches reset pages and invalidate prior requests and drag sessions.
+Generation guards isolate stale successes/failures, pagination, unmount, and
+StrictMode. Immediate refs guard repeated actions and prevent search changes
+during status confirmation/mutations or any open quick editor. Existing note,
+follow-up, navigation, and status workflows remain. Manual Board/History refresh,
+follow-up writes, and successful status changes preserve the applied query;
+note-only writes do not reload summaries.
 
-Acknowledged note writes remain visible without refreshing lane summaries,
-History, or Overview. Loaded lane pages, filters, drafts, pagination, comparison,
-and Board selection are preserved. Manual refresh reloads pristine selected
-notes without overwriting unsaved drafts; reopening always retrieves persisted
-content. Existing follow-up refresh behavior remains intact.
+Search remains independent of List filters/drafts/pages, Overview totals, CSV
+exports, comparison, and deterministic scoring. Only saved title/company metadata
+is searched server-side; no snapshots, candidate profiles, resumes, notes, job
+bodies, or AI text are searched. No new API, schema, dependency, algorithm, AI
+call, telemetry, browser storage, cookie, or URL persistence is introduced.
+Search lives in mounted Board memory and resets on unmount/page reload. Existing
+offset-pagination concurrency and installation privacy limitations remain.
+Deterministic component/integration tests cover the workflows; real-browser E2E
+testing has not been performed.
 
-No backend/schema/API change, dependency, automatic reminder, notification,
-calendar integration, browser persistence, telemetry, or deterministic matching
-change is introduced. Notes stay out of History summaries, all exports, AI,
-matching, browser storage, telemetry, and logs. Immutable snapshots, status
-history, comparison, exports, and privacy boundaries remain intact. There is no
-background polling or simultaneous-edit conflict resolution. Real-browser E2E
-testing has not been performed; deterministic component/integration tests cover
-interaction, accessibility, and lifecycle safety.
-
-The maintainer authorized reconciliation of Commit 31 following the verified
-merge of PR #35 at `52f5684a563fd7491237bf06a755a17dd08ec168` on 2026-10-18.
+The maintainer authorized reconciliation of Commit 32 following PR #36's merge
+at `9019d992cc31fc4e950a72a2c7fcf92121fe4120` on 2026-10-20.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 32 PR number is assigned.
+pull request, review, and merge. No Commit 33 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -133,7 +132,8 @@ The repository already contains:
 - application pipeline Board view with seven independently paginated lanes and confirmed status changes
 - native desktop Kanban drag handles feeding the existing confirmation workflow
 - Kanban quick follow-up panel reusing the existing date editor
-- Kanban quick application notes sharing one selected editor with follow-up (authorized active development)
+- Kanban quick application notes sharing one selected editor with follow-up
+- Board-specific server-backed title/company search (authorized active development)
 
 ## Architectural Boundary
 
