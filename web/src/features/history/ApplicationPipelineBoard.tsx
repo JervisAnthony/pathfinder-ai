@@ -6,8 +6,14 @@ import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 import { ApplicationNoteEditor } from './ApplicationNoteEditor';
+import { emptyBoardFollowUpFilters, validateBoardFollowUpFilters } from './boardFollowUpFilters';
+import type { BoardFollowUpFilters } from './boardFollowUpFilters';
 
 type QuickEditor = { mode: 'follow-up' | 'note'; item: SavedAnalysisSummary };
+interface BoardFilters {
+  query: string;
+  followUp: BoardFollowUpFilters;
+}
 
 interface Props {
   onOpen: (analysisId: string) => void;
@@ -105,10 +111,17 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
 export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onQuickEditorMutatingChange }: Props) {
   const [draftQuery, setDraftQuery] = useState('');
   const draftQueryRef = useRef('');
-  const [appliedQuery, setAppliedQuery] = useState('');
+  const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
+  const draftFollowUpRef = useRef(draftFollowUp);
+  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters() });
   // Update synchronously before refresh so same-tick actions and every refresh
-  // workflow use the current search, independent of React render closures.
-  const appliedQueryRef = useRef('');
+  // workflow use one current filter context, independent of render closures.
+  const appliedFiltersRef = useRef(appliedFilters);
+  const appliedQuery = appliedFilters.query;
+  const followUpFiltered = appliedFilters.followUp.status !== 'all' || !!appliedFilters.followUp.from || !!appliedFilters.followUp.to;
+  const [followUpFilterError, setFollowUpFilterError] = useState<string | null>(null);
+  const followUpFromInput = useRef<HTMLInputElement>(null);
+  const followUpToInput = useRef<HTMLInputElement>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedEditor, setSelectedEditor] = useState<QuickEditor | null>(null);
   const selectedEditorRef = useRef<QuickEditor | null>(null);
@@ -185,9 +198,12 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     pending.current.add(status);
     setLanes((current) => ({ ...current, [status]: { ...current[status], loading: true, error: null } }));
     try {
-      const query = appliedQueryRef.current;
+      const { query, followUp } = appliedFiltersRef.current;
       const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, {
         application_status: status, ...(query ? { query } : {}),
+        ...(followUp.status === 'all' ? {} : { has_follow_up: followUp.status === 'yes' }),
+        ...(followUp.from ? { follow_up_from: followUp.from } : {}),
+        ...(followUp.to ? { follow_up_to: followUp.to } : {}),
       });
       if (epoch !== generation.current) return;
       setLanes((current) => {
@@ -226,9 +242,22 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     return () => { generation.current += 1; };
   }, [refresh, refreshKey]);
 
+  const canChangeFilters = () => mounted.current && !opening && !quickEditorPending.current && !selectedEditorRef.current
+    && !mutationPending.current && !confirmationPending.current;
+
+  const applyBoardFilters = (next: BoardFilters) => {
+    const current = appliedFiltersRef.current;
+    if (current.query === next.query && current.followUp.status === next.followUp.status
+      && current.followUp.from === next.followUp.from && current.followUp.to === next.followUp.to) return;
+    appliedFiltersRef.current = next;
+    setAppliedFilters(next);
+    setError(null);
+    setMessage(null);
+    refresh();
+  };
+
   const applySearch = (clear = false) => {
-    if (!mounted.current || opening || quickEditorPending.current || selectedEditorRef.current
-      || mutationPending.current || confirmationPending.current) return;
+    if (!canChangeFilters()) return;
     const normalized = clear ? '' : draftQueryRef.current.trim().replace(/\s+/g, ' ');
     if (normalized.length > 200) {
       setSearchError('Use a board search of at most 200 characters.');
@@ -237,12 +266,26 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     setSearchError(null);
     draftQueryRef.current = normalized;
     setDraftQuery(normalized);
-    if (normalized === appliedQueryRef.current) return;
-    appliedQueryRef.current = normalized;
-    setAppliedQuery(normalized);
-    setError(null);
-    setMessage(null);
-    refresh();
+    applyBoardFilters({ ...appliedFiltersRef.current, query: normalized });
+  };
+
+  const editFollowUpFilters = (next: BoardFollowUpFilters) => {
+    draftFollowUpRef.current = next;
+    setDraftFollowUp(next);
+  };
+
+  const applyFollowUpFilters = (clear = false) => {
+    if (!canChangeFilters()) return;
+    const next = clear ? emptyBoardFollowUpFilters() : draftFollowUpRef.current;
+    const invalidNativeDate = !clear && [followUpFromInput.current, followUpToInput.current].some((input) => input && !input.validity.valid);
+    const validationError = validateBoardFollowUpFilters(next);
+    if (invalidNativeDate || validationError) {
+      setFollowUpFilterError(validationError ?? 'Use valid follow-up calendar dates in YYYY-MM-DD format, from 0001-01-01 to 9999-12-31.');
+      return;
+    }
+    setFollowUpFilterError(null);
+    editFollowUpFilters(next);
+    applyBoardFilters({ ...appliedFiltersRef.current, followUp: next });
   };
 
   // Both native drops and the selector use the same confirmation gate. Neither
@@ -378,6 +421,37 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     <p id="board-search-help">Apply or press Enter to search saved title/company metadata in all seven lanes. Close quick editing before applying or clearing search.</p>
     <p role={appliedQuery ? 'status' : undefined} aria-live="polite" className="pipeline-search-status">{appliedQuery ? `Applied board search: ${appliedQuery}` : 'No board search applied.'}</p>
     {searchError && <p id="board-search-error" role="alert">{searchError}</p>}
+    <form className="pipeline-follow-up-filters" aria-labelledby="board-follow-up-filters-title" noValidate
+      onSubmit={(event) => { event.preventDefault(); applyFollowUpFilters(); }}>
+      <h4 id="board-follow-up-filters-title">Board follow-up filters</h4>
+      <div className="pipeline-filter-controls">
+        <label>Board follow-up status
+          <select value={draftFollowUp.status} aria-invalid={followUpFilterError ? true : undefined}
+            aria-describedby={`board-follow-up-help${followUpFilterError ? ' board-follow-up-error' : ''}`}
+            onChange={(event) => editFollowUpFilters({ ...draftFollowUpRef.current, status: event.target.value as BoardFollowUpFilters['status'] })}>
+            <option value="all">All</option><option value="yes">Scheduled</option><option value="no">Not scheduled</option>
+          </select>
+        </label>
+        <label>Board follow-up from
+          <input ref={followUpFromInput} type="date" min="0001-01-01" max="9999-12-31" value={draftFollowUp.from}
+            aria-invalid={followUpFilterError ? true : undefined} aria-describedby={`board-follow-up-help${followUpFilterError ? ' board-follow-up-error' : ''}`}
+            onChange={(event) => editFollowUpFilters({ ...draftFollowUpRef.current, from: event.target.value })} />
+        </label>
+        <label>Board follow-up to
+          <input ref={followUpToInput} type="date" min="0001-01-01" max="9999-12-31" value={draftFollowUp.to}
+            aria-invalid={followUpFilterError ? true : undefined} aria-describedby={`board-follow-up-help${followUpFilterError ? ' board-follow-up-error' : ''}`}
+            onChange={(event) => editFollowUpFilters({ ...draftFollowUpRef.current, to: event.target.value })} />
+        </label>
+      </div>
+      <div className="export-actions">
+        <button type="submit" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}>Apply filters</button>
+        <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={() => applyFollowUpFilters(true)}>Clear follow-up filters</button>
+      </div>
+      <p id="board-follow-up-help">These are draft values until Apply filters or Enter. Date bounds include both endpoints and select scheduled records, including with All. Close quick editing before applying or clearing filters.</p>
+      <p aria-live="polite" role={followUpFiltered ? 'status' : undefined}>Applied board follow-up filters: {appliedFilters.followUp.status === 'yes' ? 'Scheduled' : appliedFilters.followUp.status === 'no' ? 'Not scheduled' : 'All'}{appliedFilters.followUp.from ? `; from ${appliedFilters.followUp.from}` : ''}{appliedFilters.followUp.to ? `; to ${appliedFilters.followUp.to}` : ''}.</p>
+      {followUpFilterError && <p id="board-follow-up-error" role="alert">{followUpFilterError}</p>}
+    </form>
     {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
       <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>
       <p>{selectedEditor.item.job_title} — {selectedEditor.item.company_name ?? 'Company not supplied'}</p>
@@ -426,7 +500,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {destination && <p className="pipeline-drop-instruction">Drop to review status change</p>}
           {lane.loading && <p role="status">Loading {label}...</p>}
           {lane.error && <div role="alert"><p>{lane.error}</p><button type="button" disabled={lane.loading || updating} onClick={() => void loadLane(value, lane.offset, generation.current)}>Retry {label}</button></div>}
-          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
+          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
               opening={opening} disabled={updating || quickEditorMutating || change !== null}

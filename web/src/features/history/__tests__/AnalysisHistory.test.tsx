@@ -186,6 +186,45 @@ describe('History board integration', () => {
     expect(analyzeCandidateJob).not.toHaveBeenCalled();
   });
 
+  it('keeps combined Board follow-up filters independent of List, CSV, and Overview through History refresh', async () => {
+    render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'List query' } });
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'no' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'List query', has_follow_up: false }));
+    fireEvent.change(screen.getByLabelText('Follow-up status'), { target: { value: 'all' } });
+    fireEvent.click(screen.getByText('Board view'));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    await board.findByText('Platform Engineer');
+    const listCalls = vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20).length;
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    fireEvent.change(board.getByRole('searchbox'), { target: { value: 'Board query' } });
+    fireEvent.click(board.getByText('Apply search'));
+    fireEvent.change(board.getByLabelText('Board follow-up status'), { target: { value: 'yes' } });
+    fireEvent.change(board.getByLabelText('Board follow-up from'), { target: { value: '2024-02-29' } });
+    fireEvent.click(board.getByRole('button', { name: 'Apply filters' }));
+    await board.findByText('Platform Engineer');
+    for (const { value } of applicationStatuses) expect(getAnalysisHistory).toHaveBeenCalledWith(11, 0, { application_status: value, query: 'Board query', has_follow_up: true, follow_up_from: '2024-02-29' });
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20)).toHaveLength(listCalls);
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByText('Download filtered CSV'));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ query: 'List query', has_follow_up: false });
+    fireEvent.click(screen.getByText('Download all CSV'));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({});
+    fireEvent.change(board.getByLabelText('Board follow-up to'), { target: { value: '2026-10-31' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' })); await board.findByText('Platform Engineer');
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 11).slice(-7)
+      .every(([, offset, filters]) => offset === 0 && filters?.query === 'Board query' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29' && filters.follow_up_to === undefined)).toBe(true);
+    expect(board.getByLabelText('Board follow-up to')).toHaveValue('2026-10-31');
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1);
+    fireEvent.click(screen.getByText('List view'));
+    expect(screen.getByLabelText('Follow-up status')).toHaveValue('all');
+    fireEvent.click(screen.getByText('Board view')); await screen.findByText('Applied board follow-up filters: All.');
+    expect(screen.getByLabelText('Board follow-up from')).toHaveValue('');
+    expect(getSavedAnalysis).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+
   it('defaults to List and preserves applied filters, drafts, page, and comparison selection across view changes', async () => {
     vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({
       items: limit === 20 ? Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
