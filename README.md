@@ -432,6 +432,47 @@ new endpoint, schema, dependency, or authentication change. Search text travels
 to the configured backend in request query parameters; existing installation and
 network privacy limitations apply.
 
+The **Board follow-up filters** form has independent draft and applied values.
+Choose **All**, **Scheduled**, or **Not scheduled**, optional **Board follow-up
+from** and **Board follow-up to** dates, then **Apply filters** or Enter. Changing
+controls alone makes no requests. The applied summary describes what the lanes
+currently display. An unchanged submission avoids a reload. **Clear follow-up
+filters** resets only the follow-up controls and applied values, preserving Board
+search; **Clear search** preserves the applied follow-up filters. Applying either
+form uses the other form's applied criteria and leaves its unsent draft alone.
+
+Every lane combines its `application_status` and applied `query` with existing
+`has_follow_up`, `follow_up_from`, and `follow_up_to` API parameters. All omits
+presence filtering, Scheduled sends `true`, and Not scheduled sends `false`.
+Date bounds are inclusive and select scheduled records even with All; missing
+dates do not count as empty calendar dates. Historic dates and valid leap days
+are allowed. Bounds remain canonical `YYYY-MM-DD` calendar days without timezone
+conversion. Invalid calendar dates, reversed ranges, and Not scheduled with any
+date bound show accessible validation feedback, retain applied cards/filters,
+and send no requests. Invalid ranges are never silently adjusted.
+
+Changed follow-up filters reload first pages in all seven lanes, invalidate old
+requests/drags, and preserve independent ten-card pagination, lookahead, server
+newest-first ordering, deduplication, and Retry with the combined applied context.
+No follow-up-date sorting or result total is added. Empty filtered lanes say
+**No matching saved analyses**. Failed additional pages keep earlier cards.
+Board/History refresh, successful status changes, and follow-up saves/reschedules/
+clears preserve applied filters. A card can leave matching results after a date
+change; successful feedback remains in the quick editor, and closing falls back
+to Refresh board for focus if the card is gone. This does not delete the record.
+Note-only writes still avoid summary reloads. Close quick editing before applying
+or clearing filters; status confirmation and pending mutations also block changes.
+
+Follow-up filtering does not affect History List criteria/drafts/pages, Overview,
+comparison, or CSV exports. Like Board search, filters live only in the mounted
+Board and reset on unmount or page reload. No new backend behavior, schema, API
+contract, dependency, AI, overdue classification, notification, calendar service,
+browser storage, cookie, URL persistence, or telemetry is introduced. The feature
+reads existing user-managed follow-up metadata and never searches private notes
+or candidate/résumé content. Existing installation/privacy and offset-pagination
+concurrency limitations apply. Real-browser E2E testing has not been performed;
+deterministic component and integration tests cover the interactions.
+
 To move one card, choose a new status, select **Review change**, then explicitly
 **Confirm status change** or **Cancel**. The confirmation identifies the snapshot
 and both statuses. Selecting a value, cancelling, or retaining the current status

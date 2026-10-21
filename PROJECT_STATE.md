@@ -7,13 +7,13 @@ Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #36 merge, 2026-10-20):
+Latest verified completed main (PR #37 merge, 2026-10-21):
 
-`9019d992cc31fc4e950a72a2c7fcf92121fe4120`
+`077f81dc1f454c27fdfaefe83efbd1bafd63d68f`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 32 — Kanban Quick Application Notes**
+**Commit 33 — Kanban Board Search**
 
 ## Completed MVP-1 Roadmap
 
@@ -56,43 +56,50 @@ These milestones must not be replayed or rebuilt.
 - Commit 30 — Kanban Drag-and-Drop Status Changes — complete (PR #34 merged)
 - Commit 31 — Kanban Quick Follow-Up Editing — COMPLETE (PR #35, merged 2026-10-18)
 - Commit 32 — Kanban Quick Application Notes — COMPLETE (PR #36, merged 2026-10-20)
+- Commit 33 — Kanban Board Search — COMPLETE (PR #37, merged 2026-10-21)
 
 ## Post-MVP Active Work
 
-**Commit 33 — Kanban Board Search**
+**Commit 34 — Kanban Follow-Up Filters**
 
 Status: **Authorized active development.**
 
-The Board owns separate draft and applied title/company queries. Apply or Enter
-normalizes whitespace and enforces the existing 200-character maximum; Clear
-removes both values. Invalid input preserves results, and unchanged normalized
-queries avoid redundant requests. Every lane reuses the existing analyses API
-with its status and the applied query, retaining ten-card pages, lookahead,
-server ordering, deduplication, independent Load more, and safe lane Retry.
+The Board adds explicit follow-up presence and optional inclusive calendar-date
+bounds, combining with its existing title/company search. Draft controls affect
+results only on Apply filters or form submission. Clear follow-up filters preserves Board
+search, and Clear search preserves follow-up criteria. One applied context feeds
+the existing analyses API in every lane, retaining ten-card pages, lookahead,
+newest-first server ordering, deduplication, independent Load more, and safe Retry.
+Unchanged submissions avoid reloads; invalid calendar dates, reversed ranges,
+and unscheduled-plus-date criteria retain applied cards/filters without requests.
 
-Changed searches reset pages and invalidate prior requests and drag sessions.
+Changed filters reset pages and invalidate prior requests and drag sessions.
 Generation guards isolate stale successes/failures, pagination, unmount, and
 StrictMode. Immediate refs guard repeated actions and prevent search changes
-during status confirmation/mutations or any open quick editor. Existing note,
-follow-up, navigation, and status workflows remain. Manual Board/History refresh,
-follow-up writes, and successful status changes preserve the applied query;
-note-only writes do not reload summaries.
+during status confirmation/mutations or any open quick editor. Manual Board/
+History refresh, follow-up writes, and successful status changes preserve the
+applied combined filters; note-only writes do not reload summaries. A follow-up
+mutation can remove a card from matching results while keeping successful editor
+feedback. Closing retains the Refresh board focus fallback if the card is absent.
 
-Search remains independent of List filters/drafts/pages, Overview totals, CSV
-exports, comparison, and deterministic scoring. Only saved title/company metadata
-is searched server-side; no snapshots, candidate profiles, resumes, notes, job
-bodies, or AI text are searched. No new API, schema, dependency, algorithm, AI
-call, telemetry, browser storage, cookie, or URL persistence is introduced.
-Search lives in mounted Board memory and resets on unmount/page reload. Existing
-offset-pagination concurrency and installation privacy limitations remain.
+Board criteria remain independent of List filters/drafts/pages, Overview totals,
+CSV exports, comparison, and deterministic scoring. Filtering reads existing
+user-managed follow-up metadata and searches only saved title/company metadata.
+No snapshots, candidate profiles, resumes, notes, job bodies, or AI text are
+searched. No backend behavior, API contract, schema, dependency, sorting option,
+AI call, overdue classification, automatic date, notification, calendar service,
+telemetry, browser storage, cookie, or URL persistence is introduced. Dates remain
+YYYY-MM-DD calendar days without timestamp/timezone conversion. Board criteria
+reset on unmount/page reload. Existing offset-pagination concurrency and
+installation privacy limitations remain.
 Deterministic component/integration tests cover the workflows; real-browser E2E
 testing has not been performed.
 
-The maintainer authorized reconciliation of Commit 32 following PR #36's merge
-at `9019d992cc31fc4e950a72a2c7fcf92121fe4120` on 2026-10-20.
+The maintainer authorized reconciliation of Commit 33 following PR #37's merge
+at `077f81dc1f454c27fdfaefe83efbd1bafd63d68f` on 2026-10-21.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 33 PR number is assigned.
+pull request, review, and merge. No Commit 34 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -133,7 +140,8 @@ The repository already contains:
 - native desktop Kanban drag handles feeding the existing confirmation workflow
 - Kanban quick follow-up panel reusing the existing date editor
 - Kanban quick application notes sharing one selected editor with follow-up
-- Board-specific server-backed title/company search (authorized active development)
+- Board-specific server-backed title/company search
+- Board-specific server-backed follow-up presence/date filters (authorized active development)
 
 ## Architectural Boundary
 
