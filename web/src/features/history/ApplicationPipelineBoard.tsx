@@ -103,6 +103,13 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
 }
 
 export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onQuickEditorMutatingChange }: Props) {
+  const [draftQuery, setDraftQuery] = useState('');
+  const draftQueryRef = useRef('');
+  const [appliedQuery, setAppliedQuery] = useState('');
+  // Update synchronously before refresh so same-tick actions and every refresh
+  // workflow use the current search, independent of React render closures.
+  const appliedQueryRef = useRef('');
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [selectedEditor, setSelectedEditor] = useState<QuickEditor | null>(null);
   const selectedEditorRef = useRef<QuickEditor | null>(null);
   const [quickEditorMutating, setQuickEditorMutating] = useState(false);
@@ -178,7 +185,10 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     pending.current.add(status);
     setLanes((current) => ({ ...current, [status]: { ...current[status], loading: true, error: null } }));
     try {
-      const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, { application_status: status });
+      const query = appliedQueryRef.current;
+      const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, {
+        application_status: status, ...(query ? { query } : {}),
+      });
       if (epoch !== generation.current) return;
       setLanes((current) => {
         const previous = offset === 0 ? [] : current[status].items;
@@ -215,6 +225,25 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     refresh();
     return () => { generation.current += 1; };
   }, [refresh, refreshKey]);
+
+  const applySearch = (clear = false) => {
+    if (!mounted.current || opening || quickEditorPending.current || selectedEditorRef.current
+      || mutationPending.current || confirmationPending.current) return;
+    const normalized = clear ? '' : draftQueryRef.current.trim().replace(/\s+/g, ' ');
+    if (normalized.length > 200) {
+      setSearchError('Use a board search of at most 200 characters.');
+      return;
+    }
+    setSearchError(null);
+    draftQueryRef.current = normalized;
+    setDraftQuery(normalized);
+    if (normalized === appliedQueryRef.current) return;
+    appliedQueryRef.current = normalized;
+    setAppliedQuery(normalized);
+    setError(null);
+    setMessage(null);
+    refresh();
+  };
 
   // Both native drops and the selector use the same confirmation gate. Neither
   // path reads tracking or writes persistence until the user confirms.
@@ -331,9 +360,24 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       <h3 id="pipeline-board-title">Application Pipeline Board</h3>
       <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
     </div>
-    <p>All saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
+    <p>Saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
     <p>Each lane loads 10 cards at a time, newest saved first. Changes in other sessions may require Refresh board.</p>
     <p id="pipeline-drag-instructions" className="pipeline-drag-instructions">Use the Drag to change status handle to drag a card to another lane to review a status change. On keyboard or touch devices, choose a new status on the card and select Review change. Activating the handle focuses the status selector.</p>
+    <form className="pipeline-search" onSubmit={(event) => { event.preventDefault(); applySearch(); }}>
+      <label htmlFor="board-search">Search board by job title or company</label>
+      <input id="board-search" type="search" value={draftQuery}
+        aria-invalid={searchError ? true : undefined}
+        aria-describedby={`board-search-help${searchError ? ' board-search-error' : ''}`}
+        onChange={(event) => { draftQueryRef.current = event.target.value; setDraftQuery(event.target.value); }} />
+      <div className="export-actions">
+        <button type="submit" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}>Apply search</button>
+        <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={() => applySearch(true)}>Clear search</button>
+      </div>
+    </form>
+    <p id="board-search-help">Apply or press Enter to search saved title/company metadata in all seven lanes. Close quick editing before applying or clearing search.</p>
+    <p role={appliedQuery ? 'status' : undefined} aria-live="polite" className="pipeline-search-status">{appliedQuery ? `Applied board search: ${appliedQuery}` : 'No board search applied.'}</p>
+    {searchError && <p id="board-search-error" role="alert">{searchError}</p>}
     {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
       <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>
       <p>{selectedEditor.item.job_title} — {selectedEditor.item.company_name ?? 'Company not supplied'}</p>
@@ -382,7 +426,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {destination && <p className="pipeline-drop-instruction">Drop to review status change</p>}
           {lane.loading && <p role="status">Loading {label}...</p>}
           {lane.error && <div role="alert"><p>{lane.error}</p><button type="button" disabled={lane.loading || updating} onClick={() => void loadLane(value, lane.offset, generation.current)}>Retry {label}</button></div>}
-          {!lane.loading && !lane.error && lane.items.length === 0 && <p>No saved analyses in {label}.</p>}
+          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
               opening={opening} disabled={updating || quickEditorMutating || change !== null}

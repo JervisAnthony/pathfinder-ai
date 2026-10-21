@@ -28,6 +28,11 @@ const deferred = <T,>() => {
 const onOpen = vi.fn();
 const onStatusChanged = vi.fn();
 const props = { onOpen, onStatusChanged, opening: false, refreshKey: 0 };
+const searchInput = () => screen.getByRole('searchbox', { name: 'Search board by job title or company' });
+function searchBoard(query: string) {
+  fireEvent.change(searchInput(), { target: { value: query } });
+  fireEvent.click(screen.getByText('Apply search'));
+}
 const followUpValue = (date: string | null = null, id = 'record'): AnalysisFollowUp => ({ analysis_id: id, follow_up_on: date, updated_at: null });
 async function openFollowUp(index = 0) {
   fireEvent.click((await screen.findAllByRole('button', { name: 'Edit follow-up' }))[index]);
@@ -79,6 +84,224 @@ async function review(target = 'applied') {
   fireEvent.change(screen.getByRole('combobox', { name: 'New status for Fictional Engineer record' }), { target: { value: target } });
   fireEvent.click(lane().getByRole('button', { name: 'Review change' }));
 }
+
+describe('Kanban board search', () => {
+  it('keeps drafts local, normalizes Enter submission, validates, and avoids redundant reloads', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer record');
+    const input = searchInput(); input.focus();
+    fireEvent.change(input, { target: { value: '  Example   Labs  ' } });
+    expect(history).toHaveBeenCalledTimes(7);
+    // Native Enter submits this form; exercise the submit handler.
+    fireEvent.submit(input.closest('form')!);
+    await screen.findByText('Applied board search: Example Labs');
+    await screen.findByText('Fictional Engineer record');
+    expect(input).toHaveFocus(); expect(input).toHaveValue('Example Labs');
+    expect(history).toHaveBeenCalledTimes(14);
+    for (const { value } of applicationStatuses) expect(history).toHaveBeenCalledWith(11, 0, { application_status: value, query: 'Example Labs' });
+    searchBoard(' Example   Labs ');
+    expect(history).toHaveBeenCalledTimes(14);
+    searchBoard('x'.repeat(201));
+    expect(screen.getByRole('alert')).toHaveTextContent('at most 200 characters');
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(history).toHaveBeenCalledTimes(14);
+    expect(screen.getByText('Applied board search: Example Labs')).toBeInTheDocument();
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Clear search'));
+    expect(input).toHaveValue(''); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(history).toHaveBeenCalledTimes(21);
+    fireEvent.change(input, { target: { value: 'draft only' } });
+    fireEvent.click(screen.getByText('Clear search'));
+    expect(input).toHaveValue(''); expect(history).toHaveBeenCalledTimes(21);
+    searchBoard('x'.repeat(200)); expect(history).toHaveBeenCalledTimes(28);
+    searchBoard('   '); expect(history).toHaveBeenCalledTimes(35);
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn' });
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it('renders metadata from all seven lanes in server order without local matching or sorting', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer record');
+    supply(applicationStatuses.flatMap(({ value }) => [record(`${value}-z`, value), record(`${value}-a`, value)]));
+    const query = "%_'\\ <script>literal</script>";
+    searchBoard(query);
+    for (const { value, label } of applicationStatuses) {
+      await lane(label).findByText(`Fictional Engineer ${value}-z`);
+      expect(lane(label).getAllByRole('heading', { level: 5 }).map((node) => node.textContent))
+        .toEqual([`Fictional Engineer ${value}-z`, `Fictional Engineer ${value}-a`]);
+      expect(history).toHaveBeenCalledWith(11, 0, { application_status: value, query });
+    }
+    expect(document.querySelector('script')).toBeNull();
+    expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(getAnalysisNote).not.toHaveBeenCalled(); expect(getAnalysisFollowUp).not.toHaveBeenCalled();
+  });
+
+  it('preserves filtered independent pagination, lookahead, deduplication, failed pages, and lane Retry', async () => {
+    supply(applicationStatuses.flatMap(({ value }) => Array.from({ length: 23 }, (_, i) => record(`${value}-${i}`, value))));
+    render(<ApplicationPipelineBoard {...props} />);
+    searchBoard('first');
+    await lane().findByText('Fictional Engineer not_applied-9');
+    expect(lane().queryByText('Fictional Engineer not_applied-10')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Load more Not applied'));
+    await lane().findByText('Fictional Engineer not_applied-19');
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', query: 'first' });
+    history.mockRejectedValueOnce(new Error('PRIVATE'));
+    fireEvent.click(screen.getByText('Load more Applied'));
+    expect(await lane('Applied').findByRole('alert')).not.toHaveTextContent('PRIVATE');
+    expect(lane('Applied').getAllByRole('heading', { level: 5 })).toHaveLength(10);
+    history.mockResolvedValueOnce({ items: [record('applied-9', 'applied'), record('extra', 'applied')] });
+    fireEvent.click(screen.getByText('Retry Applied'));
+    await lane('Applied').findByText('Fictional Engineer extra');
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'applied', query: 'first' });
+    expect(lane('Applied').getAllByRole('heading', { level: 5 })).toHaveLength(11);
+    searchBoard('second');
+    await lane().findByText('Fictional Engineer not_applied-9');
+    expect(lane().getAllByRole('heading', { level: 5 })).toHaveLength(10);
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.query === 'second')).toBe(true);
+    fireEvent.click(screen.getByText('Clear search'));
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && !filters?.query)).toBe(true);
+    await lane().findByText('Fictional Engineer not_applied-9');
+  });
+
+  it.each(['resolve', 'reject'] as const)('ignores stale search %s without clearing newer loading state', async (outcome) => {
+    const old = deferred<AnalysisHistoryResponse>(); const current = deferred<AnalysisHistoryResponse>();
+    history.mockImplementation(async (_limit, _offset, filters) => {
+      if (filters?.query === 'A') return old.promise;
+      if (filters?.query === 'B' && filters.application_status === 'applied') return current.promise;
+      return { items: filters?.application_status === 'not_applied' ? [record(filters.query ?? 'initial')] : [] };
+    });
+    render(<ApplicationPipelineBoard {...props} />);
+    searchBoard('A'); searchBoard('B');
+    await screen.findByText('Fictional Engineer B');
+    await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('STALE')] }); else old.reject(new Error('PRIVATE')); });
+    expect(screen.queryByText('Fictional Engineer STALE')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(lane('Applied').getByRole('status')).toHaveTextContent('Loading Applied');
+    await act(async () => current.resolve({ items: [] }));
+    expect(lane('Applied').getByText('No matching saved analyses in Applied.')).toBeInTheDocument();
+    expect(lane('Applied').queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Application status lanes' }).children).toHaveLength(7);
+  });
+
+  it.each(['resolve', 'reject'] as const)('ignores previous-search Load more %s after a new query', async (outcome) => {
+    supply(Array.from({ length: 12 }, (_, i) => record(String(i))));
+    render(<ApplicationPipelineBoard {...props} />);
+    searchBoard('A');
+    const old = deferred<AnalysisHistoryResponse>();
+    await screen.findByText('Load more Not applied'); history.mockReturnValueOnce(old.promise);
+    fireEvent.click(screen.getByText('Load more Not applied'));
+    supply([record('new')]); searchBoard('B'); await screen.findByText('Fictional Engineer new');
+    await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('old-page')] }); else old.reject(new Error('PRIVATE')); });
+    expect(lane().getAllByRole('heading', { level: 5 })).toHaveLength(1);
+    expect(screen.queryByText('Fictional Engineer old-page')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('guards rapid Apply/Clear, invalidates drag, and retains search on both refresh paths', async () => {
+    const { rerender } = render(<ApplicationPipelineBoard {...props} />);
+    const drag = await startDrag();
+    fireEvent.change(searchInput(), { target: { value: 'A' } });
+    const apply = screen.getByText('Apply search'); const clear = screen.getByText('Clear search');
+    act(() => { apply.click(); apply.click(); clear.click(); clear.click(); apply.click(); apply.click(); });
+    expect(history).toHaveBeenCalledTimes(21);
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && !filters?.query)).toBe(true);
+    expect(searchInput()).toHaveValue('');
+    await screen.findByText('Fictional Engineer record'); dropIn('Applied', drag.dataTransfer);
+    expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument();
+    expect(document.querySelector('.pipeline-card-dragging')).toBeNull();
+    searchBoard('A');
+    fireEvent.change(searchInput(), { target: { value: 'unsent' } });
+    fireEvent.click(screen.getByText('Refresh board'));
+    rerender(<ApplicationPipelineBoard {...props} refreshKey={1} />);
+    await screen.findByText('Fictional Engineer record');
+    expect(history.mock.calls.slice(-14).every(([, offset, filters]) => offset === 0 && filters?.query === 'A')).toBe(true);
+    expect(searchInput()).toHaveValue('unsent');
+    expect(screen.getByText('Applied board search: A')).toBeInTheDocument();
+  });
+
+  it.each(['note', 'follow-up'] as const)('requires closing a %s editor and guards same-tick opening', async (mode) => {
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('applied');
+    await screen.findByText('Fictional Engineer record');
+    fireEvent.change(searchInput(), { target: { value: 'new draft' } });
+    const apply = screen.getByText('Apply search'); const clear = screen.getByText('Clear search');
+    act(() => { screen.getByText(`Edit ${mode}`).click(); apply.click(); clear.click(); });
+    const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
+    const value = mode === 'note' ? 'unsaved' : '2026-10-22';
+    fireEvent.change(input, { target: { value } });
+    expect(apply).toBeDisabled(); expect(clear).toBeDisabled();
+    fireEvent.submit(searchInput().closest('form')!);
+    expect(history).toHaveBeenCalledTimes(14); expect(input).toHaveValue(value);
+    fireEvent.click(screen.getByText('Close editing')); fireEvent.click(apply);
+    expect(history).toHaveBeenCalledTimes(21);
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'new draft' });
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it.each((['note', 'follow-up'] as const).flatMap((mode) => (['save', 'clear'] as const).map((action) => ({ mode, action }))))('blocks search during pending $mode $action and preserves the query', async ({ mode, action }) => {
+    const notePut = deferred<AnalysisNote>(); const datePut = deferred<AnalysisFollowUp>();
+    const remove = deferred<void>();
+    vi.mocked(updateAnalysisNote).mockReturnValue(notePut.promise);
+    vi.mocked(updateAnalysisFollowUp).mockReturnValue(datePut.promise);
+    vi.mocked(clearAnalysisNote).mockReturnValue(remove.promise);
+    vi.mocked(clearAnalysisFollowUp).mockReturnValue(remove.promise);
+    if (action === 'clear') {
+      vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('persisted'));
+      vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-21'));
+    }
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('active');
+    const input = mode === 'note' ? await openNote() : await openFollowUp();
+    const value = mode === 'note' ? 'saved' : '2026-10-22';
+    fireEvent.change(input, { target: { value } });
+    if (action === 'save') fireEvent.click(screen.getByText(mode === 'note' ? 'Save note' : 'Save follow-up'));
+    else {
+      fireEvent.click(screen.getByText(`Clear ${mode}`));
+      fireEvent.click(within(screen.getByRole('alertdialog')).getByText(`Clear ${mode}`));
+    }
+    searchBoard('blocked'); fireEvent.submit(searchInput().closest('form')!);
+    fireEvent.click(screen.getByText('Clear search'));
+    expect(screen.getByText('Applied board search: active')).toBeInTheDocument();
+    expect(history).toHaveBeenCalledTimes(14); expect(screen.getByText('Close editing')).toBeDisabled();
+    await act(async () => {
+      if (action === 'clear') remove.resolve();
+      else if (mode === 'note') notePut.resolve(noteValue('saved'));
+      else datePut.resolve(followUpValue('2026-10-22'));
+    });
+    expect(history).toHaveBeenCalledTimes(mode === 'note' ? 14 : 21);
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.query === 'active')).toBe(true);
+    expect(input).toHaveValue(action === 'clear' ? '' : value);
+  });
+
+  it('blocks search during status confirmation and persistence and retains the query on success', async () => {
+    const put = deferred<AnalysisTracking>(); update.mockReturnValueOnce(put.promise);
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('active'); await review();
+    searchBoard('blocked'); fireEvent.submit(searchInput().closest('form')!);
+    fireEvent.click(screen.getByText('Clear search'));
+    expect(history).toHaveBeenCalledTimes(14); expect(screen.getByText('Apply search')).toBeDisabled();
+    fireEvent.click(screen.getByText('Confirm status change'));
+    await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    fireEvent.submit(searchInput().closest('form')!); expect(history).toHaveBeenCalledTimes(14);
+    supply([record('record', 'applied')]);
+    await act(async () => put.resolve({ analysis_id: 'record', application_status: 'applied', updated_at: null }));
+    expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.query === 'active')).toBe(true);
+    expect(onStatusChanged).toHaveBeenCalledOnce(); expect(screen.getByText('Refresh board')).toHaveFocus();
+  });
+
+  it.each(['resolve', 'reject'] as const)('ignores old StrictMode requests and unmounted search %s', async (outcome) => {
+    const old = deferred<AnalysisHistoryResponse>(); const late = deferred<AnalysisHistoryResponse>();
+    history.mockReturnValueOnce(old.promise);
+    const { unmount } = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
+    await screen.findByText('Fictional Engineer record'); searchBoard('current');
+    await screen.findByText('Fictional Engineer record');
+    await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('old')] }); else old.reject(new Error('PRIVATE')); });
+    expect(screen.queryByText('Fictional Engineer old')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    history.mockReturnValue(late.promise); searchBoard('late'); unmount();
+    await act(async () => { if (outcome === 'resolve') late.resolve({ items: [record('late')] }); else late.reject(new Error('PRIVATE')); });
+    expect(onOpen).not.toHaveBeenCalled(); expect(onStatusChanged).not.toHaveBeenCalled();
+    supply([record()]); render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
+    expect(searchInput()).toHaveValue(''); expect(screen.getByText('No board search applied.')).toBeInTheDocument();
+  });
+});
 
 beforeEach(() => {
   vi.resetAllMocks();

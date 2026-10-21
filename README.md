@@ -380,7 +380,7 @@ snapshots of the same role are not deduplicated. Missing tracking metadata means
 Not applied. Cards show stored job/company information, deterministic match score
 or Not scored, saved time, and any scheduled follow-up calendar date.
 
-The board always represents all saved records, independently of List filters.
+The board has its own title/company search, independently of List filters.
 Switching views preserves applied filters, unapplied drafts, List pagination,
 comparison selection, Overview data, and CSV export state. Pipeline Overview and
 CSV controls remain above either view. **Open details** uses existing Saved
@@ -395,6 +395,42 @@ excluding duplicate IDs. This uses existing offset pagination, not snapshot-stab
 cursors: concurrent changes in other sessions may require **Refresh board**.
 Loading, empty, error, Retry, and Load more states are independent per lane.
 Refresh resets lane pages; older requests cannot overwrite newer results.
+
+Use **Search board by job title or company**, then **Apply search** or Enter.
+Typing changes only the draft; the **Applied board search** indication identifies
+the query actually displayed. Submission trims and collapses whitespace, with a
+200-character maximum. Blank submission or **Clear search** removes the search;
+Clear also removes the draft. Unchanged normalized queries and clearing draft-only
+text do not reload lanes. Invalid input shows an accessible error and preserves
+the applied query and cards.
+
+Search reuses `getAnalysisHistory(11, offset, { application_status, query })` and
+the existing `GET /api/v1/analyses` metadata filtering. Every lane loads its first
+matching page on a changed query, retaining independent Load more and Retry with
+the applied query. Server ordering and the ten-card limit with lookahead remain.
+No complete snapshots are downloaded or searched in the browser. Empty matching
+lanes say **No matching saved analyses**; this does not mean records were deleted.
+Lane failures stay isolated, and failed additional pages retain earlier cards.
+Older successes and failures cannot overwrite or append to a newer search.
+
+**Refresh board**, History **Refresh**, confirmed status changes, and follow-up
+saves/reschedules/clears retain the applied Board query while resetting lane pages.
+Note-only writes do not reload lane summaries. Close any quick note/follow-up
+editor before applying or clearing search to protect unsaved drafts. Search is
+also blocked during status confirmation and mutations. Changing the search
+invalidates active drags without changing saved workflow data.
+
+Board search does not filter Overview totals, CSV exports, List results,
+comparison, or scoring. List drafts/applied filters survive view switches;
+Board search lives only in the mounted Board and resets when it unmounts or the
+page reloads. No browser storage, cookies, URL persistence, or telemetry is added.
+Search covers saved title/company metadata only, using the existing literal
+substring semantics (SQL-like characters remain literal). It excludes candidate
+profiles, résumés, notes, job-description bodies, and AI text. There is no fuzzy,
+semantic, embedding, or AI search, no result total supplied by the API, and no
+new endpoint, schema, dependency, or authentication change. Search text travels
+to the configured backend in request query parameters; existing installation and
+network privacy limitations apply.
 
 To move one card, choose a new status, select **Review change**, then explicitly
 **Confirm status change** or **Cancel**. The confirmation identifies the snapshot

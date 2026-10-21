@@ -145,6 +145,47 @@ describe('History board integration', () => {
     vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
   });
 
+  it('isolates Board search from List criteria, CSV exports, and Overview, retaining search on History refresh', async () => {
+    render(<AnalysisHistory />);
+    await screen.findByText('Platform Engineer');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'list applied' } });
+    fireEvent.change(screen.getByLabelText('AI enrichment'), { target: { value: 'yes' } });
+    fireEvent.click(screen.getByText('Apply filters'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'list applied', ai_enriched: true }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'list draft' } });
+    fireEvent.click(screen.getByText('Board view'));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    await board.findByText('Platform Engineer');
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    const listCalls = vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20).length;
+    fireEvent.change(board.getByRole('searchbox'), { target: { value: 'board applied' } });
+    fireEvent.click(board.getByText('Apply search'));
+    await board.findByText('Platform Engineer');
+    for (const { value } of applicationStatuses) expect(getAnalysisHistory).toHaveBeenCalledWith(11, 0, { application_status: value, query: 'board applied' });
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20)).toHaveLength(listCalls);
+    // Keep downloads pending to inspect filter arguments without browser download work.
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByText('Download filtered CSV'));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ query: 'list applied', ai_enriched: true });
+    fireEvent.click(screen.getByText('Download all CSV'));
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({});
+    fireEvent.change(board.getByRole('searchbox'), { target: { value: 'board draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    await board.findByText('Platform Engineer');
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 11).slice(-7)
+      .every(([, offset, filters]) => offset === 0 && filters?.query === 'board applied')).toBe(true);
+    expect(board.getByRole('searchbox')).toHaveValue('board draft');
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1);
+    fireEvent.click(screen.getByText('List view'));
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('list draft');
+    fireEvent.click(screen.getByText('Board view'));
+    await screen.findByText('No board search applied.');
+    expect(screen.getByLabelText('Search board by job title or company')).toHaveValue('');
+    expect(getSavedAnalysis).not.toHaveBeenCalled(); expect(compareSavedAnalyses).not.toHaveBeenCalled();
+    expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+
   it('defaults to List and preserves applied filters, drafts, page, and comparison selection across view changes', async () => {
     vi.mocked(getAnalysisHistory).mockImplementation(async (limit, _offset, filters) => ({
       items: limit === 20 ? Array.from({ length: 20 }, (_, index) => ({ ...summary, analysis_id: `list-${index}`, job_title: `List role ${index}` })) :
