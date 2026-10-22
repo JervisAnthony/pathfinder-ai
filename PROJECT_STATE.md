@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #38 merge, 2026-10-21):
+Latest verified completed main (PR #39 merge, 2026-10-22):
 
-`fbd337f0d6499378151b57db17ccb726ac611d80`
+`0ba65aee3dae6ded4c9e764c6d7d03f855343551`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 34 — Kanban Follow-Up Filters**
+**Commit 35 — Kanban Match Score Filters**
 
 ## Completed MVP-1 Roadmap
 
@@ -58,48 +58,50 @@ These milestones must not be replayed or rebuilt.
 - Commit 32 — Kanban Quick Application Notes — COMPLETE (PR #36, merged 2026-10-20)
 - Commit 33 — Kanban Board Search — COMPLETE (PR #37, merged 2026-10-21)
 - Commit 34 — Kanban Follow-Up Filters — COMPLETE (PR #38, merged 2026-10-21)
+- Commit 35 — Kanban Match Score Filters — COMPLETE (PR #39, merged 2026-10-22)
 
 ## Post-MVP Active Work
 
-**Commit 35 — Kanban Match Score Filters**
+**Commit 36 — Kanban AI Enrichment Filter**
 
 Status: **Authorized active development.**
 
-The Board adds optional inclusive minimum/maximum match-score bounds, accepting
-finite 0–100 values and decimals without rounding. Explicit Apply/Enter updates
-one synchronously shared applied context with search and follow-up criteria;
-Clear scores preserves other forms' applied values and unsent drafts. Unchanged
-valid submissions and clearing only unsent scores avoid requests. Invalid,
-partial, non-finite, out-of-range, or reversed input retains applied cards and
-shows accessible validation feedback. Zero remains distinct from an absent bound.
+The Board adds an independent draft/applied AI enrichment selection: All analyses
+omits ai_enriched, With AI enrichment sends true, and Without AI enrichment sends
+false. Explicit Apply/Enter and Clear reuse the existing synchronously shared
+applied context with search, follow-up presence/date bounds, and match-score
+bounds. Other forms' applied values and unsent drafts remain independent.
+Unchanged submissions and clearing only an unsent AI draft avoid requests.
 
-Existing server filtering excludes unscored analyses whenever either score bound
-is active, even 0 or 100; without bounds both scored and unscored rows are
-eligible. No browser score filtering, fabricated scores, rounding, recomputation,
-or sorting is introduced. Scores remain deterministic outputs, not hiring
-probabilities. All seven lanes retain independent ten-card pages, lookahead,
-Retry, newest-first ordering, deduplication, and safe stale-response guards.
-Filter changes reset pages and invalidate drag sessions. Refresh, successful
-status changes, and follow-up writes retain the combined applied context.
-Quick editors and status confirmation/mutation block Apply/Clear; note-only
-writes avoid summary reloads. Follow-up persistence feedback and focus fallback
-remain available when a card leaves the filtered results.
+All seven lanes retain server filtering before pagination, ten-card pages,
+eleventh-record lookahead, independent Load more/Retry, newest-first order, and
+deduplication. AI changes reset pages and invalidate old requests/drag sessions.
+Epoch and immediate-ref guards preserve rapid changes, stale successes/errors,
+StrictMode, and unmount safety. Manual Board/History refresh, successful status
+changes, and follow-up saves/rescheduling/clearing retain applied AI selection.
+Status confirmation/mutation and open quick editors, including writes, block
+Apply/Clear. Note-only writes avoid summary reloads. Acknowledged follow-up
+feedback and safe focus restoration remain if a card leaves matching results.
 
-Board scores remain independent of List filters/drafts/pages, comparison,
-Overview, and CSV. No backend feature, API contract, schema, dependency,
-matching algorithm, AI call, private-data processing, telemetry, external
-integration, or browser persistence is added. Native numeric controls include
-labels, error descriptions, live applied summaries, keyboard submission, and
-existing responsive/focus styling. Board criteria reset on unmount/reload.
-Existing offset-pagination concurrency and local-installation privacy limitations
-remain. Deterministic component/integration tests cover these workflows;
-real-browser E2E testing has not been performed.
+Filtering reads existing saved AI-presence metadata, without AI-provider calls
+or consent changes. AI-assisted profile/job drafts, current AI availability,
+score quality, and hiring probability are not implied. No AI text decoding,
+snapshot/private-data inspection, score recomputation, client-side filtering,
+sorting, data mutation, backend/API/schema/dependency change, external service,
+polling, telemetry, browser storage, cookies, or automatic action is introduced.
+Board AI state remains separate from List drafts/applied filters/pages,
+comparison, unfiltered Overview, and CSV. Native labelled controls, semantic
+forms, keyboard submission, live applied summaries, and existing responsive
+focus styling are retained. Board filters reset on unmount/reload; existing
+offset-pagination concurrency and installation privacy limitations remain.
+Deterministic component/integration tests cover these workflows; real-browser
+E2E testing has not been performed.
 
-The maintainer authorized reconciliation of Commit 34 following PR #38's merge
-at `fbd337f0d6499378151b57db17ccb726ac611d80` on 2026-10-21.
+The maintainer authorized reconciliation of Commit 35 following PR #39's merge
+at `0ba65aee3dae6ded4c9e764c6d7d03f855343551` on 2026-10-22.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 35 PR number is assigned.
+pull request, review, and merge. No Commit 36 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -142,7 +144,8 @@ The repository already contains:
 - Kanban quick application notes sharing one selected editor with follow-up
 - Board-specific server-backed title/company search
 - Board-specific server-backed follow-up presence/date filters
-- Board-specific server-backed minimum/maximum score filters (authorized active development)
+- Board-specific server-backed minimum/maximum score filters
+- Board-specific server-backed AI enrichment presence filter (authorized active development)
 
 ## Architectural Boundary
 

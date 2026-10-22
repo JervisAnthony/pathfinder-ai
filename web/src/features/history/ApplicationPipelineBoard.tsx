@@ -12,10 +12,15 @@ import { emptyBoardScoreFilters, parseBoardScoreFilters } from './boardScoreFilt
 import type { BoardScoreBounds, BoardScoreFilters } from './boardScoreFilters';
 
 type QuickEditor = { mode: 'follow-up' | 'note'; item: SavedAnalysisSummary };
+type BoardAiFilter = 'all' | 'yes' | 'no';
+const aiFilterLabels: Record<BoardAiFilter, string> = {
+  all: 'All analyses', yes: 'With AI enrichment', no: 'Without AI enrichment',
+};
 interface BoardFilters {
   query: string;
   followUp: BoardFollowUpFilters;
   scores: BoardScoreBounds;
+  ai: BoardAiFilter;
 }
 
 interface Props {
@@ -116,7 +121,9 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const draftQueryRef = useRef('');
   const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
   const draftFollowUpRef = useRef(draftFollowUp);
-  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters(), scores: {} });
+  const [draftAi, setDraftAi] = useState<BoardAiFilter>('all');
+  const draftAiRef = useRef(draftAi);
+  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters(), scores: {}, ai: 'all' });
   // Update synchronously before refresh so same-tick actions and every refresh
   // workflow use one current filter context, independent of render closures.
   const appliedFiltersRef = useRef(appliedFilters);
@@ -207,7 +214,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     pending.current.add(status);
     setLanes((current) => ({ ...current, [status]: { ...current[status], loading: true, error: null } }));
     try {
-      const { query, followUp, scores } = appliedFiltersRef.current;
+      const { query, followUp, scores, ai } = appliedFiltersRef.current;
       const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, {
         application_status: status, ...(query ? { query } : {}),
         ...(followUp.status === 'all' ? {} : { has_follow_up: followUp.status === 'yes' }),
@@ -215,6 +222,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
         ...(followUp.to ? { follow_up_to: followUp.to } : {}),
         ...(scores.min === undefined ? {} : { min_score: scores.min }),
         ...(scores.max === undefined ? {} : { max_score: scores.max }),
+        ...(ai === 'all' ? {} : { ai_enriched: ai === 'yes' }),
       });
       if (epoch !== generation.current) return;
       setLanes((current) => {
@@ -260,7 +268,8 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     const current = appliedFiltersRef.current;
     if (current.query === next.query && current.followUp.status === next.followUp.status
       && current.followUp.from === next.followUp.from && current.followUp.to === next.followUp.to
-      && current.scores.min === next.scores.min && current.scores.max === next.scores.max) return;
+      && current.scores.min === next.scores.min && current.scores.max === next.scores.max
+      && current.ai === next.ai) return;
     appliedFiltersRef.current = next;
     setAppliedFilters(next);
     setError(null);
@@ -320,6 +329,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     setScoreFilterError(null);
     editScoreFilters(next);
     applyBoardFilters({ ...appliedFiltersRef.current, scores: parsed.bounds });
+  };
+
+  const applyAiFilter = (clear = false) => {
+    if (!canChangeFilters()) return;
+    const next = clear ? 'all' : draftAiRef.current;
+    draftAiRef.current = next;
+    setDraftAi(next);
+    applyBoardFilters({ ...appliedFiltersRef.current, ai: next });
   };
 
   // Both native drops and the selector use the same confirmation gate. Neither
@@ -512,6 +529,25 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
         : 'No board match score filters applied.'}</p>
       {scoreFilterError && <p id="board-score-error" role="alert">{scoreFilterError}</p>}
     </form>
+    <form className="pipeline-ai-filter" aria-labelledby="board-ai-filter-title"
+      onSubmit={(event) => { event.preventDefault(); applyAiFilter(); }}>
+      <h4 id="board-ai-filter-title">Board AI enrichment filter</h4>
+      <div className="pipeline-filter-controls">
+        <label>Board AI enrichment
+          <select value={draftAi} aria-describedby="board-ai-help"
+            onChange={(event) => { const next = event.target.value as BoardAiFilter; draftAiRef.current = next; setDraftAi(next); }}>
+            {(['all', 'yes', 'no'] as const).map((value) => <option key={value} value={value}>{aiFilterLabels[value]}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="export-actions">
+        <button type="submit" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}>Apply AI filter</button>
+        <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={() => applyAiFilter(true)}>Clear AI filter</button>
+      </div>
+      <p id="board-ai-help">This is a draft selection until Apply AI filter or Enter. Filter previously saved AI enrichment metadata without making AI calls. AI-assisted profile or job drafting does not indicate saved enrichment, current AI availability, or a higher match score. Close quick editing before applying or clearing filters.</p>
+      <p aria-live="polite" role={appliedFilters.ai === 'all' ? undefined : 'status'}>Applied board AI enrichment: {aiFilterLabels[appliedFilters.ai]}.</p>
+    </form>
     {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
       <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>
       <p>{selectedEditor.item.job_title} — {selectedEditor.item.company_name ?? 'Company not supplied'}</p>
@@ -560,7 +596,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {destination && <p className="pipeline-drop-instruction">Drop to review status change</p>}
           {lane.loading && <p role="status">Loading {label}...</p>}
           {lane.error && <div role="alert"><p>{lane.error}</p><button type="button" disabled={lane.loading || updating} onClick={() => void loadLane(value, lane.offset, generation.current)}>Retry {label}</button></div>}
-          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered || scoreFiltered ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
+          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered || scoreFiltered || appliedFilters.ai !== 'all' ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
               opening={opening} disabled={updating || quickEditorMutating || change !== null}
