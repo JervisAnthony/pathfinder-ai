@@ -7,13 +7,13 @@ Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #39 merge, 2026-10-22):
+Latest verified completed main (PR #40 merge, 2026-10-23 IST):
 
-`0ba65aee3dae6ded4c9e764c6d7d03f855343551`
+`38740f327aba25b892d4ae18d34ee4bb185892d0`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 35 — Kanban Match Score Filters**
+**Commit 36 — Kanban AI Enrichment Filter**
 
 ## Completed MVP-1 Roadmap
 
@@ -59,49 +59,54 @@ These milestones must not be replayed or rebuilt.
 - Commit 33 — Kanban Board Search — COMPLETE (PR #37, merged 2026-10-21)
 - Commit 34 — Kanban Follow-Up Filters — COMPLETE (PR #38, merged 2026-10-21)
 - Commit 35 — Kanban Match Score Filters — COMPLETE (PR #39, merged 2026-10-22)
+- Commit 36 — Kanban AI Enrichment Filter — COMPLETE (PR #40, merged 2026-10-23 IST)
 
 ## Post-MVP Active Work
 
-**Commit 36 — Kanban AI Enrichment Filter**
+**Commit 37 — Kanban Follow-Up Sorting**
 
 Status: **Authorized active development.**
 
-The Board adds an independent draft/applied AI enrichment selection: All analyses
-omits ai_enriched, With AI enrichment sends true, and Without AI enrichment sends
-false. Explicit Apply/Enter and Clear reuse the existing synchronously shared
-applied context with search, follow-up presence/date bounds, and match-score
-bounds. Other forms' applied values and unsent drafts remain independent.
-Unchanged submissions and clearing only an unsent AI draft avoid requests.
+The Board adds a dedicated draft/applied sort form using AnalysisHistorySort.
+Newest saved first (created_desc) is default/reset and omitted from requests;
+Earliest follow-up first sends follow_up_asc to the existing analyses API.
+Apply/Enter and Reset change only sort, preserving all applied search,
+follow-up presence/date, score, and AI criteria plus unrelated unsent drafts.
+Other filter actions retain applied sort. Unchanged Apply and resetting only an
+unsent draft avoid reloads. The applied context ref updates before refresh.
 
-All seven lanes retain server filtering before pagination, ten-card pages,
-eleventh-record lookahead, independent Load more/Retry, newest-first order, and
-deduplication. AI changes reset pages and invalidate old requests/drag sessions.
-Epoch and immediate-ref guards preserve rapid changes, stale successes/errors,
-StrictMode, and unmount safety. Manual Board/History refresh, successful status
-changes, and follow-up saves/rescheduling/clearing retain applied AI selection.
-Status confirmation/mutation and open quick editors, including writes, block
-Apply/Clear. Note-only writes avoid summary reloads. Acknowledged follow-up
-feedback and safe focus restoration remain if a card leaves matching results.
+Server ordering remains authoritative within each lane: default creation time
+and analysis ID descending; earliest calendar dates ascending, nulls last, then
+creation time and ID descending for ties. Sorting alone does not change record
+eligibility, including Not scheduled records. Calendar days are not converted
+to browser time. All seven lanes keep their semantic order, independent ten-card
+pages, lookahead, Load more/Retry, deduplication, and safe errors. Sort changes
+reset pages and invalidate prior requests/drags. Epoch guards cover stale
+successes/errors, rapid actions, StrictMode, refresh, and unmount.
 
-Filtering reads existing saved AI-presence metadata, without AI-provider calls
-or consent changes. AI-assisted profile/job drafts, current AI availability,
-score quality, and hiring probability are not implied. No AI text decoding,
-snapshot/private-data inspection, score recomputation, client-side filtering,
-sorting, data mutation, backend/API/schema/dependency change, external service,
-polling, telemetry, browser storage, cookies, or automatic action is introduced.
-Board AI state remains separate from List drafts/applied filters/pages,
-comparison, unfiltered Overview, and CSV. Native labelled controls, semantic
-forms, keyboard submission, live applied summaries, and existing responsive
-focus styling are retained. Board filters reset on unmount/reload; existing
-offset-pagination concurrency and installation privacy limitations remain.
-Deterministic component/integration tests cover these workflows; real-browser
-E2E testing has not been performed.
+Board/History refresh and successful status/follow-up writes preserve applied
+sort. Follow-up changes reload server order after persistence, retaining
+acknowledged feedback and safe focus fallback if a card leaves a lane page.
+Note-only writes avoid summary reloads. Open quick editors, pending editor writes,
+status confirmation/persistence, and existing interaction guards block Apply/Reset.
+Native labelled forms provide keyboard submission, live applied summaries, and
+existing responsive focus styling.
 
-The maintainer authorized reconciliation of Commit 35 following PR #39's merge
-at `0ba65aee3dae6ded4c9e764c6d7d03f855343551` on 2026-10-22.
+Board sort remains separate from List draft/applied filters/order/pages,
+comparison, Overview, and CSV. This is read-only metadata ordering without
+client-side sorting, ranking, data mutation, snapshot/private-content decoding,
+AI calls, backend/API/schema/dependency changes, browser/URL persistence,
+telemetry, polling, notifications, overdue classifications, integrations, or
+automatic actions. Existing offset-pagination concurrency and installation
+privacy limitations remain. Board state resets on unmount/reload. Deterministic
+tests cover the workflows; real-browser E2E testing has not been performed.
+
+The maintainer authorized reconciliation of Commit 36 following PR #40's merge
+at `38740f327aba25b892d4ae18d34ee4bb185892d0` on 2026-10-23 IST
+(2026-10-22 UTC).
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 36 PR number is assigned.
+pull request, review, and merge. No Commit 37 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -145,7 +150,8 @@ The repository already contains:
 - Board-specific server-backed title/company search
 - Board-specific server-backed follow-up presence/date filters
 - Board-specific server-backed minimum/maximum score filters
-- Board-specific server-backed AI enrichment presence filter (authorized active development)
+- Board-specific server-backed AI enrichment presence filter
+- Board-specific server-backed follow-up sorting (authorized active development)
 
 ## Architectural Boundary
 

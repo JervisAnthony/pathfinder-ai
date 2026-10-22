@@ -328,6 +328,21 @@ describe('saved analysis API', () => {
     });
   });
 
+  it.each([undefined, 'follow_up_asc'] as const)('serializes Board sort %s alongside false, zero, and date bounds', async (sort) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [] }));
+    await getAnalysisHistory(11, 10, {
+      application_status: 'interviewing', query: 'Example Engineer', has_follow_up: true,
+      follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 0, max_score: 100, ai_enriched: false,
+      ...(sort === undefined ? {} : { sort }),
+    });
+    const url = new URL(String(fetchMock.mock.calls[0][0]), 'http://localhost');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      limit: '11', offset: '10', application_status: 'interviewing', query: 'Example Engineer',
+      has_follow_up: 'true', follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: '0', max_score: '100', ai_enriched: 'false',
+      ...(sort === undefined ? {} : { sort }),
+    });
+  });
+
   it.each([undefined, true, false])('serializes Board AI criteria %s with complete lane filters', async (ai) => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(Response.json({ items: [] }));
     await getAnalysisHistory(11, 10, {

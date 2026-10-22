@@ -300,6 +300,54 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+The **Board sort order** select offers **Newest saved first** (the default) and
+**Earliest follow-up first**. Draft changes make no requests. **Apply sort** or
+Enter explicitly applies the selected order; the accessible live summary shows
+only the applied order. An unchanged Apply avoids a reload. **Reset sort** restores
+both draft and applied order to Newest saved first, preserving all other applied
+Board filters and their unsent drafts. Resetting only an unsent sort draft avoids
+a reload. Other forms' Apply/Clear actions retain the applied sort and leave an
+unsent sort draft alone.
+
+The existing analyses API orders each lane independently. Default `created_desc`
+is omitted from requests and orders creation timestamp descending, then analysis
+ID descending. `sort=follow_up_asc` orders scheduled calendar dates ascending,
+puts unscheduled/null dates last, then breaks equal-date ties by creation
+timestamp descending and analysis ID descending. Dates remain calendar days
+without browser timezone conversion. The seven status lanes keep their semantic
+order. The browser displays server order without local sorting or ranking.
+
+Sort changes preserve search, follow-up presence/date bounds, score bounds
+(including zero, 100, and decimals), and explicit AI true/false. Earliest order
+alone retains both scheduled and unscheduled records. With Not scheduled, null
+dates remain eligible and use creation/ID tie-breakers. Scheduled/date/score
+criteria continue to determine eligibility on the server before pagination,
+including exclusion of unscored records with active score bounds.
+
+Applying a changed sort resets all seven lanes to their first ten-card pages,
+retains eleventh-record lookahead, and invalidates old requests and active drags.
+Independent Load more/Retry use the complete applied filter/sort context. Failed
+later pages retain loaded cards; duplicate suppression and safe lane errors
+remain. Board/History refresh and successful status/follow-up writes retain the
+applied order. Follow-up saves, rescheduling, or clearing can move a card to a
+different position or page only after persistence succeeds. Acknowledged editor
+feedback remains, with Refresh board as a focus fallback if the card disappears.
+Note-only writes avoid lane reloads. Open quick editors, editor writes, status
+confirmation/persistence, and existing guards block Apply/Reset.
+
+Board sort is independent of List draft/applied sort, filters, pagination,
+comparison, Overview totals/earliest summaries, and CSV. Filtered CSV uses only
+List's applied order and criteria; all-record CSV retains its default order.
+Board state resets on unmount/reload without URL or browser persistence.
+Sorting is read-only metadata ordering. It introduces no backend/API/schema or
+dependency change, snapshot/private-note/resume/AI-text decoding, score change,
+AI call, polling, telemetry, storage, notification, overdue classification,
+external integration, or automatic application action. Existing installation
+privacy and offset-pagination concurrency limitations remain; changes in another
+session can require a refresh. Native labelled controls, semantic forms, keyboard
+submission, live summaries, focus indicators, and responsive styling follow the
+existing Board conventions. Real-browser E2E testing has not been performed.
+
 The **Board AI enrichment** select offers **All analyses**, **With AI enrichment**,
 and **Without AI enrichment**. Its draft selection affects results only on
 **Apply AI filter** or Enter; the live applied summary identifies the submitted
@@ -313,7 +361,7 @@ AI criteria compose with applied Board title/company search, follow-up presence
 and inclusive dates, and inclusive score bounds (including 0, 100, and decimals).
 Applying or clearing one form preserves the other forms' applied criteria and
 unsent drafts. All seven lanes filter on the server before pagination, retaining
-independent ten-card pages, lookahead, Load more, Retry, newest-first ordering,
+independent ten-card pages, lookahead, Load more, Retry, the applied server order,
 and duplicate suppression. Changing AI selection resets pages and invalidates
 old requests and active dragging. Failed later pages retain loaded cards.
 Board refresh, parent History Refresh, status changes, and follow-up saves,
@@ -365,7 +413,7 @@ employment.
 
 A changed score range resets all seven lanes to their first ten-card pages with
 an eleventh-record lookahead. Independent Load more and Retry retain the entire
-applied context and newest-first server order. Failed later pages retain loaded
+applied context and server sort order. Failed later pages retain loaded
 cards; duplicate IDs are suppressed. Old successes/errors and active drags are
 invalidated when criteria change. Manual Board refresh, parent History refresh,
 status changes, and follow-up saves/rescheduling/clearing retain applied scores.
@@ -539,9 +587,9 @@ date bound show accessible validation feedback, retain applied cards/filters,
 and send no requests. Invalid ranges are never silently adjusted.
 
 Changed follow-up filters reload first pages in all seven lanes, invalidate old
-requests/drags, and preserve independent ten-card pagination, lookahead, server
-newest-first ordering, deduplication, and Retry with the combined applied context.
-No follow-up-date sorting or result total is added. Empty filtered lanes say
+requests/drags, and preserve independent ten-card pagination, lookahead, the
+applied server order, deduplication, and Retry with the combined applied context.
+No result total is added. Empty filtered lanes say
 **No matching saved analyses**. Failed additional pages keep earlier cards.
 Board/History refresh, successful status changes, and follow-up saves/reschedules/
 clears preserve applied filters. A card can leave matching results after a date
