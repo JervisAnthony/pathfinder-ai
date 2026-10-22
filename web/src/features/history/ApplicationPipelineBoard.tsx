@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking } from '../../api/pathfinder';
+import type { AnalysisHistorySort } from '../../api/pathfinder';
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { applicationStatuses, statusLabel } from './status';
@@ -16,11 +17,15 @@ type BoardAiFilter = 'all' | 'yes' | 'no';
 const aiFilterLabels: Record<BoardAiFilter, string> = {
   all: 'All analyses', yes: 'With AI enrichment', no: 'Without AI enrichment',
 };
+const sortLabels: Record<AnalysisHistorySort, string> = {
+  created_desc: 'Newest saved first', follow_up_asc: 'Earliest follow-up first',
+};
 interface BoardFilters {
   query: string;
   followUp: BoardFollowUpFilters;
   scores: BoardScoreBounds;
   ai: BoardAiFilter;
+  sort: AnalysisHistorySort;
 }
 
 interface Props {
@@ -123,7 +128,9 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const draftFollowUpRef = useRef(draftFollowUp);
   const [draftAi, setDraftAi] = useState<BoardAiFilter>('all');
   const draftAiRef = useRef(draftAi);
-  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters(), scores: {}, ai: 'all' });
+  const [draftSort, setDraftSort] = useState<AnalysisHistorySort>('created_desc');
+  const draftSortRef = useRef(draftSort);
+  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters(), scores: {}, ai: 'all', sort: 'created_desc' });
   // Update synchronously before refresh so same-tick actions and every refresh
   // workflow use one current filter context, independent of render closures.
   const appliedFiltersRef = useRef(appliedFilters);
@@ -214,7 +221,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     pending.current.add(status);
     setLanes((current) => ({ ...current, [status]: { ...current[status], loading: true, error: null } }));
     try {
-      const { query, followUp, scores, ai } = appliedFiltersRef.current;
+      const { query, followUp, scores, ai, sort } = appliedFiltersRef.current;
       const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, {
         application_status: status, ...(query ? { query } : {}),
         ...(followUp.status === 'all' ? {} : { has_follow_up: followUp.status === 'yes' }),
@@ -223,6 +230,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
         ...(scores.min === undefined ? {} : { min_score: scores.min }),
         ...(scores.max === undefined ? {} : { max_score: scores.max }),
         ...(ai === 'all' ? {} : { ai_enriched: ai === 'yes' }),
+        ...(sort === 'created_desc' ? {} : { sort }),
       });
       if (epoch !== generation.current) return;
       setLanes((current) => {
@@ -269,7 +277,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     if (current.query === next.query && current.followUp.status === next.followUp.status
       && current.followUp.from === next.followUp.from && current.followUp.to === next.followUp.to
       && current.scores.min === next.scores.min && current.scores.max === next.scores.max
-      && current.ai === next.ai) return;
+      && current.ai === next.ai && current.sort === next.sort) return;
     appliedFiltersRef.current = next;
     setAppliedFilters(next);
     setError(null);
@@ -337,6 +345,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     draftAiRef.current = next;
     setDraftAi(next);
     applyBoardFilters({ ...appliedFiltersRef.current, ai: next });
+  };
+
+  const applySort = (reset = false) => {
+    if (!canChangeFilters()) return;
+    const next = reset ? 'created_desc' : draftSortRef.current;
+    draftSortRef.current = next;
+    setDraftSort(next);
+    applyBoardFilters({ ...appliedFiltersRef.current, sort: next });
   };
 
   // Both native drops and the selector use the same confirmation gate. Neither
@@ -455,7 +471,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
     </div>
     <p>Saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
-    <p>Each lane loads 10 cards at a time, newest saved first. Changes in other sessions may require Refresh board.</p>
+    <p>Each lane loads 10 cards at a time in the applied order. Changes in other sessions may require Refresh board.</p>
     <p id="pipeline-drag-instructions" className="pipeline-drag-instructions">Use the Drag to change status handle to drag a card to another lane to review a status change. On keyboard or touch devices, choose a new status on the card and select Review change. Activating the handle focuses the status selector.</p>
     <form className="pipeline-search" onSubmit={(event) => { event.preventDefault(); applySearch(); }}>
       <label htmlFor="board-search">Search board by job title or company</label>
@@ -547,6 +563,25 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       </div>
       <p id="board-ai-help">This is a draft selection until Apply AI filter or Enter. Filter previously saved AI enrichment metadata without making AI calls. AI-assisted profile or job drafting does not indicate saved enrichment, current AI availability, or a higher match score. Close quick editing before applying or clearing filters.</p>
       <p aria-live="polite" role={appliedFilters.ai === 'all' ? undefined : 'status'}>Applied board AI enrichment: {aiFilterLabels[appliedFilters.ai]}.</p>
+    </form>
+    <form className="pipeline-sort" aria-labelledby="board-sort-title"
+      onSubmit={(event) => { event.preventDefault(); applySort(); }}>
+      <h4 id="board-sort-title">Board sorting</h4>
+      <div className="pipeline-filter-controls">
+        <label>Board sort order
+          <select value={draftSort} aria-describedby="board-sort-help"
+            onChange={(event) => { const next = event.target.value as AnalysisHistorySort; draftSortRef.current = next; setDraftSort(next); }}>
+            {(['created_desc', 'follow_up_asc'] as const).map((value) => <option key={value} value={value}>{sortLabels[value]}</option>)}
+          </select>
+        </label>
+      </div>
+      <div className="export-actions">
+        <button type="submit" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}>Apply sort</button>
+        <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={() => applySort(true)}>Reset sort</button>
+      </div>
+      <p id="board-sort-help">This is a draft order until Apply sort or Enter. Reset sort restores Newest saved first. Earliest follow-up first orders calendar dates within each lane, with unscheduled records last; ties use newest saved time, then analysis ID descending. Sorting preserves all applied Board filters. Close quick editing before applying or resetting sort.</p>
+      <p aria-live="polite" role={appliedFilters.sort === 'created_desc' ? undefined : 'status'}>Applied board sort: {sortLabels[appliedFilters.sort]}.</p>
     </form>
     {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
       <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>

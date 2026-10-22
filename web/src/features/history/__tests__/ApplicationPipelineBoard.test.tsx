@@ -3,6 +3,7 @@ import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@t
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { analyzeCandidateJob, ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
 import type { AnalysisNote, AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
+import type { AnalysisHistorySort } from '../../../api/pathfinder';
 import { ApplicationPipelineBoard } from '../ApplicationPipelineBoard';
 import { applicationStatuses } from '../status';
 import { formatCalendarDate, formatSavedTimestamp } from '../formatting';
@@ -33,6 +34,14 @@ const searchInput = () => screen.getByRole('searchbox', { name: 'Search board by
 function searchBoard(query: string) {
   fireEvent.change(searchInput(), { target: { value: query } });
   fireEvent.click(screen.getByText('Apply search'));
+}
+const sortInput = () => screen.getByRole('combobox', { name: 'Board sort order' });
+const sortForm = () => screen.getByRole('form', { name: 'Board sorting' });
+function draftSort(value: AnalysisHistorySort) {
+  fireEvent.change(sortInput(), { target: { value } });
+}
+function applySort(value: AnalysisHistorySort = 'follow_up_asc') {
+  draftSort(value); fireEvent.submit(sortForm());
 }
 const aiInput = () => screen.getByRole('combobox', { name: 'Board AI enrichment' });
 const aiForm = () => screen.getByRole('form', { name: 'Board AI enrichment filter' });
@@ -219,12 +228,12 @@ describe('Kanban follow-up filters', () => {
       ...record(`${value}-${i}`, value), follow_up_on: i % 2 ? '2026-10-31' : '2026-10-01',
     })));
     supply(items);
-    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyAiFilter('no'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applySort(); applyAiFilter('no'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
     await lane().findByText('Fictional Engineer not_applied-9');
     expect(lane().getAllByRole('heading', { level: 5 }).map((node) => node.textContent))
       .toEqual(items.slice(0, 10).map((item) => item.job_title));
     expect(lane().queryByText('Fictional Engineer not_applied-10')).not.toBeInTheDocument();
-    const expected = { ai_enriched: false, min_score: 72.25, max_score: 87.75, query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31' };
+    const expected = { sort: 'follow_up_asc', ai_enriched: false, min_score: 72.25, max_score: 87.75, query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31' };
     history.mockRejectedValueOnce(new Error('PRIVATE'));
     fireEvent.click(screen.getByText('Load more Not applied'));
     expect(await lane().findByRole('alert')).not.toHaveTextContent('PRIVATE');
@@ -291,13 +300,13 @@ describe('Kanban follow-up filters', () => {
     const old = deferred<AnalysisHistoryResponse>(); const late = deferred<AnalysisHistoryResponse>();
     history.mockReturnValueOnce(old.promise);
     const { rerender, unmount } = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
-    applyFollowUpFilters('yes', '2024-02-29'); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); await screen.findByText('Fictional Engineer record');
+    applyFollowUpFilters('yes', '2024-02-29'); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applySort(); await screen.findByText('Fictional Engineer record');
     history.mockReturnValueOnce(late.promise);
     fireEvent.click(screen.getByText('Refresh board'));
     draftFollowUpFilters('no');
     rerender(<StrictMode><ApplicationPipelineBoard {...props} refreshKey={1} /></StrictMode>);
     await screen.findByText('Fictional Engineer record');
-    expect(history.mock.calls.slice(-14).every(([, offset, filters]) => offset === 0 && filters?.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
+    expect(history.mock.calls.slice(-14).every(([, offset, filters]) => offset === 0 && filters?.sort === 'follow_up_asc' && filters.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
     await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('old')] }); else old.reject(new Error('PRIVATE')); });
     expect(screen.queryByText('Fictional Engineer old')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.getByLabelText('Board follow-up status')).toHaveValue('no');
@@ -318,7 +327,7 @@ describe('Kanban follow-up filters', () => {
     vi.mocked(clearAnalysisFollowUp).mockReturnValue(remove.promise);
     const updated = vi.fn(async () => {});
     render(<ApplicationPipelineBoard {...props} onFollowUpUpdated={updated} />);
-    searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applyFollowUpFilters(action === 'create' ? 'no' : 'yes', '', action === 'reschedule' ? '2026-10-21' : '');
+    searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applySort(); applyFollowUpFilters(action === 'create' ? 'no' : 'yes', '', action === 'reschedule' ? '2026-10-21' : '');
     const input = await openFollowUp();
     if (action === 'clear') {
       fireEvent.click(screen.getByText('Clear follow-up'));
@@ -326,6 +335,7 @@ describe('Kanban follow-up filters', () => {
     } else {
       fireEvent.change(input, { target: { value: '2026-10-22' } }); fireEvent.click(screen.getByText('Save follow-up'));
     }
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
     supply([]);
     await act(async () => { if (action === 'clear') remove.resolve(); else put.resolve(followUpValue('2026-10-22')); });
     await screen.findByText(action === 'clear' ? 'Follow-up date cleared.' : 'Follow-up date saved.');
@@ -334,7 +344,7 @@ describe('Kanban follow-up filters', () => {
     expect(input).toHaveValue(action === 'clear' ? '' : '2026-10-22');
     expect(updated).toHaveBeenCalledOnce();
     for (const [, offset, filters] of history.mock.calls.slice(-7)) {
-      expect(offset).toBe(0); expect(filters?.ai_enriched).toBe(false); expect(filters?.min_score).toBe(72.25); expect(filters?.max_score).toBe(87.75); expect(filters?.query).toBe('Engineer'); expect(filters?.has_follow_up).toBe(action !== 'create');
+      expect(offset).toBe(0); expect(filters?.sort).toBe('follow_up_asc'); expect(filters?.ai_enriched).toBe(false); expect(filters?.min_score).toBe(72.25); expect(filters?.max_score).toBe(87.75); expect(filters?.query).toBe('Engineer'); expect(filters?.has_follow_up).toBe(action !== 'create');
       expect(filters?.follow_up_to).toBe(action === 'reschedule' ? '2026-10-21' : undefined);
     }
     expect(screen.queryByText(/no longer exists/i)).not.toBeInTheDocument();
@@ -343,19 +353,19 @@ describe('Kanban follow-up filters', () => {
   });
 
   it('preserves combined filters after confirmed status movement and avoids lane reload after note-only saves', async () => {
-    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applyFollowUpFilters('yes', '2024-02-29');
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applySort(); applyFollowUpFilters('yes', '2024-02-29');
     const note = await openNote();
     vi.mocked(updateAnalysisNote).mockResolvedValue(noteValue('private draft'));
     fireEvent.change(note, { target: { value: 'private draft' } });
     fireEvent.click(screen.getByText('Save note')); await screen.findByText('Application note saved.');
-    expect(history).toHaveBeenCalledTimes(35);
+    expect(history).toHaveBeenCalledTimes(42);
     fireEvent.click(screen.getByText('Close editing'));
     await review(); supply([record('record', 'applied')]);
     fireEvent.click(screen.getByText('Confirm status change'));
     await screen.findByText('Application status changed to Applied.');
     expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
-    expect(history).toHaveBeenCalledTimes(42);
-    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
+    expect(history).toHaveBeenCalledTimes(49);
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.sort === 'follow_up_asc' && filters.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
     expect(onStatusChanged).toHaveBeenCalledOnce();
   });
 });
@@ -1838,21 +1848,21 @@ describe('Kanban AI enrichment filter', () => {
     const notePut = deferred<AnalysisNote>(); const datePut = deferred<AnalysisFollowUp>(); const remove = deferred<void>();
     vi.mocked(updateAnalysisNote).mockReturnValue(notePut.promise); vi.mocked(updateAnalysisFollowUp).mockReturnValue(datePut.promise);
     vi.mocked(clearAnalysisNote).mockReturnValue(remove.promise); vi.mocked(clearAnalysisFollowUp).mockReturnValue(remove.promise);
-    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); await screen.findByText('Fictional Engineer record');
-    draftAiFilter('yes'); const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
-    act(() => { screen.getByText(`Edit ${mode}`).click(); apply.click(); clear.click(); });
+    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); applySort(); await screen.findByText('Fictional Engineer record');
+    draftAiFilter('yes'); draftSort('created_desc'); const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
+    act(() => { screen.getByText(`Edit ${mode}`).click(); apply.click(); clear.click(); screen.getByText('Apply sort').click(); screen.getByText('Reset sort').click(); });
     const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
     const value = mode === 'note' ? 'unsaved draft' : '2026-10-23'; fireEvent.change(input, { target: { value } });
-    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); fireEvent.submit(aiForm());
-    expect(input).toHaveValue(value); expect(history).toHaveBeenCalledTimes(14);
+    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); expect(screen.getByText('Apply sort')).toBeDisabled(); expect(screen.getByText('Reset sort')).toBeDisabled(); fireEvent.submit(aiForm()); fireEvent.submit(sortForm()); fireEvent.click(screen.getByText('Reset sort'));
+    expect(input).toHaveValue(value); expect(history).toHaveBeenCalledTimes(21);
     if (action === 'save') fireEvent.click(screen.getByText(`Save ${mode}`));
     else { fireEvent.click(screen.getByText(`Clear ${mode}`)); fireEvent.click(within(screen.getByRole('alertdialog')).getByText(`Clear ${mode}`)); }
-    fireEvent.submit(aiForm()); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(14);
+    fireEvent.submit(aiForm()); fireEvent.submit(sortForm()); fireEvent.click(screen.getByText('Reset sort')); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(21);
     expect(screen.getByText('Applied board AI enrichment: Without AI enrichment.')).toBeInTheDocument();
     await act(async () => { if (action === 'clear') remove.resolve(); else if (mode === 'note') notePut.resolve(noteValue(value)); else datePut.resolve(followUpValue(value)); });
     await screen.findByText(action === 'clear' ? (mode === 'note' ? 'Application note cleared.' : 'Follow-up date cleared.') : (mode === 'note' ? 'Application note saved.' : 'Follow-up date saved.'));
-    expect(history).toHaveBeenCalledTimes(mode === 'note' ? 14 : 21);
-    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.ai_enriched === false)).toBe(true);
+    expect(history).toHaveBeenCalledTimes(mode === 'note' ? 21 : 28);
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.sort === 'follow_up_asc' && filters.ai_enriched === false)).toBe(true);
     fireEvent.click(screen.getByText('Close editing')); expect(screen.getByText(`Edit ${mode}`)).toHaveFocus();
     expect(aiInput()).toHaveValue('yes'); fireEvent.click(clear); await screen.findByText('Fictional Engineer record');
     expect(aiInput()).toHaveValue('all');
@@ -1860,15 +1870,118 @@ describe('Kanban AI enrichment filter', () => {
 
   it('blocks AI changes during status confirmation and mutation and retains applied false after success', async () => {
     const put = deferred<AnalysisTracking>(); update.mockReturnValueOnce(put.promise);
-    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); await review(); draftAiFilter('yes');
+    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); applySort(); await review(); draftAiFilter('yes'); draftSort('created_desc');
     const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
-    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); fireEvent.submit(aiForm()); fireEvent.click(clear);
-    expect(history).toHaveBeenCalledTimes(14);
+    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); expect(screen.getByText('Apply sort')).toBeDisabled(); expect(screen.getByText('Reset sort')).toBeDisabled(); fireEvent.submit(aiForm()); fireEvent.submit(sortForm()); fireEvent.click(screen.getByText('Reset sort')); fireEvent.click(clear);
+    expect(history).toHaveBeenCalledTimes(21);
     fireEvent.click(screen.getByText('Confirm status change')); await waitFor(() => expect(update).toHaveBeenCalledOnce());
-    fireEvent.submit(aiForm()); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(14);
+    fireEvent.submit(aiForm()); fireEvent.submit(sortForm()); fireEvent.click(screen.getByText('Reset sort')); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(21);
     supply([record('record', 'applied')]); await act(async () => put.resolve({ analysis_id: 'record', application_status: 'applied', updated_at: null }));
-    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.ai_enriched === false)).toBe(true);
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.sort === 'follow_up_asc' && filters.ai_enriched === false)).toBe(true);
     expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
     expect(screen.getByText('Refresh board')).toHaveFocus(); expect(onStatusChanged).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe('Kanban follow-up sorting', () => {
+  it('keeps default sort omitted, drafts local, summaries applied, and Apply/Reset idempotent', async () => {
+    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
+    const input = sortInput(); expect(input.tagName).toBe('SELECT'); expect(input).toHaveValue('created_desc');
+    expect(within(input).getAllByRole('option').map((option) => option.textContent)).toEqual(['Newest saved first', 'Earliest follow-up first']);
+    expect(input).toHaveAttribute('aria-describedby', 'board-sort-help');
+    for (const { value } of applicationStatuses) expect(history).toHaveBeenCalledWith(11, 0, { application_status: value });
+    draftSort('follow_up_asc'); expect(history).toHaveBeenCalledTimes(7);
+    expect(screen.getByText('Applied board sort: Newest saved first.')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Reset sort')); expect(input).toHaveValue('created_desc'); expect(history).toHaveBeenCalledTimes(7);
+    draftSort('follow_up_asc'); input.focus();
+    // Native Enter submits the form; jsdom does not implement that default action.
+    fireEvent.submit(sortForm()); await screen.findByText('Fictional Engineer record');
+    expect(input).toHaveFocus(); expect(history).toHaveBeenCalledTimes(14);
+    expect(screen.getByText('Applied board sort: Earliest follow-up first.')).toHaveAttribute('aria-live', 'polite');
+    for (const { value } of applicationStatuses) expect(history).toHaveBeenCalledWith(11, 0, { application_status: value, sort: 'follow_up_asc' });
+    fireEvent.click(screen.getByText('Apply sort')); expect(history).toHaveBeenCalledTimes(14);
+    fireEvent.click(screen.getByText('Reset sort')); await screen.findByText('Fictional Engineer record');
+    expect(history).toHaveBeenCalledTimes(21); expect(input).toHaveValue('created_desc');
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && !('sort' in (filters ?? {})))).toBe(true);
+    expect(analyzeCandidateJob).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(getAnalysisNote).not.toHaveBeenCalled(); expect(getAnalysisFollowUp).not.toHaveBeenCalled();
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+  });
+
+  it.each(['all', 'yes', 'no'] as const)('allows %s follow-ups, preserves nulls and exact server order without browser sorting', async (presence) => {
+    // Deliberately nonchronological server output detects any browser ordering or null exclusion.
+    const rows = [{ ...record('z'), follow_up_on: null }, { ...record('a'), follow_up_on: '2026-10-31' }, { ...record('m'), follow_up_on: '2024-02-29' }];
+    const returned = presence === 'no' ? [rows[0]] : presence === 'yes' ? rows.slice(1) : rows;
+    supply(returned); render(<ApplicationPipelineBoard {...props} />); applyFollowUpFilters(presence); applySort();
+    await screen.findByText(returned[0].job_title);
+    expect(lane().getAllByRole('heading', { level: 5 }).map((node) => node.textContent)).toEqual(returned.map((item) => item.job_title));
+    for (const { value } of applicationStatuses) expect(history).toHaveBeenCalledWith(11, 0, {
+      application_status: value, sort: 'follow_up_asc', ...(presence === 'all' ? {} : { has_follow_up: presence === 'yes' }),
+    });
+    expect(screen.getByRole('region', { name: 'Application status lanes' }).children).toHaveLength(7);
+    expect(lane('Applied').getByText(presence === 'all' ? 'No saved analyses in Applied.' : 'No matching saved analyses in Applied.')).toBeInTheDocument();
+  });
+
+  it.each(['yes', 'no'] as const)('preserves applied AI %s and every filter/draft across sort and independent clear actions', async (ai) => {
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
+    applyScoreFilters('0', '100'); applyAiFilter(ai);
+    fireEvent.change(searchInput(), { target: { value: 'unsent search' } }); draftFollowUpFilters('no'); draftScoreFilters('80', '90'); draftAiFilter('all');
+    applySort();
+    const expected = { query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 0, max_score: 100, ai_enriched: ai === 'yes' };
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', ...expected, sort: 'follow_up_asc' });
+    expect(searchInput()).toHaveValue('unsent search'); expect(screen.getByLabelText('Board follow-up status')).toHaveValue('no');
+    expect(minScore()).toHaveValue(80); expect(aiInput()).toHaveValue('all');
+    fireEvent.click(screen.getByText('Reset sort'));
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', ...expected });
+    expect(searchInput()).toHaveValue('unsent search'); expect(minScore()).toHaveValue(80); expect(aiInput()).toHaveValue('all');
+    applySort(); draftSort('created_desc'); searchBoard('Changed'); applyFollowUpFilters('no'); applyScoreFilters('72.25', '87.75'); applyAiFilter(ai);
+    expect(sortInput()).toHaveValue('created_desc');
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'Changed', has_follow_up: false, min_score: 72.25, max_score: 87.75, ai_enriched: ai === 'yes', sort: 'follow_up_asc' });
+    for (const name of ['Clear search', 'Clear follow-up filters', 'Clear score filters', 'Clear AI filter']) {
+      fireEvent.click(screen.getByText(name)); expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.sort === 'follow_up_asc')).toBe(true);
+    }
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', sort: 'follow_up_asc' });
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it.each(['initial', 'page'].flatMap((phase) => ['resolve', 'reject'].flatMap((outcome) => [false, true].map((reverse) => ({ phase, outcome, reverse })))))('ignores stale $phase $outcome across sort changes (reverse=$reverse)', async ({ phase, outcome, reverse }) => {
+    const old = deferred<AnalysisHistoryResponse>(); const current = deferred<AnalysisHistoryResponse>();
+    const rows = Array.from({ length: 12 }, (_, i) => record(String(i)));
+    // In reverse mode the original newest-first requests are stale; otherwise earliest is stale.
+    history.mockImplementation(async (limit, offset, filters) => {
+      const isOld = reverse ? filters?.sort === undefined : filters?.sort === 'follow_up_asc';
+      if (isOld && (phase === 'initial' || offset === 10)) return old.promise;
+      if (!isOld && filters?.application_status === 'applied') return current.promise;
+      return { items: filters?.application_status === 'not_applied' ? rows.slice(offset ?? 0, (offset ?? 0) + (limit ?? 11)) : [] };
+    });
+    render(<ApplicationPipelineBoard {...props} />);
+    if (!reverse) applySort();
+    if (phase === 'page') fireEvent.click(await screen.findByText('Load more Not applied'));
+    if (reverse) applySort(); else fireEvent.click(screen.getByText('Reset sort'));
+    await screen.findByText('Fictional Engineer 0');
+    await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('STALE')] }); else old.reject(new Error('PRIVATE')); });
+    expect(screen.queryByText('Fictional Engineer STALE')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(lane('Applied').getByRole('status')).toHaveTextContent('Loading Applied');
+    await act(async () => current.reject(new Error('PRIVATE'))); expect(lane('Applied').getByRole('alert')).not.toHaveTextContent('PRIVATE');
+    history.mockResolvedValueOnce({ items: [] }); fireEvent.click(screen.getByText('Retry Applied'));
+    await lane('Applied').findByText('No saved analyses in Applied.'); expect(lane('Applied').queryByRole('status')).not.toBeInTheDocument();
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'applied', ...(reverse ? { sort: 'follow_up_asc' } : {}) });
+    fireEvent.click(screen.getByText('Load more Not applied')); await screen.findByText('Fictional Engineer 11');
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', ...(reverse ? { sort: 'follow_up_asc' } : {}) });
+  });
+
+  it('synchronizes rapid Apply/Reset and same-tick sorting with every form, invalidating active dragging', async () => {
+    render(<ApplicationPipelineBoard {...props} />); const drag = await startDrag(); draftSort('follow_up_asc');
+    const apply = screen.getByText('Apply sort'); const reset = screen.getByText('Reset sort');
+    act(() => { apply.click(); apply.click(); reset.click(); reset.click(); apply.click(); });
+    expect(history).toHaveBeenCalledTimes(21); expect(sortInput()).toHaveValue('created_desc');
+    draftSort('follow_up_asc'); draftAiFilter('no'); draftFollowUpFilters('yes', '2026-10-01', '2026-10-31'); draftScoreFilters('0', '100');
+    fireEvent.change(searchInput(), { target: { value: 'Engineer' } });
+    act(() => { apply.click(); screen.getByText('Apply search').click(); within(followUpForm()).getByText('Apply filters').click(); screen.getByText('Apply score filters').click(); screen.getByText('Apply AI filter').click(); });
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', sort: 'follow_up_asc', query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 0, max_score: 100, ai_enriched: false });
+    await screen.findByText('Fictional Engineer record'); dropIn('Applied', drag.dataTransfer);
+    expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument(); expect(document.querySelector('.pipeline-card-dragging')).toBeNull();
+    fireEvent.click(screen.getByText('Open details')); expect(onOpen).toHaveBeenCalledExactlyOnceWith('record');
   });
 });
