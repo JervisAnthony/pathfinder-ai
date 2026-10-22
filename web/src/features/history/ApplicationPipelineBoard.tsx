@@ -8,11 +8,14 @@ import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 import { ApplicationNoteEditor } from './ApplicationNoteEditor';
 import { emptyBoardFollowUpFilters, validateBoardFollowUpFilters } from './boardFollowUpFilters';
 import type { BoardFollowUpFilters } from './boardFollowUpFilters';
+import { emptyBoardScoreFilters, parseBoardScoreFilters } from './boardScoreFilters';
+import type { BoardScoreBounds, BoardScoreFilters } from './boardScoreFilters';
 
 type QuickEditor = { mode: 'follow-up' | 'note'; item: SavedAnalysisSummary };
 interface BoardFilters {
   query: string;
   followUp: BoardFollowUpFilters;
+  scores: BoardScoreBounds;
 }
 
 interface Props {
@@ -113,10 +116,16 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const draftQueryRef = useRef('');
   const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
   const draftFollowUpRef = useRef(draftFollowUp);
-  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters() });
+  const [appliedFilters, setAppliedFilters] = useState<BoardFilters>({ query: '', followUp: emptyBoardFollowUpFilters(), scores: {} });
   // Update synchronously before refresh so same-tick actions and every refresh
   // workflow use one current filter context, independent of render closures.
   const appliedFiltersRef = useRef(appliedFilters);
+  const [draftScores, setDraftScores] = useState(emptyBoardScoreFilters);
+  const draftScoresRef = useRef(draftScores);
+  const [scoreFilterError, setScoreFilterError] = useState<string | null>(null);
+  const minScoreInput = useRef<HTMLInputElement>(null);
+  const maxScoreInput = useRef<HTMLInputElement>(null);
+  const scoreFiltered = appliedFilters.scores.min !== undefined || appliedFilters.scores.max !== undefined;
   const appliedQuery = appliedFilters.query;
   const followUpFiltered = appliedFilters.followUp.status !== 'all' || !!appliedFilters.followUp.from || !!appliedFilters.followUp.to;
   const [followUpFilterError, setFollowUpFilterError] = useState<string | null>(null);
@@ -198,12 +207,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     pending.current.add(status);
     setLanes((current) => ({ ...current, [status]: { ...current[status], loading: true, error: null } }));
     try {
-      const { query, followUp } = appliedFiltersRef.current;
+      const { query, followUp, scores } = appliedFiltersRef.current;
       const response = await getAnalysisHistory(PAGE_SIZE + 1, offset, {
         application_status: status, ...(query ? { query } : {}),
         ...(followUp.status === 'all' ? {} : { has_follow_up: followUp.status === 'yes' }),
         ...(followUp.from ? { follow_up_from: followUp.from } : {}),
         ...(followUp.to ? { follow_up_to: followUp.to } : {}),
+        ...(scores.min === undefined ? {} : { min_score: scores.min }),
+        ...(scores.max === undefined ? {} : { max_score: scores.max }),
       });
       if (epoch !== generation.current) return;
       setLanes((current) => {
@@ -248,7 +259,8 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const applyBoardFilters = (next: BoardFilters) => {
     const current = appliedFiltersRef.current;
     if (current.query === next.query && current.followUp.status === next.followUp.status
-      && current.followUp.from === next.followUp.from && current.followUp.to === next.followUp.to) return;
+      && current.followUp.from === next.followUp.from && current.followUp.to === next.followUp.to
+      && current.scores.min === next.scores.min && current.scores.max === next.scores.max) return;
     appliedFiltersRef.current = next;
     setAppliedFilters(next);
     setError(null);
@@ -286,6 +298,28 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     setFollowUpFilterError(null);
     editFollowUpFilters(next);
     applyBoardFilters({ ...appliedFiltersRef.current, followUp: next });
+  };
+
+  const editScoreFilters = (next: BoardScoreFilters) => {
+    draftScoresRef.current = next;
+    setDraftScores(next);
+  };
+
+  const applyScoreFilters = (clear = false) => {
+    if (!canChangeFilters()) return;
+    const next = clear ? emptyBoardScoreFilters() : draftScoresRef.current;
+    const parsed = parseBoardScoreFilters(next);
+    const invalidNativeScore = !clear && [minScoreInput.current, maxScoreInput.current].some((input) => input && !input.validity.valid);
+    if (parsed.error !== undefined || invalidNativeScore) {
+      setScoreFilterError(parsed.error ?? 'Enter complete numeric match scores from 0 to 100.');
+      return;
+    }
+    // A browser may show a partial number while exposing value="". Explicitly
+    // clear native controls too, including when the controlled draft was empty.
+    if (clear) [minScoreInput.current, maxScoreInput.current].forEach((input) => { if (input) input.value = ''; });
+    setScoreFilterError(null);
+    editScoreFilters(next);
+    applyBoardFilters({ ...appliedFiltersRef.current, scores: parsed.bounds });
   };
 
   // Both native drops and the selector use the same confirmation gate. Neither
@@ -452,6 +486,32 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       <p aria-live="polite" role={followUpFiltered ? 'status' : undefined}>Applied board follow-up filters: {appliedFilters.followUp.status === 'yes' ? 'Scheduled' : appliedFilters.followUp.status === 'no' ? 'Not scheduled' : 'All'}{appliedFilters.followUp.from ? `; from ${appliedFilters.followUp.from}` : ''}{appliedFilters.followUp.to ? `; to ${appliedFilters.followUp.to}` : ''}.</p>
       {followUpFilterError && <p id="board-follow-up-error" role="alert">{followUpFilterError}</p>}
     </form>
+    <form className="pipeline-score-filters" aria-labelledby="board-score-filters-title" noValidate
+      onSubmit={(event) => { event.preventDefault(); applyScoreFilters(); }}>
+      <h4 id="board-score-filters-title">Board match score filters</h4>
+      <div className="pipeline-filter-controls">
+        <label htmlFor="board-min-score">Minimum match score (%) (Board)
+          <input id="board-min-score" ref={minScoreInput} type="number" min="0" max="100" step="any" value={draftScores.min}
+            aria-invalid={scoreFilterError ? true : undefined} aria-describedby={`board-score-help${scoreFilterError ? ' board-score-error' : ''}`}
+            onChange={(event) => editScoreFilters({ ...draftScoresRef.current, min: event.target.value })} />
+        </label>
+        <label htmlFor="board-max-score">Maximum match score (%) (Board)
+          <input id="board-max-score" ref={maxScoreInput} type="number" min="0" max="100" step="any" value={draftScores.max}
+            aria-invalid={scoreFilterError ? true : undefined} aria-describedby={`board-score-help${scoreFilterError ? ' board-score-error' : ''}`}
+            onChange={(event) => editScoreFilters({ ...draftScoresRef.current, max: event.target.value })} />
+        </label>
+      </div>
+      <div className="export-actions">
+        <button type="submit" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}>Apply score filters</button>
+        <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={() => applyScoreFilters(true)}>Clear score filters</button>
+      </div>
+      <p id="board-score-help">Draft scores apply only on Apply score filters or Enter. Bounds are inclusive, from 0 to 100; decimals are supported. Either bound excludes unscored applications, even 0 or 100. Without bounds, scored and unscored applications are eligible. Scores describe deterministic matching, not hiring probabilities. Close quick editing before applying or clearing filters.</p>
+      <p aria-live="polite" role={scoreFiltered ? 'status' : undefined}>{scoreFiltered
+        ? `Applied board match scores: minimum ${appliedFilters.scores.min === undefined ? 'not set' : `${appliedFilters.scores.min}%`}; maximum ${appliedFilters.scores.max === undefined ? 'not set' : `${appliedFilters.scores.max}%`}.`
+        : 'No board match score filters applied.'}</p>
+      {scoreFilterError && <p id="board-score-error" role="alert">{scoreFilterError}</p>}
+    </form>
     {selectedEditor && <section className="pipeline-quick-editor" aria-labelledby="quick-editor-title">
       <h4 id="quick-editor-title" tabIndex={-1} ref={quickEditorHeading}>{selectedEditor.mode === 'note' ? 'Quick application note' : 'Quick follow-up'}</h4>
       <p>{selectedEditor.item.job_title} — {selectedEditor.item.company_name ?? 'Company not supplied'}</p>
@@ -500,7 +560,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {destination && <p className="pipeline-drop-instruction">Drop to review status change</p>}
           {lane.loading && <p role="status">Loading {label}...</p>}
           {lane.error && <div role="alert"><p>{lane.error}</p><button type="button" disabled={lane.loading || updating} onClick={() => void loadLane(value, lane.offset, generation.current)}>Retry {label}</button></div>}
-          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
+          {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered || scoreFiltered ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
             {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
               opening={opening} disabled={updating || quickEditorMutating || change !== null}

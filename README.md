@@ -300,6 +300,53 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+The **Board match score filters** form adds independent **Minimum match score
+(%)** and **Maximum match score (%)** drafts. Bounds are optional, inclusive,
+finite numbers from 0 through 100; fractional values retain their precision.
+An empty field means no bound; explicit zero remains an active bound. Minimum
+must be no greater than maximum. Invalid or incomplete native numeric input
+shows an accessible error and retains the last applied criteria and cards,
+without requests. Correct the draft and apply again, or clear the error.
+
+**Apply score filters** or Enter submits the score drafts. Editing alone sends
+no requests, and resubmitting numerically unchanged valid bounds avoids a reload.
+The live summary describes applied values only. **Clear score filters** clears
+both score drafts and applied bounds, preserving applied Board search and
+follow-up criteria. Clearing only unsent drafts avoids a reload. Search,
+follow-up, and score forms preserve each other's applied values and unsent drafts.
+
+Without score bounds, both scored and unscored records remain eligible. Applying
+either bound excludes unscored records on the server, including minimum 0,
+maximum 100, or the full 0–100 range. Missing scores are never zero. The Board
+uses existing `GET /api/v1/analyses` score parameters and renders server results;
+it does not filter cards locally, round/recompute scores, or sort by score.
+Deterministic matching scores are not probabilities of interviews, offers, or
+employment.
+
+A changed score range resets all seven lanes to their first ten-card pages with
+an eleventh-record lookahead. Independent Load more and Retry retain the entire
+applied context and newest-first server order. Failed later pages retain loaded
+cards; duplicate IDs are suppressed. Old successes/errors and active drags are
+invalidated when criteria change. Manual Board refresh, parent History refresh,
+status changes, and follow-up saves/rescheduling/clearing retain applied scores.
+Apply/Clear are blocked during status confirmation/mutation or while a quick
+editor is open, including writes. Note-only saves avoid summary refreshes.
+Acknowledged follow-up feedback and the Refresh board focus fallback remain
+available when a card leaves matching results.
+
+Board score criteria are separate from History List score drafts, applied
+filters, pagination, comparison, and CSV exports. Filtered CSV continues to use
+only List's applied filters; all-record CSV and unfiltered Overview totals are
+unaffected. Board state resets on unmount/reload without browser persistence.
+Existing offset-pagination concurrency and installation privacy limitations
+remain. No backend, schema, API contract, dependency, scoring algorithm, AI call,
+telemetry, or external integration changes are introduced; score filtering reads
+stored summary metadata without accessing private notes, résumés, candidate
+profiles, or saved snapshot payloads. Native controls support keyboard submission
+and share the existing responsive layout and focus styling. Deterministic tests
+cover component/integration behavior; real-browser E2E testing has not been run.
+
+
 Each card also offers **Edit note**, opening a **Quick application note** panel
 with the selected job and company above the seven lanes. Notes and follow-up
 editing share one selected editor: switching modes or cards, closing, or leaving

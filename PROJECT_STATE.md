@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-21
+Last updated: 2026-10-22
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #37 merge, 2026-10-21):
+Latest verified completed main (PR #38 merge, 2026-10-21):
 
-`077f81dc1f454c27fdfaefe83efbd1bafd63d68f`
+`fbd337f0d6499378151b57db17ccb726ac611d80`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 33 — Kanban Board Search**
+**Commit 34 — Kanban Follow-Up Filters**
 
 ## Completed MVP-1 Roadmap
 
@@ -57,49 +57,49 @@ These milestones must not be replayed or rebuilt.
 - Commit 31 — Kanban Quick Follow-Up Editing — COMPLETE (PR #35, merged 2026-10-18)
 - Commit 32 — Kanban Quick Application Notes — COMPLETE (PR #36, merged 2026-10-20)
 - Commit 33 — Kanban Board Search — COMPLETE (PR #37, merged 2026-10-21)
+- Commit 34 — Kanban Follow-Up Filters — COMPLETE (PR #38, merged 2026-10-21)
 
 ## Post-MVP Active Work
 
-**Commit 34 — Kanban Follow-Up Filters**
+**Commit 35 — Kanban Match Score Filters**
 
 Status: **Authorized active development.**
 
-The Board adds explicit follow-up presence and optional inclusive calendar-date
-bounds, combining with its existing title/company search. Draft controls affect
-results only on Apply filters or form submission. Clear follow-up filters preserves Board
-search, and Clear search preserves follow-up criteria. One applied context feeds
-the existing analyses API in every lane, retaining ten-card pages, lookahead,
-newest-first server ordering, deduplication, independent Load more, and safe Retry.
-Unchanged submissions avoid reloads; invalid calendar dates, reversed ranges,
-and unscheduled-plus-date criteria retain applied cards/filters without requests.
+The Board adds optional inclusive minimum/maximum match-score bounds, accepting
+finite 0–100 values and decimals without rounding. Explicit Apply/Enter updates
+one synchronously shared applied context with search and follow-up criteria;
+Clear scores preserves other forms' applied values and unsent drafts. Unchanged
+valid submissions and clearing only unsent scores avoid requests. Invalid,
+partial, non-finite, out-of-range, or reversed input retains applied cards and
+shows accessible validation feedback. Zero remains distinct from an absent bound.
 
-Changed filters reset pages and invalidate prior requests and drag sessions.
-Generation guards isolate stale successes/failures, pagination, unmount, and
-StrictMode. Immediate refs guard repeated actions and prevent search changes
-during status confirmation/mutations or any open quick editor. Manual Board/
-History refresh, follow-up writes, and successful status changes preserve the
-applied combined filters; note-only writes do not reload summaries. A follow-up
-mutation can remove a card from matching results while keeping successful editor
-feedback. Closing retains the Refresh board focus fallback if the card is absent.
+Existing server filtering excludes unscored analyses whenever either score bound
+is active, even 0 or 100; without bounds both scored and unscored rows are
+eligible. No browser score filtering, fabricated scores, rounding, recomputation,
+or sorting is introduced. Scores remain deterministic outputs, not hiring
+probabilities. All seven lanes retain independent ten-card pages, lookahead,
+Retry, newest-first ordering, deduplication, and safe stale-response guards.
+Filter changes reset pages and invalidate drag sessions. Refresh, successful
+status changes, and follow-up writes retain the combined applied context.
+Quick editors and status confirmation/mutation block Apply/Clear; note-only
+writes avoid summary reloads. Follow-up persistence feedback and focus fallback
+remain available when a card leaves the filtered results.
 
-Board criteria remain independent of List filters/drafts/pages, Overview totals,
-CSV exports, comparison, and deterministic scoring. Filtering reads existing
-user-managed follow-up metadata and searches only saved title/company metadata.
-No snapshots, candidate profiles, resumes, notes, job bodies, or AI text are
-searched. No backend behavior, API contract, schema, dependency, sorting option,
-AI call, overdue classification, automatic date, notification, calendar service,
-telemetry, browser storage, cookie, or URL persistence is introduced. Dates remain
-YYYY-MM-DD calendar days without timestamp/timezone conversion. Board criteria
-reset on unmount/page reload. Existing offset-pagination concurrency and
-installation privacy limitations remain.
-Deterministic component/integration tests cover the workflows; real-browser E2E
-testing has not been performed.
+Board scores remain independent of List filters/drafts/pages, comparison,
+Overview, and CSV. No backend feature, API contract, schema, dependency,
+matching algorithm, AI call, private-data processing, telemetry, external
+integration, or browser persistence is added. Native numeric controls include
+labels, error descriptions, live applied summaries, keyboard submission, and
+existing responsive/focus styling. Board criteria reset on unmount/reload.
+Existing offset-pagination concurrency and local-installation privacy limitations
+remain. Deterministic component/integration tests cover these workflows;
+real-browser E2E testing has not been performed.
 
-The maintainer authorized reconciliation of Commit 33 following PR #37's merge
-at `077f81dc1f454c27fdfaefe83efbd1bafd63d68f` on 2026-10-21.
+The maintainer authorized reconciliation of Commit 34 following PR #38's merge
+at `fbd337f0d6499378151b57db17ccb726ac611d80` on 2026-10-21.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 34 PR number is assigned.
+pull request, review, and merge. No Commit 35 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -141,7 +141,8 @@ The repository already contains:
 - Kanban quick follow-up panel reusing the existing date editor
 - Kanban quick application notes sharing one selected editor with follow-up
 - Board-specific server-backed title/company search
-- Board-specific server-backed follow-up presence/date filters (authorized active development)
+- Board-specific server-backed follow-up presence/date filters
+- Board-specific server-backed minimum/maximum score filters (authorized active development)
 
 ## Architectural Boundary
 
