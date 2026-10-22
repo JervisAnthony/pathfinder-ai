@@ -300,6 +300,46 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+The **Board AI enrichment** select offers **All analyses**, **With AI enrichment**,
+and **Without AI enrichment**. Its draft selection affects results only on
+**Apply AI filter** or Enter; the live applied summary identifies the submitted
+selection. All omits `ai_enriched`, With sends `ai_enriched=true`, and Without
+sends `ai_enriched=false` to the existing `GET /api/v1/analyses` endpoint. False
+is an explicit filter, not an absent value. Resubmitting an unchanged selection
+avoids requests. **Clear AI filter** resets both draft and applied AI selection
+to All; clearing only an unsent draft avoids a reload.
+
+AI criteria compose with applied Board title/company search, follow-up presence
+and inclusive dates, and inclusive score bounds (including 0, 100, and decimals).
+Applying or clearing one form preserves the other forms' applied criteria and
+unsent drafts. All seven lanes filter on the server before pagination, retaining
+independent ten-card pages, lookahead, Load more, Retry, newest-first ordering,
+and duplicate suppression. Changing AI selection resets pages and invalidates
+old requests and active dragging. Failed later pages retain loaded cards.
+Board refresh, parent History Refresh, status changes, and follow-up saves,
+rescheduling, and clearing retain applied AI criteria. Status confirmation,
+status writes, and open quick editors (including editor writes) block Apply/Clear.
+Note-only writes avoid summary reloads, and acknowledged follow-up feedback and
+safe focus restoration remain available if a card leaves matching results.
+
+This filter checks previously saved optional AI enrichment metadata. It does
+not indicate AI-assisted profile/job drafting, current provider availability,
+a higher score, or a better analysis. Filtering makes no AI-provider calls and
+requires no new AI consent. It neither reads/decodes stored AI text nor changes
+scores, saved AI content, notes, follow-ups, statuses, or snapshots. Existing
+installation privacy limitations remain. No backend, schema, API contract,
+dependency, browser storage, cookies, telemetry, external integration, polling,
+or automatic action is introduced.
+
+Board AI drafts and applied selection remain independent of History List AI
+criteria, List pagination, comparison, unfiltered Overview totals, and CSV.
+Filtered CSV uses only List's applied criteria; all-record CSV remains unaffected.
+Board filters reset on unmount/reload without persistence. Existing offset
+pagination can still shift when records change in other sessions; refresh to
+reload current matches. Native controls, labelled forms, keyboard submission,
+live summaries, focus indicators, and responsive styling follow the existing
+Board conventions. Real-browser E2E testing has not been performed.
+
 The **Board match score filters** form adds independent **Minimum match score
 (%)** and **Maximum match score (%)** drafts. Bounds are optional, inclusive,
 finite numbers from 0 through 100; fractional values retain their precision.

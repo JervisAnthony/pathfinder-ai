@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
+import { analyzeCandidateJob, ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
 import type { AnalysisNote, AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
 import { ApplicationPipelineBoard } from '../ApplicationPipelineBoard';
 import { applicationStatuses } from '../status';
@@ -10,7 +10,7 @@ import type { BoardFollowUpFilters } from '../boardFollowUpFilters';
 
 vi.mock('../../../api/pathfinder', async (original) => ({
   ...await original<typeof import('../../../api/pathfinder')>(),
-  getAnalysisHistory: vi.fn(), getAnalysisTracking: vi.fn(), updateAnalysisTracking: vi.fn(),
+  analyzeCandidateJob: vi.fn(), getAnalysisHistory: vi.fn(), getAnalysisTracking: vi.fn(), updateAnalysisTracking: vi.fn(),
   getAnalysisNote: vi.fn(), updateAnalysisNote: vi.fn(), clearAnalysisNote: vi.fn(),
   getAnalysisFollowUp: vi.fn(), updateAnalysisFollowUp: vi.fn(), clearAnalysisFollowUp: vi.fn(),
 }));
@@ -33,6 +33,14 @@ const searchInput = () => screen.getByRole('searchbox', { name: 'Search board by
 function searchBoard(query: string) {
   fireEvent.change(searchInput(), { target: { value: query } });
   fireEvent.click(screen.getByText('Apply search'));
+}
+const aiInput = () => screen.getByRole('combobox', { name: 'Board AI enrichment' });
+const aiForm = () => screen.getByRole('form', { name: 'Board AI enrichment filter' });
+function draftAiFilter(value: 'all' | 'yes' | 'no') {
+  fireEvent.change(aiInput(), { target: { value } });
+}
+function applyAiFilter(value: 'all' | 'yes' | 'no') {
+  draftAiFilter(value); fireEvent.submit(aiForm());
 }
 const scoreForm = () => screen.getByRole('form', { name: 'Board match score filters' });
 const minScore = () => screen.getByLabelText('Minimum match score (%) (Board)');
@@ -211,12 +219,12 @@ describe('Kanban follow-up filters', () => {
       ...record(`${value}-${i}`, value), follow_up_on: i % 2 ? '2026-10-31' : '2026-10-01',
     })));
     supply(items);
-    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyAiFilter('no'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
     await lane().findByText('Fictional Engineer not_applied-9');
     expect(lane().getAllByRole('heading', { level: 5 }).map((node) => node.textContent))
       .toEqual(items.slice(0, 10).map((item) => item.job_title));
     expect(lane().queryByText('Fictional Engineer not_applied-10')).not.toBeInTheDocument();
-    const expected = { min_score: 72.25, max_score: 87.75, query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31' };
+    const expected = { ai_enriched: false, min_score: 72.25, max_score: 87.75, query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31' };
     history.mockRejectedValueOnce(new Error('PRIVATE'));
     fireEvent.click(screen.getByText('Load more Not applied'));
     expect(await lane().findByRole('alert')).not.toHaveTextContent('PRIVATE');
@@ -283,13 +291,13 @@ describe('Kanban follow-up filters', () => {
     const old = deferred<AnalysisHistoryResponse>(); const late = deferred<AnalysisHistoryResponse>();
     history.mockReturnValueOnce(old.promise);
     const { rerender, unmount } = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
-    applyFollowUpFilters('yes', '2024-02-29'); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); await screen.findByText('Fictional Engineer record');
+    applyFollowUpFilters('yes', '2024-02-29'); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); await screen.findByText('Fictional Engineer record');
     history.mockReturnValueOnce(late.promise);
     fireEvent.click(screen.getByText('Refresh board'));
     draftFollowUpFilters('no');
     rerender(<StrictMode><ApplicationPipelineBoard {...props} refreshKey={1} /></StrictMode>);
     await screen.findByText('Fictional Engineer record');
-    expect(history.mock.calls.slice(-14).every(([, offset, filters]) => offset === 0 && filters?.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
+    expect(history.mock.calls.slice(-14).every(([, offset, filters]) => offset === 0 && filters?.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
     await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('old')] }); else old.reject(new Error('PRIVATE')); });
     expect(screen.queryByText('Fictional Engineer old')).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(screen.getByLabelText('Board follow-up status')).toHaveValue('no');
@@ -310,7 +318,7 @@ describe('Kanban follow-up filters', () => {
     vi.mocked(clearAnalysisFollowUp).mockReturnValue(remove.promise);
     const updated = vi.fn(async () => {});
     render(<ApplicationPipelineBoard {...props} onFollowUpUpdated={updated} />);
-    searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters(action === 'create' ? 'no' : 'yes', '', action === 'reschedule' ? '2026-10-21' : '');
+    searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applyFollowUpFilters(action === 'create' ? 'no' : 'yes', '', action === 'reschedule' ? '2026-10-21' : '');
     const input = await openFollowUp();
     if (action === 'clear') {
       fireEvent.click(screen.getByText('Clear follow-up'));
@@ -326,7 +334,7 @@ describe('Kanban follow-up filters', () => {
     expect(input).toHaveValue(action === 'clear' ? '' : '2026-10-22');
     expect(updated).toHaveBeenCalledOnce();
     for (const [, offset, filters] of history.mock.calls.slice(-7)) {
-      expect(offset).toBe(0); expect(filters?.min_score).toBe(72.25); expect(filters?.max_score).toBe(87.75); expect(filters?.query).toBe('Engineer'); expect(filters?.has_follow_up).toBe(action !== 'create');
+      expect(offset).toBe(0); expect(filters?.ai_enriched).toBe(false); expect(filters?.min_score).toBe(72.25); expect(filters?.max_score).toBe(87.75); expect(filters?.query).toBe('Engineer'); expect(filters?.has_follow_up).toBe(action !== 'create');
       expect(filters?.follow_up_to).toBe(action === 'reschedule' ? '2026-10-21' : undefined);
     }
     expect(screen.queryByText(/no longer exists/i)).not.toBeInTheDocument();
@@ -335,19 +343,19 @@ describe('Kanban follow-up filters', () => {
   });
 
   it('preserves combined filters after confirmed status movement and avoids lane reload after note-only saves', async () => {
-    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyFollowUpFilters('yes', '2024-02-29');
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer'); applyScoreFilters('72.25', '87.75'); applyAiFilter('no'); applyFollowUpFilters('yes', '2024-02-29');
     const note = await openNote();
     vi.mocked(updateAnalysisNote).mockResolvedValue(noteValue('private draft'));
     fireEvent.change(note, { target: { value: 'private draft' } });
     fireEvent.click(screen.getByText('Save note')); await screen.findByText('Application note saved.');
-    expect(history).toHaveBeenCalledTimes(28);
+    expect(history).toHaveBeenCalledTimes(35);
     fireEvent.click(screen.getByText('Close editing'));
     await review(); supply([record('record', 'applied')]);
     fireEvent.click(screen.getByText('Confirm status change'));
     await screen.findByText('Application status changed to Applied.');
     expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
-    expect(history).toHaveBeenCalledTimes(35);
-    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
+    expect(history).toHaveBeenCalledTimes(42);
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.ai_enriched === false && filters.min_score === 72.25 && filters.max_score === 87.75 && filters.query === 'Engineer' && filters.has_follow_up === true && filters.follow_up_from === '2024-02-29')).toBe(true);
     expect(onStatusChanged).toHaveBeenCalledOnce();
   });
 });
@@ -1726,5 +1734,141 @@ describe('Kanban match score filters', () => {
     expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'Engineer', has_follow_up: true, min_score: 72.25, max_score: 87.75 });
     await screen.findByText('Fictional Engineer record'); dropIn('Applied', drag.dataTransfer);
     expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument(); expect(document.querySelector('.pipeline-card-dragging')).toBeNull();
+  });
+});
+
+
+describe('Kanban AI enrichment filter', () => {
+  it.each([
+    { selection: 'all', label: 'All analyses', expected: {} },
+    { selection: 'yes', label: 'With AI enrichment', expected: { ai_enriched: true } },
+    { selection: 'no', label: 'Without AI enrichment', expected: { ai_enriched: false } },
+  ] as const)('submits $label to every lane only on Apply/Enter, without redundant loads or writes', async ({ selection, label, expected }) => {
+    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
+    const input = aiInput(); expect(input.tagName).toBe('SELECT'); expect(input).toHaveValue('all');
+    expect(within(input).getAllByRole('option').map((option) => option.textContent)).toEqual(['All analyses', 'With AI enrichment', 'Without AI enrichment']);
+    expect(input).toHaveAttribute('aria-describedby', 'board-ai-help'); input.focus();
+    draftAiFilter(selection); expect(history).toHaveBeenCalledTimes(7);
+    expect(screen.getByText('Applied board AI enrichment: All analyses.')).toBeInTheDocument();
+    // Native Enter submits the select's form.
+    fireEvent.submit(aiForm()); await screen.findByText('Fictional Engineer record');
+    expect(input).toHaveFocus(); expect(screen.getByText(`Applied board AI enrichment: ${label}.`)).toHaveAttribute('aria-live', 'polite');
+    const count = selection === 'all' ? 7 : 14;
+    expect(history).toHaveBeenCalledTimes(count);
+    for (const { value } of applicationStatuses) expect(history).toHaveBeenCalledWith(11, 0, { application_status: value, ...expected });
+    fireEvent.click(screen.getByText('Apply AI filter')); expect(history).toHaveBeenCalledTimes(count);
+    // Browser renders authoritative server rows even if metadata differs from requested criteria.
+    expect(lane().getByText('Not scored')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Clear AI filter')); await screen.findByText('Fictional Engineer record');
+    const clearedCount = selection === 'all' ? count : count + 7;
+    expect(history).toHaveBeenCalledTimes(clearedCount); expect(input).toHaveValue('all');
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn' });
+    draftAiFilter('no'); fireEvent.click(screen.getByText('Clear AI filter'));
+    expect(input).toHaveValue('all'); expect(history).toHaveBeenCalledTimes(clearedCount);
+    expect(analyzeCandidateJob).not.toHaveBeenCalled(); expect(tracking).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(getAnalysisNote).not.toHaveBeenCalled(); expect(getAnalysisFollowUp).not.toHaveBeenCalled();
+    expect(updateAnalysisNote).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled();
+  });
+
+  it.each(['yes', 'no'] as const)('composes applied %s with every filter, preserves drafts, and clears independently', async (selection) => {
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer');
+    applyFollowUpFilters(selection); applyScoreFilters('0', '100');
+    fireEvent.change(searchInput(), { target: { value: 'unsent query' } }); draftFollowUpFilters('all'); draftScoreFilters('80', '90');
+    applyAiFilter(selection);
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'Engineer', has_follow_up: selection === 'yes', min_score: 0, max_score: 100, ai_enriched: selection === 'yes' });
+    expect(searchInput()).toHaveValue('unsent query'); expect(minScore()).toHaveValue(80); expect(screen.getByLabelText('Board follow-up status')).toHaveValue('all');
+    draftAiFilter('all'); searchBoard('Changed'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31'); applyScoreFilters('72.25', '87.75');
+    expect(aiInput()).toHaveValue('all');
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'Changed', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 72.25, max_score: 87.75, ai_enriched: selection === 'yes' });
+    fireEvent.click(screen.getByText('Clear AI filter'));
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'Changed', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 72.25, max_score: 87.75 });
+    applyAiFilter(selection);
+    for (const name of ['Clear search', 'Clear follow-up filters', 'Clear score filters']) {
+      fireEvent.click(screen.getByText(name));
+      expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.ai_enriched === (selection === 'yes'))).toBe(true);
+    }
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', ai_enriched: selection === 'yes' });
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it.each(['initial', 'page'].flatMap((phase) => ['resolve', 'reject'].map((outcome) => ({ phase, outcome }))))('ignores old AI $phase $outcome after Without succeeds, preserving independent loading and retry', async ({ phase, outcome }) => {
+    const old = deferred<AnalysisHistoryResponse>(); const current = deferred<AnalysisHistoryResponse>();
+    const rows = Array.from({ length: 12 }, (_, i) => record(String(i)));
+    history.mockImplementation(async (limit, offset, filters) => {
+      if (filters?.ai_enriched === true && (phase === 'initial' || offset === 10)) return old.promise;
+      if (filters?.ai_enriched === false && filters.application_status === 'applied') return current.promise;
+      return { items: filters?.application_status === 'not_applied' ? rows.slice(offset ?? 0, (offset ?? 0) + (limit ?? 11)) : [] };
+    });
+    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('yes');
+    if (phase === 'page') fireEvent.click(await screen.findByText('Load more Not applied'));
+    applyAiFilter('no'); await screen.findByText('Fictional Engineer 0');
+    await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('STALE')] }); else old.reject(new Error('PRIVATE')); });
+    expect(screen.queryByText('Fictional Engineer STALE')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(lane('Applied').getByRole('status')).toHaveTextContent('Loading Applied');
+    await act(async () => current.reject(new Error('PRIVATE')));
+    expect(lane('Applied').getByRole('alert')).not.toHaveTextContent('PRIVATE');
+    history.mockResolvedValueOnce({ items: [] }); fireEvent.click(screen.getByText('Retry Applied'));
+    await lane('Applied').findByText('No matching saved analyses in Applied.');
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'applied', ai_enriched: false });
+    expect(lane('Applied').queryByRole('status')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Load more Not applied')); await screen.findByText('Fictional Engineer 11');
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', ai_enriched: false });
+    fireEvent.click(screen.getByText('Clear AI filter')); await screen.findByText('Fictional Engineer 0');
+    expect(lane().getAllByRole('heading', { level: 5 })).toHaveLength(10);
+    expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && !('ai_enriched' in (filters ?? {})))).toBe(true);
+  });
+
+  it('synchronizes rapid Apply/Clear and same-tick changes across all forms and invalidates dragging', async () => {
+    render(<ApplicationPipelineBoard {...props} />); const drag = await startDrag(); draftAiFilter('no');
+    const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
+    act(() => { apply.click(); apply.click(); clear.click(); clear.click(); apply.click(); });
+    expect(history).toHaveBeenCalledTimes(21); expect(aiInput()).toHaveValue('all');
+    draftAiFilter('no'); draftFollowUpFilters('yes', '2026-10-01', '2026-10-31'); draftScoreFilters('0', '100');
+    fireEvent.change(searchInput(), { target: { value: 'Engineer' } });
+    act(() => { apply.click(); screen.getByText('Apply search').click(); within(followUpForm()).getByText('Apply filters').click(); screen.getByText('Apply score filters').click(); });
+    expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', ai_enriched: false, query: 'Engineer', has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 0, max_score: 100 });
+    await screen.findByText('Fictional Engineer record'); dropIn('Applied', drag.dataTransfer);
+    expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument(); expect(document.querySelector('.pipeline-card-dragging')).toBeNull();
+    fireEvent.click(screen.getByText('Open details')); expect(onOpen).toHaveBeenCalledExactlyOnceWith('record');
+  });
+
+  it.each((['note', 'follow-up'] as const).flatMap((mode) => (['save', 'clear'] as const).map((action) => ({ mode, action }))))('blocks AI Apply/Clear while $mode editing and $action persistence protect the draft', async ({ mode, action }) => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('persisted'));
+    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-21'));
+    const notePut = deferred<AnalysisNote>(); const datePut = deferred<AnalysisFollowUp>(); const remove = deferred<void>();
+    vi.mocked(updateAnalysisNote).mockReturnValue(notePut.promise); vi.mocked(updateAnalysisFollowUp).mockReturnValue(datePut.promise);
+    vi.mocked(clearAnalysisNote).mockReturnValue(remove.promise); vi.mocked(clearAnalysisFollowUp).mockReturnValue(remove.promise);
+    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); await screen.findByText('Fictional Engineer record');
+    draftAiFilter('yes'); const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
+    act(() => { screen.getByText(`Edit ${mode}`).click(); apply.click(); clear.click(); });
+    const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
+    const value = mode === 'note' ? 'unsaved draft' : '2026-10-23'; fireEvent.change(input, { target: { value } });
+    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); fireEvent.submit(aiForm());
+    expect(input).toHaveValue(value); expect(history).toHaveBeenCalledTimes(14);
+    if (action === 'save') fireEvent.click(screen.getByText(`Save ${mode}`));
+    else { fireEvent.click(screen.getByText(`Clear ${mode}`)); fireEvent.click(within(screen.getByRole('alertdialog')).getByText(`Clear ${mode}`)); }
+    fireEvent.submit(aiForm()); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(14);
+    expect(screen.getByText('Applied board AI enrichment: Without AI enrichment.')).toBeInTheDocument();
+    await act(async () => { if (action === 'clear') remove.resolve(); else if (mode === 'note') notePut.resolve(noteValue(value)); else datePut.resolve(followUpValue(value)); });
+    await screen.findByText(action === 'clear' ? (mode === 'note' ? 'Application note cleared.' : 'Follow-up date cleared.') : (mode === 'note' ? 'Application note saved.' : 'Follow-up date saved.'));
+    expect(history).toHaveBeenCalledTimes(mode === 'note' ? 14 : 21);
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.ai_enriched === false)).toBe(true);
+    fireEvent.click(screen.getByText('Close editing')); expect(screen.getByText(`Edit ${mode}`)).toHaveFocus();
+    expect(aiInput()).toHaveValue('yes'); fireEvent.click(clear); await screen.findByText('Fictional Engineer record');
+    expect(aiInput()).toHaveValue('all');
+  });
+
+  it('blocks AI changes during status confirmation and mutation and retains applied false after success', async () => {
+    const put = deferred<AnalysisTracking>(); update.mockReturnValueOnce(put.promise);
+    render(<ApplicationPipelineBoard {...props} />); applyAiFilter('no'); await review(); draftAiFilter('yes');
+    const apply = screen.getByText('Apply AI filter'); const clear = screen.getByText('Clear AI filter');
+    expect(apply).toBeDisabled(); expect(clear).toBeDisabled(); fireEvent.submit(aiForm()); fireEvent.click(clear);
+    expect(history).toHaveBeenCalledTimes(14);
+    fireEvent.click(screen.getByText('Confirm status change')); await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    fireEvent.submit(aiForm()); fireEvent.click(clear); expect(history).toHaveBeenCalledTimes(14);
+    supply([record('record', 'applied')]); await act(async () => put.resolve({ analysis_id: 'record', application_status: 'applied', updated_at: null }));
+    expect(history.mock.calls.slice(-7).every(([, , filters]) => filters?.ai_enriched === false)).toBe(true);
+    expect(lane('Applied').getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(screen.getByText('Refresh board')).toHaveFocus(); expect(onStatusChanged).toHaveBeenCalledOnce();
   });
 });
