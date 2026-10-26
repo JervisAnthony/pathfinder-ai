@@ -1884,6 +1884,181 @@ describe('Kanban AI enrichment filter', () => {
 });
 
 
+describe('Kanban reset all criteria', () => {
+  const reset = () => screen.getByRole('button', { name: 'Reset all Board criteria' });
+  function combined() {
+    searchBoard('Engineer'); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
+    applyScoreFilters('70', '90'); applyAiFilter('no'); applySort();
+  }
+  function dirtyDrafts() {
+    fireEvent.change(searchInput(), { target: { value: 'Data Scientist' } });
+    draftFollowUpFilters('no'); draftScoreFilters('80', '95'); draftAiFilter('yes'); draftSort('created_desc');
+  }
+  function expectDefaults() {
+    expect(searchInput()).toHaveValue(''); expect(screen.getByLabelText('Board follow-up status')).toHaveValue('all');
+    expect(screen.getByLabelText('Board follow-up from')).toHaveValue(''); expect(screen.getByLabelText('Board follow-up to')).toHaveValue('');
+    expect(minScore()).toHaveValue(null); expect(maxScore()).toHaveValue(null);
+    expect(aiInput()).toHaveValue('all'); expect(sortInput()).toHaveValue('created_desc');
+    for (const text of ['No board search applied.', 'Applied board follow-up filters: All.', 'No board match score filters applied.', 'Applied board AI enrichment: All analyses.', 'Applied board sort: Newest saved first.']) {
+      expect(screen.getByText(text)).toBeInTheDocument();
+    }
+  }
+  function expectDefaultRequests(start: number) {
+    expect(history.mock.calls.slice(start)).toEqual(applicationStatuses.map(({ value }) => [11, 0, { application_status: value }]));
+  }
+
+  it.each([false, true])('atomically resets all contexts with dirty drafts=%s, preserving focus and idempotence', async (dirty) => {
+    render(<ApplicationPipelineBoard {...props} />); combined(); await screen.findByText('Fictional Engineer record');
+    if (dirty) dirtyDrafts();
+    const button = reset(); expect(button).toHaveAttribute('type', 'button'); expect(button.closest('form')).toBeNull();
+    expect(button).toHaveAccessibleDescription(/filtering and sorting.*unapplied.*Saved application records and History List/);
+    button.focus(); const count = history.mock.calls.length;
+    act(() => { button.click(); button.click(); }); expectDefaultRequests(count); expectDefaults(); expect(button).toHaveFocus();
+    await screen.findByText('Fictional Engineer record'); const card = screen.getByText('Fictional Engineer record');
+    fireEvent.click(button); expect(history).toHaveBeenCalledTimes(count + 7); expect(card).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Refresh board')); expectDefaultRequests(count + 7);
+    await screen.findByText('Fictional Engineer record');
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('discards only drafts without reloading cards or invalidating a default-context drag', async () => {
+    render(<ApplicationPipelineBoard {...props} />); const drag = await startDrag(); dirtyDrafts();
+    const card = screen.getByText('Fictional Engineer record');
+    act(() => { reset().click(); reset().click(); }); expectDefaults(); expect(history).toHaveBeenCalledTimes(7);
+    expect(card).toBeInTheDocument(); dropIn('Applied', drag.dataTransfer);
+    expect(screen.getByText('Confirm status change')).toBeInTheDocument();
+  });
+
+  it.each([['-1', '50'], ['0', '101'], ['90', '70'], ['1e', ''], ['-', '']])('recovers invalid scores %s/%s and all validation errors without requests', async (min, max) => {
+    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
+    searchBoard('x'.repeat(201)); applyFollowUpFilters('yes', '2026-10-31', '2026-10-01'); applyScoreFilters(min, max);
+    expect(screen.getByText(/at most 200/)).toBeInTheDocument(); expect(screen.getByText(/on or before/)).toBeInTheDocument();
+    fireEvent.click(reset()); expectDefaults(); expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(history).toHaveBeenCalledTimes(7);
+    applyScoreFilters('25', '75'); expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', min_score: 25, max_score: 75 });
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it('explicitly clears native bad-input date and number residue even when React values are empty', async () => {
+    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
+    const inputs = [screen.getByLabelText('Board follow-up from'), screen.getByLabelText('Board follow-up to'), minScore(), maxScore()] as HTMLInputElement[];
+    const setters = inputs.map((input) => {
+      const setter = vi.spyOn(input, 'value', 'set');
+      Object.defineProperty(input, 'validity', { configurable: true, value: { valid: false, badInput: true } });
+      return setter;
+    });
+    fireEvent.submit(followUpForm()); fireEvent.submit(scoreForm()); expect(screen.getAllByRole('alert')).toHaveLength(2);
+    fireEvent.click(reset()); setters.forEach((setter) => expect(setter).toHaveBeenCalledWith(''));
+    inputs.forEach((input) => { Reflect.deleteProperty(input, 'validity'); }); setters.forEach((setter) => setter.mockRestore());
+    expectDefaults(); expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(history).toHaveBeenCalledTimes(7);
+    applyFollowUpFilters('yes', '2026-10-01'); expect(history).toHaveBeenCalledTimes(14);
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it('uses immediate refs for same-tick Apply/Reset and Reset/Apply and invalidates an obsolete drag', async () => {
+    render(<ApplicationPipelineBoard {...props} />); const drag = await startDrag();
+    fireEvent.change(searchInput(), { target: { value: 'old' } });
+    act(() => { screen.getByText('Apply search').click(); reset().click(); reset().click(); });
+    expect(history).toHaveBeenCalledTimes(21); expectDefaultRequests(14); expectDefaults();
+    act(() => {
+      reset().click();
+      fireEvent.change(searchInput(), { target: { value: 'latest' } });
+      screen.getByText('Apply search').click();
+    });
+    expect(history).toHaveBeenCalledTimes(28); expect(history).toHaveBeenLastCalledWith(11, 0, { application_status: 'withdrawn', query: 'latest' });
+    await screen.findByText('Fictional Engineer record'); dropIn('Applied', drag.dataTransfer); expect(screen.queryByText('Confirm status change')).not.toBeInTheDocument();
+  });
+
+  it.each(['initial', 'page', 'retry'].flatMap((phase) => ['resolve', 'reject'].flatMap((outcome) => [false, true].map((oldFirst) => ({ phase, outcome, oldFirst })))))('ignores stale $phase $outcome after combined reset (oldFirst=$oldFirst)', async ({ phase, outcome, oldFirst }) => {
+    const old = deferred<AnalysisHistoryResponse>(); const fresh = deferred<AnalysisHistoryResponse>();
+    const rows = Array.from({ length: 12 }, (_, i) => record(String(i)));
+    render(<ApplicationPipelineBoard {...props} />); combined(); await screen.findByText('Fictional Engineer record');
+    history.mockImplementation(async (_limit, offset, filters) => {
+      if (!filters?.query) return fresh.promise;
+      if (phase === 'initial' || offset === 10 || phase === 'retry') return old.promise;
+      return { items: filters.application_status === 'not_applied' ? rows : [] };
+    });
+    if (phase === 'retry') {
+      history.mockRejectedValueOnce(new Error('PRIVATE')); fireEvent.click(screen.getByText('Refresh board'));
+      fireEvent.click(await screen.findByText('Retry Not applied'));
+    } else {
+      fireEvent.click(screen.getByText('Refresh board'));
+      if (phase === 'page') fireEvent.click(await screen.findByText('Load more Not applied'));
+    }
+    const count = history.mock.calls.length; fireEvent.click(reset()); expectDefaultRequests(count);
+    const settleOld = async () => { await act(async () => { if (outcome === 'resolve') old.resolve({ items: [record('STALE')] }); else old.reject(new Error('PRIVATE')); }); };
+    if (oldFirst) { await settleOld(); expect(lane().getByRole('status')).toHaveTextContent('Loading'); }
+    await act(async () => fresh.resolve({ items: rows }));
+    if (!oldFirst) await settleOld();
+    expect(screen.queryByText('Fictional Engineer STALE')).not.toBeInTheDocument(); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Loading Not applied/)).not.toBeInTheDocument(); expect(lane().getAllByRole('listitem')).toHaveLength(10);
+    history.mockRejectedValueOnce(new Error('PRIVATE')); fireEvent.click(screen.getByText('Load more Not applied'));
+    await screen.findByText('Retry Not applied'); expect(lane().getAllByRole('listitem')).toHaveLength(10);
+    history.mockResolvedValueOnce({ items: [rows[9], rows[10]] }); fireEvent.click(screen.getByText('Retry Not applied'));
+    await screen.findByText('Fictional Engineer 10'); expect(lane().getAllByRole('listitem')).toHaveLength(11);
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied' });
+  });
+
+  it.each(['note', 'follow-up'] as const)('protects open %s drafts and pending persistence, including same-tick opening', async (mode) => {
+    vi.mocked(getAnalysisNote).mockResolvedValue(noteValue('persisted')); vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-21'));
+    const putNote = deferred<AnalysisNote>(); const putDate = deferred<AnalysisFollowUp>();
+    vi.mocked(updateAnalysisNote).mockReturnValue(putNote.promise); vi.mocked(updateAnalysisFollowUp).mockReturnValue(putDate.promise);
+    render(<ApplicationPipelineBoard {...props} />); combined(); await screen.findByText('Fictional Engineer record'); dirtyDrafts();
+    const count = history.mock.calls.length;
+    act(() => { screen.getByText(`Edit ${mode}`).click(); reset().click(); }); expect(history).toHaveBeenCalledTimes(count);
+    const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
+    const value = mode === 'note' ? 'unsaved note' : '2026-10-23'; fireEvent.change(input, { target: { value } });
+    expect(reset()).toBeDisabled(); fireEvent.click(reset()); expect(input).toHaveValue(value); expect(searchInput()).toHaveValue('Data Scientist');
+    fireEvent.click(screen.getByText(`Save ${mode}`)); fireEvent.click(reset()); expect(history).toHaveBeenCalledTimes(count);
+    await act(async () => { if (mode === 'note') putNote.resolve(noteValue(value)); else putDate.resolve(followUpValue(value)); });
+    expect(history).toHaveBeenCalledTimes(count + (mode === 'note' ? 0 : 7)); expect(reset()).toBeDisabled();
+    fireEvent.click(screen.getByText('Close editing')); fireEvent.click(reset()); expectDefaults();
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it('guards same-tick confirmation, pending status writes and detail loading', async () => {
+    const put = deferred<AnalysisTracking>(); update.mockReturnValueOnce(put.promise);
+    const view = render(<ApplicationPipelineBoard {...props} />); combined(); await screen.findByText('Fictional Engineer record'); dirtyDrafts();
+    fireEvent.change(screen.getByLabelText('New status for Fictional Engineer record'), { target: { value: 'applied' } });
+    const count = history.mock.calls.length;
+    act(() => { screen.getByText('Review change').click(); reset().click(); }); expect(history).toHaveBeenCalledTimes(count); expect(reset()).toBeDisabled();
+    fireEvent.click(screen.getByText('Confirm status change')); await waitFor(() => expect(update).toHaveBeenCalledOnce()); fireEvent.click(reset());
+    expect(searchInput()).toHaveValue('Data Scientist'); expect(history).toHaveBeenCalledTimes(count);
+    await act(async () => put.resolve({ analysis_id: 'record', application_status: 'applied', updated_at: null }));
+    view.rerender(<ApplicationPipelineBoard {...props} opening />); expect(reset()).toBeDisabled(); fireEvent.click(reset()); expect(searchInput()).toHaveValue('Data Scientist');
+    view.rerender(<ApplicationPipelineBoard {...props} />); fireEvent.click(reset()); expectDefaults();
+    await screen.findByText('Fictional Engineer record');
+  });
+
+  it('preserves default requests through StrictMode, parent refresh and unmount with pending responses', async () => {
+    const pending = deferred<AnalysisHistoryResponse>();
+    const view = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
+    combined(); await screen.findByText('Fictional Engineer record'); history.mockReturnValue(pending.promise);
+    const count = history.mock.calls.length; fireEvent.click(reset()); expectDefaultRequests(count);
+    view.rerender(<StrictMode><ApplicationPipelineBoard {...props} refreshKey={1} /></StrictMode>); expectDefaultRequests(count + 7);
+    view.unmount(); await act(async () => pending.resolve({ items: [record('late')] })); expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it.each(['status', 'follow-up', 'note'] as const)('keeps default context after reset through a successful %s write', async (mode) => {
+    vi.mocked(updateAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-23'));
+    vi.mocked(updateAnalysisNote).mockResolvedValue(noteValue('fictional note'));
+    render(<ApplicationPipelineBoard {...props} />); combined(); await screen.findByText('Fictional Engineer record');
+    fireEvent.click(reset()); await screen.findByText('Fictional Engineer record'); const count = history.mock.calls.length;
+    if (mode === 'status') {
+      await review(); fireEvent.click(screen.getByText('Confirm status change'));
+      await screen.findByText('Application status changed to Applied.');
+    } else {
+      fireEvent.click(screen.getByText(`Edit ${mode}`));
+      const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
+      fireEvent.change(input, { target: { value: mode === 'note' ? 'fictional note' : '2026-10-23' } });
+      fireEvent.click(screen.getByText(`Save ${mode}`));
+      await screen.findByText(mode === 'note' ? 'Application note saved.' : 'Follow-up date saved.');
+    }
+    if (mode === 'note') expect(history).toHaveBeenCalledTimes(count); else expectDefaultRequests(count);
+    await screen.findByText('Fictional Engineer record'); expectDefaults();
+  });
+});
+
 describe('Kanban follow-up sorting', () => {
   it('keeps default sort omitted, drafts local, summaries applied, and Apply/Reset idempotent', async () => {
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
