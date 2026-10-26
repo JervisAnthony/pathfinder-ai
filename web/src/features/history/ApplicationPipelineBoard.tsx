@@ -355,6 +355,29 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     applyBoardFilters({ ...appliedFiltersRef.current, sort: next });
   };
 
+  const resetAllCriteria = () => {
+    if (!canChangeFilters()) return;
+    const defaults: BoardFilters = {
+      query: '', followUp: emptyBoardFollowUpFilters(), scores: {}, ai: 'all', sort: 'created_desc',
+    };
+    draftQueryRef.current = defaults.query;
+    setDraftQuery(defaults.query);
+    editFollowUpFilters(defaults.followUp);
+    editScoreFilters(emptyBoardScoreFilters());
+    draftAiRef.current = defaults.ai;
+    setDraftAi(defaults.ai);
+    draftSortRef.current = defaults.sort;
+    setDraftSort(defaults.sort);
+    // Partial native dates/numbers can expose an empty controlled value while
+    // retaining invalid input. Clear only these Board controls, even at defaults.
+    [followUpFromInput.current, followUpToInput.current, minScoreInput.current, maxScoreInput.current]
+      .forEach((input) => { if (input) input.value = ''; });
+    setSearchError(null);
+    setFollowUpFilterError(null);
+    setScoreFilterError(null);
+    applyBoardFilters(defaults);
+  };
+
   // Both native drops and the selector use the same confirmation gate. Neither
   // path reads tracking or writes persistence until the user confirms.
   const prepareChange = (next: Change) => {
@@ -468,8 +491,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     onKeyDown={(event) => { if (event.key === 'Escape') clearDrag(); }}>
     <div className="history-heading">
       <h3 id="pipeline-board-title">Application Pipeline Board</h3>
-      <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
+      <div className="export-actions">
+        <button type="button" aria-describedby="board-reset-help"
+          disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+          onClick={resetAllCriteria}>Reset all Board criteria</button>
+        <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
+      </div>
     </div>
+    <p id="board-reset-help">Reset all Board filtering and sorting, discarding unapplied Board filter drafts. Saved application records and History List criteria are unaffected.</p>
     <p>Saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
     <p>Each lane loads 10 cards at a time in the applied order. Changes in other sessions may require Refresh board.</p>
     <p id="pipeline-drag-instructions" className="pipeline-drag-instructions">Use the Drag to change status handle to drag a card to another lane to review a status change. On keyboard or touch devices, choose a new status on the card and select Review change. Activating the handle focuses the status selector.</p>

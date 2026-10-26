@@ -243,6 +243,20 @@ describe('History board integration', () => {
     expect(board.getByText('Applied board sort: Earliest follow-up first.')).toBeInTheDocument();
     expect(board.getByLabelText('Board follow-up to')).toHaveValue('2026-10-31');
     expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1);
+    const resetStart = vi.mocked(getAnalysisHistory).mock.calls.length;
+    fireEvent.click(board.getByRole('button', { name: 'Reset all Board criteria' }));
+    await board.findByText('Platform Engineer');
+    expect(vi.mocked(getAnalysisHistory).mock.calls.slice(resetStart)).toEqual(applicationStatuses.map(({ value }) => [11, 0, { application_status: value }]));
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls + 1);
+    expect(screen.getByText('Board view')).toHaveAttribute('aria-pressed', 'true');
+    expect(board.getByLabelText('Board sort order')).toHaveValue('created_desc');
+    expect(screen.getByText('Preparing all records CSV...')).toBeInTheDocument();
+    expect(screen.getByText('Preparing filtered records CSV...')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' })); await board.findByText('Platform Engineer');
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 11).slice(-7))
+      .toEqual(applicationStatuses.map(({ value }) => [11, 0, { application_status: value }]));
+    expect(vi.mocked(getAnalysisHistory).mock.calls.filter(([limit]) => limit === 20).at(-1))
+      .toEqual([20, 0, { query: 'List query', has_follow_up: false, min_score: 15, ai_enriched: true, ...listOrder }]);
     fireEvent.click(screen.getByText('List view'));
     expect(screen.getByLabelText('Follow-up status')).toHaveValue('all');
     expect(screen.getByLabelText('Minimum score')).toHaveValue(25);
@@ -285,6 +299,7 @@ describe('History board integration', () => {
     fireEvent.click(board.getByText('Apply AI filter')); await board.findByText('Platform Engineer');
     fireEvent.change(board.getByLabelText('Board sort order'), { target: { value: 'follow_up_asc' } });
     fireEvent.click(board.getByText('Apply sort')); await board.findByText('Platform Engineer');
+    fireEvent.click(board.getByRole('button', { name: 'Reset all Board criteria' })); await board.findByText('Platform Engineer');
     expect(screen.getByRole('button', { name: 'Download filtered CSV' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'List view' }));
     expect(screen.getByLabelText('Search job title or company')).toHaveValue('unapplied draft');

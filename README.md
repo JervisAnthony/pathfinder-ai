@@ -300,6 +300,34 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+**Reset all Board criteria**, beside **Refresh board**, restores both draft and
+applied title/company search, follow-up presence/date filters, match-score bounds,
+AI enrichment presence, and sorting to defaults (**Newest saved first**). It
+discards unapplied drafts without validating them, clears filter-validation errors,
+and clears partial/invalid native date and number inputs. Existing individual
+Apply/Clear/Reset controls remain available and keep their individual scope.
+
+When applied criteria are active, reset updates the complete context together and
+reloads all seven first pages once, with only each lane's application status in
+the filters. Dirty drafts are never submitted. When applied criteria are already
+default, resetting dirty or invalid drafts makes no requests and keeps loaded
+cards. Repeated resets avoid duplicate reloads. Changed applied context resets
+offsets and invalidates obsolete requests and drags; independent ten-card pages,
+lookahead, duplicate suppression, Load more/Retry, safe errors, and server ordering
+remain. Later refreshes and successful status/follow-up updates use defaults.
+
+Close quick note/follow-up editing before reset. Open editors, pending writes,
+status confirmation/updates, and detail loading block reset through the existing
+interaction guards. The native button stays outside filter forms, retains focus
+when activated, and has explanatory accessible help. Reset changes no saved
+records, preserves unrelated persistence feedback, and leaves History List
+drafts/applied filters/sort/pages, Overview, CSV criteria/order, and comparison
+selection unchanged. No confirmation, backend/API/schema/dependency change, AI
+call, score recalculation, or browser/URL persistence is added. Existing offset
+pagination concurrency and local-installation privacy limits still apply; Board
+state resets on unmount/reload. Native partial-input recovery is tested at the
+DOM boundary; real-browser E2E testing has not been performed.
+
 The **Board sort order** select offers **Newest saved first** (the default) and
 **Earliest follow-up first**. Draft changes make no requests. **Apply sort** or
 Enter explicitly applies the selected order; the accessible live summary shows

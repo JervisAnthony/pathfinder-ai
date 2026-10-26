@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-23
+Last updated: 2026-10-26
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #40 merge, 2026-10-23 IST):
+Latest verified completed main (PR #41 merge, 2026-10-23 IST):
 
-`38740f327aba25b892d4ae18d34ee4bb185892d0`
+`4d64da3edd4e34d61667be58480177e7a160bd64`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 36 — Kanban AI Enrichment Filter**
+**Commit 37 — Kanban Follow-Up Sorting**
 
 ## Completed MVP-1 Roadmap
 
@@ -60,53 +60,45 @@ These milestones must not be replayed or rebuilt.
 - Commit 34 — Kanban Follow-Up Filters — COMPLETE (PR #38, merged 2026-10-21)
 - Commit 35 — Kanban Match Score Filters — COMPLETE (PR #39, merged 2026-10-22)
 - Commit 36 — Kanban AI Enrichment Filter — COMPLETE (PR #40, merged 2026-10-23 IST)
+- Commit 37 — Kanban Follow-Up Sorting — COMPLETE (PR #41, merged 2026-10-23 IST)
 
 ## Post-MVP Active Work
 
-**Commit 37 — Kanban Follow-Up Sorting**
+**Commit 38 — Kanban Reset All Criteria**
 
 Status: **Authorized active development.**
 
-The Board adds a dedicated draft/applied sort form using AnalysisHistorySort.
-Newest saved first (created_desc) is default/reset and omitted from requests;
-Earliest follow-up first sends follow_up_asc to the existing analyses API.
-Apply/Enter and Reset change only sort, preserving all applied search,
-follow-up presence/date, score, and AI criteria plus unrelated unsent drafts.
-Other filter actions retain applied sort. Unchanged Apply and resetting only an
-unsent draft avoid reloads. The applied context ref updates before refresh.
+Reset all Board criteria beside Refresh board restores search, follow-up
+presence/dates, score bounds, AI presence, and newest-first sorting. It discards
+all unsent drafts without validation, explicitly clears native date and number
+controls, and clears filter validation errors. One complete default context
+updates the authoritative ref before the existing shared refresh. Changed applied
+criteria cause exactly seven first-page requests containing only each lane's
+application_status. Default applied criteria cause no refresh or request even
+with dirty/invalid drafts or rapid repeated resets.
 
-Server ordering remains authoritative within each lane: default creation time
-and analysis ID descending; earliest calendar dates ascending, nulls last, then
-creation time and ID descending for ties. Sorting alone does not change record
-eligibility, including Not scheduled records. Calendar days are not converted
-to browser time. All seven lanes keep their semantic order, independent ten-card
-pages, lookahead, Load more/Retry, deduplication, and safe errors. Sort changes
-reset pages and invalidate prior requests/drags. Epoch guards cover stale
-successes/errors, rapid actions, StrictMode, refresh, and unmount.
+Existing interaction guards protect open quick editors, pending writes, status
+confirmation/persistence, and detail loading. Changed context invalidates active
+drags and stale requests, resets independent offsets, and preserves ten-card
+pages, lookahead, deduplication, Load more/Retry, and safe errors. Subsequent
+refreshes and successful status/follow-up writes use defaults; note-only writes
+avoid summary reloads. Native controls, help text, live applied summaries, and
+existing focus styling remain. Individual Apply/Clear/Reset controls remain.
 
-Board/History refresh and successful status/follow-up writes preserve applied
-sort. Follow-up changes reload server order after persistence, retaining
-acknowledged feedback and safe focus fallback if a card leaves a lane page.
-Note-only writes avoid summary reloads. Open quick editors, pending editor writes,
-status confirmation/persistence, and existing interaction guards block Apply/Reset.
-Native labelled forms provide keyboard submission, live applied summaries, and
-existing responsive focus styling.
+Board reset leaves List drafts/applied criteria/order/pages, comparison,
+Overview, and CSV unchanged. It changes view state only: no backend/API/schema,
+dependency, data mutation, score recalculation, AI call, private-content decoding,
+client sorting, browser/URL persistence, telemetry, polling, or integration.
+Board state still resets on unmount/reload. Offset-pagination concurrency and
+local-installation privacy limitations remain. Native partial-input recovery is
+tested at the DOM boundary; real-browser E2E testing has not been performed.
 
-Board sort remains separate from List draft/applied filters/order/pages,
-comparison, Overview, and CSV. This is read-only metadata ordering without
-client-side sorting, ranking, data mutation, snapshot/private-content decoding,
-AI calls, backend/API/schema/dependency changes, browser/URL persistence,
-telemetry, polling, notifications, overdue classifications, integrations, or
-automatic actions. Existing offset-pagination concurrency and installation
-privacy limitations remain. Board state resets on unmount/reload. Deterministic
-tests cover the workflows; real-browser E2E testing has not been performed.
-
-The maintainer authorized reconciliation of Commit 36 following PR #40's merge
-at `38740f327aba25b892d4ae18d34ee4bb185892d0` on 2026-10-23 IST
+The maintainer authorized reconciliation of Commit 37 following PR #41's merge
+at `4d64da3edd4e34d61667be58480177e7a160bd64` on 2026-10-23 IST
 (2026-10-22 UTC).
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 37 PR number is assigned.
+pull request, review, and merge. No Commit 38 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -151,7 +143,8 @@ The repository already contains:
 - Board-specific server-backed follow-up presence/date filters
 - Board-specific server-backed minimum/maximum score filters
 - Board-specific server-backed AI enrichment presence filter
-- Board-specific server-backed follow-up sorting (authorized active development)
+- Board-specific server-backed follow-up sorting
+- Board-level reset of filtering/sorting drafts and applied values (authorized active development)
 
 ## Architectural Boundary
 
