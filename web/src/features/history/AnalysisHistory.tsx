@@ -10,6 +10,7 @@ import {
 } from '../../api/pathfinder';
 import { ApplicationStatus, SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
+import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import { applicationStatuses, statusLabel } from './status';
@@ -43,6 +44,7 @@ function csvErrorMessage(error: unknown): string {
 }
 
 export function AnalysisHistory() {
+  const localToday = localCalendarDay(new Date());
   const boardQuickEditorPending = useRef(false);
   const [boardQuickEditorMutating, setBoardQuickEditorMutating] = useState(false);
   const csvRequests = useRef(new Set<CsvMode>());
@@ -372,23 +374,27 @@ export function AnalysisHistory() {
 
       {!loading && !error && items.length > 0 && (
         <ul className="history-list">
-          {items.map((item) => (
-            <li key={item.analysis_id}>
-              <button type="button" onClick={() => void openDetail(item.analysis_id)} disabled={detailLoading}>
-                <span>
-                  <strong>{item.job_title}</strong>
-                  <small>{item.company_name ?? 'Company not supplied'}</small>
-                </span>
-                <span>
-                  <strong>{item.score === null ? 'Not scored' : `${item.score}% match`}</strong>
-                  <small>{formatSavedTimestamp(item.created_at)}</small>
-                  <small>{item.ai_enriched ? 'Includes AI enrichment' : 'Deterministic analysis'}</small>
-                  <small>Status: {statusLabel(item.application_status)}</small>
-                  {item.follow_up_on && <small>Follow up: {formatCalendarDate(item.follow_up_on)}</small>}
-                </span>
-              </button>
-            </li>
-          ))}
+          {items.map((item) => {
+            const timing = classifyFollowUpDate(item.follow_up_on, localToday);
+            return (
+              <li key={item.analysis_id}>
+                <button type="button" onClick={() => void openDetail(item.analysis_id)} disabled={detailLoading}>
+                  <span>
+                    <strong>{item.job_title}</strong>
+                    <small>{item.company_name ?? 'Company not supplied'}</small>
+                  </span>
+                  <span>
+                    <strong>{item.score === null ? 'Not scored' : `${item.score}% match`}</strong>
+                    <small>{formatSavedTimestamp(item.created_at)}</small>
+                    <small>{item.ai_enriched ? 'Includes AI enrichment' : 'Deterministic analysis'}</small>
+                    <small>Status: {statusLabel(item.application_status)}</small>
+                    {item.follow_up_on && <small>Follow up: {formatCalendarDate(item.follow_up_on)}</small>}
+                    {timing && <small>{followUpTimingLabels[timing]}</small>}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
 

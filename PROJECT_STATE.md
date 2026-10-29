@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #43 merge, 2026-10-29):
+Latest verified completed main (PR #44 merge, 2026-10-30 IST):
 
-`3a9cfa4cc358fd7d2ae9c71d1ecc429b423af987`
+`973e106aa82008634c7493e44964b69261e65b5b`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 39 — Kanban Board CSV Export**
+**Commit 40 — Kanban Follow-Up Date Cues**
 
 ## Completed MVP-1 Roadmap
 
@@ -63,44 +63,48 @@ These milestones must not be replayed or rebuilt.
 - Commit 37 — Kanban Follow-Up Sorting — COMPLETE (PR #41, merged 2026-10-23 IST)
 - Commit 38 — Kanban Reset All Criteria — COMPLETE (PR #42, merged 2026-10-26)
 - Commit 39 — Kanban Board CSV Export — COMPLETE (PR #43, merged 2026-10-29)
+- Commit 40 — Kanban Follow-Up Date Cues — COMPLETE (PR #44, merged 2026-10-30 IST)
 
 ## Post-MVP Active Work
 
-**Commit 40 — Kanban Follow-Up Date Cues**
+**Commit 41 — History Follow-Up Date Cues**
 
 Status: **Authorized active development.**
 
-Board cards show a separate static Past follow-up date, Follow-up today, or
-Upcoming follow-up label beside the unchanged formatted saved date. Null and
-invalid dates receive no cue; unscheduled text remains. A pure helper reuses the
-existing canonical calendar validator, including leap years and years 0001–9999,
-then compares valid date strings lexically. One browser-local day, built from
-local year/month/day components, is shared by every card in each Board render.
-Saved dates are not parsed into timestamps or shifted across timezones.
+History List entries and Pipeline Overview's five earliest follow-ups now show
+the same static Past follow-up date, Follow-up today, or Upcoming follow-up label
+beneath the unchanged formatted saved date. Existing followUpTiming helpers and
+calendar validation are reused unchanged. Null and invalid dates receive no cue.
+One browser-local day is derived per component render and shared across that
+surface's entries. Date-only values are compared without timezone conversion.
 
-Cues use authoritative summary follow_up_on metadata across all seven statuses.
-Successful follow-up saves/reschedules/clears use existing refreshes; unsent
-drafts and failed writes do not optimistically replace saved cues. Visible text
-uses existing responsive card styles without color-only meaning, alerts, live
-announcements, new controls, or focus changes. Filtering, sorting, pagination,
-stale generations, drag/status confirmation, notes, and navigation remain intact.
-Board/List CSV, List rendering/state, Detail, Overview, and comparison are unchanged.
+Cues describe saved calendar dates across all seven statuses, without completion,
+urgency, overdue-task, deadline, or employer-response inference. Existing List
+navigation, focus, filters, sort, pages, stale-response protection, and empty/error
+states remain. Overview totals, status counts, server-selected earliest-five
+order, navigation, loading/error/retry, and refresh behavior are unchanged.
+Successful Board follow-up saves/reschedules/clears update authoritative List and
+Overview summaries through existing refresh paths; drafts and failed writes do
+not produce optimistic cues. Board rendering and its local-day policy are intact.
 
-Labels are factual calendar comparisons, not completion tracking, urgency,
-overdue-task management, or employer-response inference. They update on ordinary
-Board rerenders or explicit refresh; a page left open across midnight can retain
-old labels until then. No timers, polling, extra requests, mutations, notifications,
-reminders, backend/API/schema changes, dependencies, AI calls, integrations,
-telemetry, storage, or private-content decoding are introduced. Existing privacy
-and pagination limitations remain. Tests control local dates and cover boundaries,
-saved-date updates, failures, lifecycle, and cross-view isolation. Real-browser
-E2E and visual narrow-layout testing have not been performed.
+Labels use existing responsive small-text styles, with visible text and no alerts,
+live regions, or new controls. CSV remains persisted metadata with no cue columns;
+comparison, Detail, JSON/Markdown exports, notes, status tracking, privacy, and
+matching retain their existing behavior. No extra requests, timers, polling,
+notifications, reminders, automatic actions, backend/API/schema changes,
+dependencies, AI calls, telemetry, browser persistence, or shared clock state.
+Labels update on normal rerender or explicit refresh; a page left open across
+midnight may retain previous cues until then. Existing privacy/pagination limits
+remain. Deterministic tests cover calendar/timezone boundaries, saved-date refresh,
+navigation, filtering/pagination, stale responses, and cross-surface isolation.
+Real-browser E2E and visual narrow-layout testing have not been performed.
 
-The maintainer authorized reconciliation of Commit 39 following PR #43's merge
-at `3a9cfa4cc358fd7d2ae9c71d1ecc429b423af987` on 2026-10-29.
+The maintainer authorized reconciliation of Commit 40 following PR #44's merge
+at `973e106aa82008634c7493e44964b69261e65b5b` on 2026-10-30 IST
+(2026-10-29 UTC).
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 40 PR number is assigned.
+pull request, review, and merge. No Commit 41 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -148,7 +152,8 @@ The repository already contains:
 - Board-specific server-backed follow-up sorting
 - Board-level reset of filtering/sorting drafts and applied values
 - Explicit applied-criteria Board CSV export across all seven statuses
-- Board-only saved follow-up date timing cues (authorized active development)
+- Saved follow-up date timing cues on Board cards
+- Saved follow-up date timing cues on List and Overview entries (authorized active development)
 
 ## Architectural Boundary
 
