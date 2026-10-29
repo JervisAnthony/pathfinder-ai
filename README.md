@@ -300,6 +300,43 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+**Download Board CSV**, beside Refresh board and Reset all Board criteria, exports
+the complete server result for the currently applied Board search, follow-up
+presence/calendar bounds, score bounds, AI presence, and sort. Unsent filter or
+editor drafts are excluded. Default criteria send `{}`; explicit false values and
+zero score bounds are preserved. The export includes all seven application
+statuses, including matching records beyond loaded cards, with no status or
+pagination parameters. It uses the existing bounded CSV endpoint and the fixed
+columns documented under Application pipeline CSV export below.
+
+CSV ordering is global across statuses, rather than grouped into lanes. Default
+order is newest saved first, with descending analysis ID as tie-breaker. Earliest
+follow-up order places scheduled dates first, ascending, then null dates, with
+creation/ID tie-breakers. The application_status column identifies each lane.
+There is no client sorting or reconstruction from paginated cards.
+
+Each deliberate click starts one request using an immutable snapshot of applied
+criteria. The button disables with **Preparing Board CSV...** while pending and
+ignores rapid repeat clicks. Later filter changes do not alter or restart that
+request. Up to **10,000 data rows** are allowed; overflow returns HTTP 413 with
+guidance to narrow Board filters, without truncation. Persistence unavailability
+(HTTP 503) and other failures show safe errors. Retry uses the same button and
+preserves cards, offsets, criteria, drafts, and editors.
+
+The browser downloads `pathfinder-kanban-board.csv` using a temporary anchor and
+object URL, removed/revoked even if triggering download fails. Unmount/view switch
+discards late completions, including around StrictMode remounts. Board and List
+exports have independent progress/errors; List filtered export still uses only
+List applied criteria and List all export remains unfiltered. Exporting does not
+refresh lanes, change pagination, drag state, List state, comparison, Overview,
+or persisted records. No AI calls, new integrations, or browser persistence are
+introduced. Downloaded files contain sensitive job-search metadata; store/share
+them carefully. Existing CSV privacy exclusions, local-installation limitations,
+and offset-pagination concurrency limitations remain. Request criteria are
+captured at click time; this does not promise an atomic database snapshot across
+concurrent changes. Component/integration tests mock browser download APIs;
+real-browser E2E testing has not been performed for Board CSV export.
+
 **Reset all Board criteria**, beside **Refresh board**, restores both draft and
 applied title/company search, follow-up presence/date filters, match-score bounds,
 AI enrichment presence, and sorting to defaults (**Newest saved first**). It
@@ -321,7 +358,7 @@ status confirmation/updates, and detail loading block reset through the existing
 interaction guards. The native button stays outside filter forms, retains focus
 when activated, and has explanatory accessible help. Reset changes no saved
 records, preserves unrelated persistence feedback, and leaves History List
-drafts/applied filters/sort/pages, Overview, CSV criteria/order, and comparison
+drafts/applied filters/sort/pages, Overview, List CSV criteria/order, and comparison
 selection unchanged. No confirmation, backend/API/schema/dependency change, AI
 call, score recalculation, or browser/URL persistence is added. Existing offset
 pagination concurrency and local-installation privacy limits still apply; Board
@@ -364,7 +401,7 @@ Note-only writes avoid lane reloads. Open quick editors, editor writes, status
 confirmation/persistence, and existing guards block Apply/Reset.
 
 Board sort is independent of List draft/applied sort, filters, pagination,
-comparison, Overview totals/earliest summaries, and CSV. Filtered CSV uses only
+comparison, Overview totals/earliest summaries, and List CSV. Filtered CSV uses only
 List's applied order and criteria; all-record CSV retains its default order.
 Board state resets on unmount/reload without URL or browser persistence.
 Sorting is read-only metadata ordering. It introduces no backend/API/schema or
@@ -408,7 +445,7 @@ dependency, browser storage, cookies, telemetry, external integration, polling,
 or automatic action is introduced.
 
 Board AI drafts and applied selection remain independent of History List AI
-criteria, List pagination, comparison, unfiltered Overview totals, and CSV.
+criteria, List pagination, comparison, unfiltered Overview totals, and List CSV.
 Filtered CSV uses only List's applied criteria; all-record CSV remains unaffected.
 Board filters reset on unmount/reload without persistence. Existing offset
 pagination can still shift when records change in other sessions; refresh to
@@ -451,7 +488,7 @@ Acknowledged follow-up feedback and the Refresh board focus fallback remain
 available when a card leaves matching results.
 
 Board score criteria are separate from History List score drafts, applied
-filters, pagination, comparison, and CSV exports. Filtered CSV continues to use
+filters, pagination, comparison, and List CSV exports. Filtered CSV continues to use
 only List's applied filters; all-record CSV and unfiltered Overview totals are
 unaffected. Board state resets on unmount/reload without browser persistence.
 Existing offset-pagination concurrency and installation privacy limitations
@@ -545,7 +582,7 @@ or Not scored, saved time, and any scheduled follow-up calendar date.
 
 The board has its own title/company search, independently of List filters.
 Switching views preserves applied filters, unapplied drafts, List pagination,
-comparison selection, Overview data, and CSV export state. Pipeline Overview and
+comparison selection, Overview data, and List CSV export state. Pipeline Overview and
 CSV controls remain above either view. **Open details** uses existing Saved
 Analysis Detail, including notes, follow-ups, activity, comparison, exports, and
 deletion. Returning restores Board view and reloads persisted metadata.
@@ -583,7 +620,7 @@ editor before applying or clearing search to protect unsaved drafts. Search is
 also blocked during status confirmation and mutations. Changing the search
 invalidates active drags without changing saved workflow data.
 
-Board search does not filter Overview totals, CSV exports, List results,
+Board search does not filter Overview totals, List CSV exports, List results,
 comparison, or scoring. List drafts/applied filters survive view switches;
 Board search lives only in the mounted Board and resets when it unmounts or the
 page reloads. No browser storage, cookies, URL persistence, or telemetry is added.
@@ -627,7 +664,7 @@ Note-only writes still avoid summary reloads. Close quick editing before applyin
 or clearing filters; status confirmation and pending mutations also block changes.
 
 Follow-up filtering does not affect History List criteria/drafts/pages, Overview,
-comparison, or CSV exports. Like Board search, filters live only in the mounted
+comparison, or List CSV exports. Like Board search, filters live only in the mounted
 Board and reset on unmount or page reload. No new backend behavior, schema, API
 contract, dependency, AI, overdue classification, notification, calendar service,
 browser storage, cookie, URL persistence, or telemetry is introduced. The feature

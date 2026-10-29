@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
-import { ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking } from '../../api/pathfinder';
-import type { AnalysisHistorySort } from '../../api/pathfinder';
+import { ApiError, downloadApplicationPipelineCsv, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking } from '../../api/pathfinder';
+import type { AnalysisHistoryFilters, AnalysisHistorySort } from '../../api/pathfinder';
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { applicationStatuses, statusLabel } from './status';
@@ -134,6 +134,10 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   // Update synchronously before refresh so same-tick actions and every refresh
   // workflow use one current filter context, independent of render closures.
   const appliedFiltersRef = useRef(appliedFilters);
+  const csvRequest = useRef<symbol | null>(null);
+  const csvLifecycle = useRef(0);
+  const [csvPending, setCsvPending] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
   const [draftScores, setDraftScores] = useState(emptyBoardScoreFilters);
   const draftScoresRef = useRef(draftScores);
   const [scoreFilterError, setScoreFilterError] = useState<string | null>(null);
@@ -182,8 +186,56 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
 
   useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; dragSession.current = null; };
+    return () => { mounted.current = false; dragSession.current = null; csvLifecycle.current += 1; csvRequest.current = null; };
   }, []);
+
+  const downloadBoardCsv = async () => {
+    if (!mounted.current || csvRequest.current) return;
+    const request = Symbol();
+    const lifecycle = csvLifecycle.current;
+    const isCurrent = () => mounted.current && lifecycle === csvLifecycle.current && csvRequest.current === request;
+    const { query, followUp, scores, ai, sort } = appliedFiltersRef.current;
+    // Flat primitive values detach this click's criteria from later Board actions.
+    const filters: Readonly<AnalysisHistoryFilters> = Object.freeze({
+      ...(query ? { query } : {}),
+      ...(followUp.status === 'all' ? {} : { has_follow_up: followUp.status === 'yes' }),
+      ...(followUp.from ? { follow_up_from: followUp.from } : {}),
+      ...(followUp.to ? { follow_up_to: followUp.to } : {}),
+      ...(scores.min === undefined ? {} : { min_score: scores.min }),
+      ...(scores.max === undefined ? {} : { max_score: scores.max }),
+      ...(ai === 'all' ? {} : { ai_enriched: ai === 'yes' }),
+      ...(sort === 'created_desc' ? {} : { sort }),
+    });
+    csvRequest.current = request;
+    setCsvPending(true);
+    setCsvError(null);
+    try {
+      const blob = await downloadApplicationPipelineCsv(filters);
+      if (!isCurrent()) return;
+      const anchor = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      try {
+        anchor.href = url;
+        anchor.download = 'pathfinder-kanban-board.csv';
+        document.body.appendChild(anchor);
+        anchor.click();
+      } finally {
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      }
+    } catch (caught) {
+      if (isCurrent()) setCsvError(caught instanceof ApiError && caught.code === 'export_limit_exceeded'
+        ? 'Too many records to export at once. Apply narrower Board filters and try again.'
+        : caught instanceof ApiError && caught.code === 'persistence_unavailable'
+          ? 'Analysis history is unavailable because persistence is not configured on this Pathfinder server.'
+          : 'Pathfinder could not export the Board CSV. Please try again.');
+    } finally {
+      if (isCurrent()) {
+        csvRequest.current = null;
+        setCsvPending(false);
+      }
+    }
+  };
 
   const clearDrag = useCallback(() => {
     dragSession.current = null;
@@ -492,12 +544,17 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     <div className="history-heading">
       <h3 id="pipeline-board-title">Application Pipeline Board</h3>
       <div className="export-actions">
+        <button type="button" aria-describedby="board-csv-help" disabled={csvPending}
+          onClick={() => void downloadBoardCsv()}>Download Board CSV</button>
         <button type="button" aria-describedby="board-reset-help"
           disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
           onClick={resetAllCriteria}>Reset all Board criteria</button>
         <button ref={refreshButton} type="button" disabled={updating || quickEditorMutating} onClick={() => { if (quickEditorPending.current) return; setError(null); setMessage(null); refresh(); }}>Refresh board</button>
       </div>
     </div>
+    <p id="board-csv-help">Export all matching saved records across all seven lanes using applied Board filters and order, including records beyond loaded cards. Unsent drafts and History List criteria are excluded. Downloaded files may contain sensitive job-search metadata; store and share them carefully.</p>
+    {csvPending && <p role="status">Preparing Board CSV...</p>}
+    {csvError && <p role="alert">{csvError}</p>}
     <p id="board-reset-help">Reset all Board filtering and sorting, discarding unapplied Board filter drafts. Saved application records and History List criteria are unaffected.</p>
     <p>Saved analysis snapshots, grouped by recorded status. History filters affect List view only. Each snapshot is a separate card; records without tracking appear in Not applied.</p>
     <p>Each lane loads 10 cards at a time in the applied order. Changes in other sessions may require Refresh board.</p>

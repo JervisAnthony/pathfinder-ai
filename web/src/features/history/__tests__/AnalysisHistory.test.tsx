@@ -1833,6 +1833,83 @@ describe('application pipeline CSV downloads', () => {
 
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+  it.each(['success', 'failure'] as const)('keeps Board/List exports independent and discards late Board %s on view switch', async (outcome) => {
+    let resolveBoard!: (blob: Blob) => void;
+    let rejectBoard!: (error: Error) => void;
+    let resolveList!: (blob: Blob) => void;
+    const boardPromise = new Promise<Blob>((resolve, reject) => { resolveBoard = resolve; rejectBoard = reject; });
+    const listPromise = new Promise<Blob>((resolve) => { resolveList = resolve; });
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit, offset, filters) => ({
+      items: limit === 11 ? (filters?.application_status === 'not_applied' ? [summary] : [])
+        : offset ? [summary] : Array.from({ length: 20 }, (_, i) => ({ ...summary, analysis_id: `page-${i}` })),
+    }));
+    render(<AnalysisHistory />); await screen.findAllByText('Platform Engineer');
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'List applied' } });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'follow_up_asc' } });
+    fireEvent.click(screen.getByText('Apply filters'));
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'List applied', sort: 'follow_up_asc' }));
+    fireEvent.click(screen.getByText('Next')); await screen.findByText('Page 2');
+    fireEvent.click(screen.getByRole('button', { name: /Platform Engineer/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Select for comparison' }));
+    fireEvent.click(screen.getByRole('button', { name: /Back to History/ }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'List dirty' } });
+    fireEvent.change(screen.getByLabelText('Sort order'), { target: { value: 'created_desc' } });
+    fireEvent.click(screen.getByText('Board view'));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    fireEvent.change(board.getByRole('searchbox'), { target: { value: 'Board applied' } });
+    fireEvent.click(board.getByText('Apply search'));
+    fireEvent.change(board.getByLabelText('Board AI enrichment'), { target: { value: 'no' } });
+    fireEvent.click(board.getByText('Apply AI filter'));
+    await board.findByText('Platform Engineer');
+    fireEvent.change(board.getByRole('searchbox'), { target: { value: 'Board dirty' } });
+    const historyCalls = vi.mocked(getAnalysisHistory).mock.calls.length;
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValueOnce(listPromise).mockReturnValueOnce(boardPromise);
+    fireEvent.click(screen.getByText('Download filtered CSV')); fireEvent.click(board.getByText('Download Board CSV'));
+    expect(downloadApplicationPipelineCsv).toHaveBeenNthCalledWith(1, { query: 'List applied', sort: 'follow_up_asc' });
+    expect(downloadApplicationPipelineCsv).toHaveBeenNthCalledWith(2, { query: 'Board applied', ai_enriched: false });
+    expect(screen.getByText('Download filtered CSV')).toBeDisabled(); expect(board.getByText('Download Board CSV')).toBeDisabled();
+    expect(screen.getByText('Download all CSV')).toBeEnabled();
+    expect(board.getByRole('searchbox')).toHaveValue('Board dirty');
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(historyCalls); expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    fireEvent.click(screen.getByText('List view'));
+    await act(async () => { if (outcome === 'success') resolveBoard(new Blob(['Board'])); else rejectBoard(new Error('PRIVATE')); });
+    expect(downloaded).toHaveLength(0); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Download filtered CSV')).toBeDisabled();
+    await act(async () => resolveList(new Blob(['List'])));
+    expect(downloaded.map(({ filename }) => filename)).toEqual(['pathfinder-application-pipeline-filtered.csv']);
+    fireEvent.click(screen.getByText('Download all CSV'));
+    await waitFor(() => expect(downloaded).toHaveLength(2)); expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({});
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('List dirty');
+    expect(screen.getByLabelText('Sort order')).toHaveValue('created_desc');
+    expect(screen.getByText('Page 2')).toBeInTheDocument(); expect(screen.getByText('Selected for comparison: Platform Engineer')).toBeInTheDocument();
+    expect(compareSavedAnalyses).not.toHaveBeenCalled();
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(historyCalls); expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+  });
+
+  it('keeps export errors separate while List and Board requests complete independently', async () => {
+    let rejectList!: (error: Error) => void;
+    const listPromise = new Promise<Blob>((_resolve, reject) => { rejectList = reject; });
+    render(<AnalysisHistory />); await screen.findByRole('button', { name: /Platform Engineer/ });
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValueOnce(listPromise);
+    fireEvent.click(screen.getByText('Download all CSV'));
+    fireEvent.click(screen.getByText('Board view'));
+    const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    vi.mocked(downloadApplicationPipelineCsv).mockRejectedValueOnce(new ApiError('PRIVATE', 413, 'export_limit_exceeded'));
+    fireEvent.click(board.getByText('Download Board CSV'));
+    expect(await board.findByRole('alert')).toHaveTextContent('narrower Board filters');
+    expect(screen.getByText('Download all CSV')).toBeDisabled();
+    fireEvent.click(board.getByText('Download Board CSV'));
+    await waitFor(() => expect(downloaded).toHaveLength(1));
+    expect(downloaded[0].filename).toBe('pathfinder-kanban-board.csv'); expect(board.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Download all CSV')).toBeDisabled();
+    await act(async () => rejectList(new Error('PRIVATE')));
+    expect(screen.getByRole('alert')).toHaveTextContent('could not export the application pipeline');
+    expect(board.queryByRole('alert')).not.toBeInTheDocument(); expect(board.getByText('Download Board CSV')).toBeEnabled();
+    expect(document.body).not.toHaveTextContent('PRIVATE');
+  });
+
   it('offers explicit exports and privacy copy with no automatic download', async () => {
     render(<AnalysisHistory />);
     await screen.findByRole('button', { name: /Platform Engineer/ });

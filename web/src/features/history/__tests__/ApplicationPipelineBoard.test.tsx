@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { analyzeCandidateJob, ApiError, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { analyzeCandidateJob, ApiError, downloadApplicationPipelineCsv, getAnalysisHistory, getAnalysisTracking, updateAnalysisTracking, getAnalysisFollowUp, updateAnalysisFollowUp, clearAnalysisFollowUp, getAnalysisNote, updateAnalysisNote, clearAnalysisNote } from '../../../api/pathfinder';
 import type { AnalysisNote, AnalysisFollowUp, AnalysisHistoryResponse, AnalysisTracking, ApplicationStatus, SavedAnalysisSummary } from '../../../types/api';
 import type { AnalysisHistorySort } from '../../../api/pathfinder';
 import { ApplicationPipelineBoard } from '../ApplicationPipelineBoard';
@@ -14,6 +14,7 @@ vi.mock('../../../api/pathfinder', async (original) => ({
   analyzeCandidateJob: vi.fn(), getAnalysisHistory: vi.fn(), getAnalysisTracking: vi.fn(), updateAnalysisTracking: vi.fn(),
   getAnalysisNote: vi.fn(), updateAnalysisNote: vi.fn(), clearAnalysisNote: vi.fn(),
   getAnalysisFollowUp: vi.fn(), updateAnalysisFollowUp: vi.fn(), clearAnalysisFollowUp: vi.fn(),
+  downloadApplicationPipelineCsv: vi.fn(),
 }));
 
 const record = (id = 'record', status: ApplicationStatus = 'not_applied'): SavedAnalysisSummary => ({
@@ -123,6 +124,182 @@ async function review(target = 'applied') {
   fireEvent.change(screen.getByRole('combobox', { name: 'New status for Fictional Engineer record' }), { target: { value: target } });
   fireEvent.click(lane().getByRole('button', { name: 'Review change' }));
 }
+
+describe('Board CSV export', () => {
+  const csv = vi.mocked(downloadApplicationPipelineCsv);
+  const button = () => screen.getByRole('button', { name: 'Download Board CSV' });
+  const createUrl = vi.fn(() => 'blob:board');
+  const revokeUrl = vi.fn();
+  let anchors: HTMLAnchorElement[];
+
+  beforeEach(() => {
+    csv.mockResolvedValue(new Blob(['server CSV']));
+    anchors = [];
+    vi.stubGlobal('URL', class extends URL {
+      static createObjectURL = createUrl;
+      static revokeObjectURL = revokeUrl;
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      expect(this.isConnected).toBe(true);
+      anchors.push(this);
+    });
+  });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('exports defaults explicitly, keeps lanes intact, cleans up and allows another download', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer record');
+    expect(csv).not.toHaveBeenCalled();
+    const action = button(); action.focus(); expect(action).toHaveFocus();
+    expect(action).toHaveAttribute('type', 'button');
+    expect(action).toHaveAccessibleDescription(/all seven lanes.*applied Board.*beyond loaded cards.*Unsent drafts.*History List.*sensitive/);
+    fireEvent.click(action);
+    await waitFor(() => expect(action).toBeEnabled());
+    expect(csv).toHaveBeenCalledExactlyOnceWith({});
+    expect(createUrl).toHaveBeenCalledWith(await csv.mock.results[0].value);
+    expect(anchors[0].download).toBe('pathfinder-kanban-board.csv');
+    expect(anchors[0].href).toBe('blob:board');
+    expect(anchors[0].isConnected).toBe(false);
+    expect(revokeUrl).toHaveBeenCalledExactlyOnceWith('blob:board');
+    expect(history).toHaveBeenCalledTimes(7);
+    expect(lane().getByText('Fictional Engineer record')).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled(); expect(tracking).not.toHaveBeenCalled();
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
+    fireEvent.click(action); await waitFor(() => expect(anchors).toHaveLength(2));
+  });
+
+  it.each(['yes', 'no'] as const)('captures all applied criteria with AI %s, excluding dirty invalid drafts', async (ai) => {
+    render(<ApplicationPipelineBoard {...props} />);
+    searchBoard('  Engineer  \t role  '); applyFollowUpFilters('yes', '2026-10-01', '2026-10-31');
+    applyScoreFilters('0', '87.75'); applyAiFilter(ai); applySort();
+    await screen.findByText('Fictional Engineer record');
+    fireEvent.change(searchInput(), { target: { value: 'Data Scientist' } });
+    draftFollowUpFilters('no', '2026-10-31', '2026-10-01'); draftScoreFilters('100', '0');
+    draftAiFilter(ai === 'yes' ? 'no' : 'yes'); draftSort('created_desc');
+    fireEvent.click(button());
+    expect(csv).toHaveBeenCalledExactlyOnceWith({ query: 'Engineer role', has_follow_up: true,
+      follow_up_from: '2026-10-01', follow_up_to: '2026-10-31', min_score: 0, max_score: 87.75,
+      ai_enriched: ai === 'yes', sort: 'follow_up_asc' });
+    await waitFor(() => expect(button()).toBeEnabled());
+    expect(searchInput()).toHaveValue('Data Scientist'); expect(minScore()).toHaveValue(100);
+    expect(aiInput()).toHaveValue(ai === 'yes' ? 'no' : 'yes'); expect(sortInput()).toHaveValue('created_desc');
+  });
+
+  it.each(['apply', 'clear', 'reset', 'sort', 'unscheduled', 'bounds'] as const)('uses immediate applied ref after same-tick %s', async (action) => {
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Old');
+    await screen.findByText('Fictional Engineer record');
+    fireEvent.change(searchInput(), { target: { value: 'New' } });
+    draftSort('follow_up_asc'); draftFollowUpFilters('no'); draftScoreFilters('0', '100');
+    await act(async () => {
+      if (action === 'apply') screen.getByText('Apply search').click();
+      if (action === 'clear') screen.getByText('Clear search').click();
+      if (action === 'reset') screen.getByText('Reset all Board criteria').click();
+      if (action === 'sort' || action === 'unscheduled') screen.getByText('Apply sort').click();
+      if (action === 'unscheduled') within(followUpForm()).getByText('Apply filters').click();
+      if (action === 'bounds') screen.getByText('Apply score filters').click();
+      button().click();
+    });
+    expect(csv).toHaveBeenCalledExactlyOnceWith(action === 'apply' ? { query: 'New' }
+      : action === 'clear' || action === 'reset' ? {}
+        : action === 'bounds' ? { query: 'Old', min_score: 0, max_score: 100 }
+          : { query: 'Old', sort: 'follow_up_asc', ...(action === 'unscheduled' ? { has_follow_up: false } : {}) });
+    await waitFor(() => expect(button()).toBeEnabled());
+  });
+
+  it('retains the click snapshot across Apply/reset/refresh, suppresses duplicate clicks and does not auto-export', async () => {
+    const pending = deferred<Blob>(); csv.mockReturnValueOnce(pending.promise);
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Original');
+    await screen.findByText('Fictional Engineer record');
+    act(() => { button().click(); button().click(); });
+    expect(button()).toBeDisabled(); expect(screen.getByText('Preparing Board CSV...')).toHaveAttribute('role', 'status');
+    searchBoard('New'); fireEvent.click(screen.getByText('Reset all Board criteria')); fireEvent.click(screen.getByText('Refresh board'));
+    expect(csv).toHaveBeenCalledExactlyOnceWith({ query: 'Original' });
+    expect(Object.isFrozen(csv.mock.calls[0][0])).toBe(true);
+    await act(async () => pending.resolve(new Blob(['CSV'])));
+    fireEvent.click(button()); await waitFor(() => expect(button()).toBeEnabled());
+    expect(csv).toHaveBeenLastCalledWith({}); expect(csv).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [new ApiError('PRIVATE /database', 413, 'export_limit_exceeded'), 'Apply narrower Board filters'],
+    [new ApiError('PRIVATE /database', 503, 'persistence_unavailable'), 'persistence is not configured'],
+    [new Error('PRIVATE /database'), 'Pathfinder could not export the Board CSV'],
+  ] as const)('sanitizes errors, preserves Board state and retries: %s', async (error, message) => {
+    csv.mockRejectedValueOnce(error);
+    supply(Array.from({ length: 21 }, (_, i) => record(String(i))));
+    render(<ApplicationPipelineBoard {...props} />); searchBoard('Engineer');
+    await screen.findByText('Fictional Engineer 0');
+    fireEvent.click(lane().getByRole('button', { name: /Load more/ })); await screen.findByText('Fictional Engineer 19');
+    fireEvent.change(searchInput(), { target: { value: 'draft' } });
+    const calls = history.mock.calls.length;
+    fireEvent.click(button()); expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(document.body).not.toHaveTextContent('PRIVATE'); expect(createUrl).not.toHaveBeenCalled();
+    expect(anchors).toHaveLength(0); expect(button()).toBeEnabled();
+    expect(searchInput()).toHaveValue('draft'); expect(lane().getAllByRole('listitem')).toHaveLength(20);
+    expect(history).toHaveBeenCalledTimes(calls);
+    fireEvent.click(button()); expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await waitFor(() => expect(button()).toBeEnabled());
+    expect(csv).toHaveBeenNthCalledWith(2, { query: 'Engineer' }); expect(anchors).toHaveLength(1);
+  });
+
+  it('cleans up even when the browser download fails', async () => {
+    vi.mocked(HTMLAnchorElement.prototype.click).mockImplementationOnce(function (this: HTMLAnchorElement) { anchors.push(this); throw new Error('PRIVATE'); });
+    render(<ApplicationPipelineBoard {...props} />); fireEvent.click(button());
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not export');
+    expect(anchors[0].isConnected).toBe(false); expect(revokeUrl).toHaveBeenCalledExactlyOnceWith('blob:board');
+    expect(button()).toBeEnabled();
+  });
+
+  it('keeps quick editor drafts and active drags intact without submitting writes', async () => {
+    render(<ApplicationPipelineBoard {...props} />);
+    const drag = await startDrag();
+    fireEvent.click(button()); await waitFor(() => expect(button()).toBeEnabled());
+    expect(document.querySelector('.pipeline-card-dragging')).not.toBeNull();
+    dropIn('Applied', drag.dataTransfer);
+    expect(screen.getByText('Confirm status change')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cancel'));
+    await openFollowUp();
+    fireEvent.change(screen.getByLabelText('Follow-up date'), { target: { value: '2026-10-31' } });
+    fireEvent.click(button()); await waitFor(() => expect(button()).toBeEnabled());
+    expect(screen.getByLabelText('Follow-up date')).toHaveValue('2026-10-31');
+    expect(csv).toHaveBeenNthCalledWith(2, {});
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled(); expect(update).not.toHaveBeenCalled();
+    expect(history).toHaveBeenCalledTimes(7);
+  });
+
+  it('never exports automatically for filter, sorting, pagination, refresh, or mutation workflows', async () => {
+    supply(Array.from({ length: 21 }, (_, i) => record(String(i))));
+    const view = render(<ApplicationPipelineBoard {...props} />);
+    searchBoard('Engineer'); applyFollowUpFilters('yes'); applyScoreFilters('0', '100'); applyAiFilter('yes'); applySort();
+    await screen.findByText('Fictional Engineer 0');
+    fireEvent.click(lane().getByRole('button', { name: /Load more/ })); await screen.findByText('Fictional Engineer 19');
+    fireEvent.click(screen.getByText('Clear search')); fireEvent.click(screen.getByText('Clear follow-up filters'));
+    fireEvent.click(screen.getByText('Clear score filters')); fireEvent.click(screen.getByText('Clear AI filter')); fireEvent.click(screen.getByText('Reset sort'));
+    fireEvent.click(screen.getByText('Reset all Board criteria')); fireEvent.click(screen.getByText('Refresh board'));
+    await screen.findByText('Fictional Engineer 0');
+    fireEvent.change(screen.getByRole('combobox', { name: 'New status for Fictional Engineer 0' }), { target: { value: 'applied' } });
+    fireEvent.click(lane().getAllByText('Review change')[0]); fireEvent.click(screen.getByText('Confirm status change'));
+    await screen.findByText('Application status changed to Applied.');
+    await openFollowUp(); fireEvent.change(screen.getByLabelText('Follow-up date'), { target: { value: '2026-10-31' } });
+    vi.mocked(updateAnalysisFollowUp).mockResolvedValueOnce(followUpValue('2026-10-31', '0'));
+    fireEvent.click(screen.getByText('Save follow-up'));
+    await waitFor(() => expect(updateAnalysisFollowUp).toHaveBeenCalled());
+    view.rerender(<ApplicationPipelineBoard {...props} refreshKey={1} />);
+    await screen.findByText('Fictional Engineer 0');
+    expect(csv).not.toHaveBeenCalled();
+  });
+
+  it.each(['success', 'failure'] as const)('ignores stale %s after StrictMode unmount/remount', async (outcome) => {
+    const pending = deferred<Blob>(); csv.mockReturnValueOnce(pending.promise);
+    const view = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
+    await screen.findByText('Fictional Engineer record'); fireEvent.click(button()); view.unmount();
+    render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
+    fireEvent.click(button()); await waitFor(() => expect(anchors).toHaveLength(1));
+    await act(async () => { if (outcome === 'success') pending.resolve(new Blob(['old'])); else pending.reject(new Error('PRIVATE')); });
+    expect(anchors).toHaveLength(1); expect(createUrl).toHaveBeenCalledTimes(1); expect(revokeUrl).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument(); expect(button()).toBeEnabled();
+  });
+});
 
 describe('Kanban follow-up filters', () => {
   const cases = [
