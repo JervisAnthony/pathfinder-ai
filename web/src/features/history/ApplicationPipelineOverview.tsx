@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, getApplicationPipelineOverview } from '../../api/pathfinder';
 import type { ApplicationPipelineOverview as Overview } from '../../types/api';
 import { formatCalendarDate } from './formatting';
+import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
 import { statusLabel } from './status';
 
 interface Props {
@@ -11,6 +12,7 @@ interface Props {
 }
 
 export function ApplicationPipelineOverview({ refreshKey, onOpen, opening }: Props) {
+  const localToday = localCalendarDay(new Date());
   const [overview, setOverview] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -65,12 +67,17 @@ export function ApplicationPipelineOverview({ refreshKey, onOpen, opening }: Pro
           <h4 id="pipeline-follow-ups-title">Earliest scheduled follow-ups</h4>
           {overview.earliest_follow_ups.length === 0 ? <p>No scheduled follow-ups.</p> :
             <ul className="history-list pipeline-follow-ups">
-              {overview.earliest_follow_ups.map((item) => <li key={item.analysis_id}>
-                <button type="button" onClick={() => onOpen(item.analysis_id)} disabled={opening}>
-                  <span><strong>{item.job_title}</strong><small>{item.company_name ?? 'Company not supplied'}</small></span>
-                  <span><small>Status: {statusLabel(item.application_status)}</small><small>Follow up: {formatCalendarDate(item.follow_up_on)}</small></span>
-                </button>
-              </li>)}
+              {overview.earliest_follow_ups.map((item) => {
+                const timing = classifyFollowUpDate(item.follow_up_on, localToday);
+                return <li key={item.analysis_id}>
+                  <button type="button" onClick={() => onOpen(item.analysis_id)} disabled={opening}>
+                    <span><strong>{item.job_title}</strong><small>{item.company_name ?? 'Company not supplied'}</small></span>
+                    <span><small>Status: {statusLabel(item.application_status)}</small><small>Follow up: {formatCalendarDate(item.follow_up_on)}</small>
+                      {timing && <small>{followUpTimingLabels[timing]}</small>}
+                    </span>
+                  </button>
+                </li>;
+              })}
             </ul>}
         </section>
       </>}

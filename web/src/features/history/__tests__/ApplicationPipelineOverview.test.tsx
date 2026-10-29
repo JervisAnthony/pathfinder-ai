@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, getApplicationPipelineOverview } from '../../../api/pathfinder';
 import type { ApplicationPipelineOverview as Overview } from '../../../types/api';
 import { ApplicationPipelineOverview } from '../ApplicationPipelineOverview';
@@ -37,6 +37,73 @@ beforeEach(() => {
 });
 
 describe('ApplicationPipelineOverview', () => {
+  describe('follow-up date cues', () => {
+    beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 30, 12)); });
+    afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+    it('keeps the five server entries and counts in order, with static cues beneath unchanged dates', async () => {
+      const dates = ['2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-02-30'];
+      const cues = ['Past follow-up date', 'Follow-up today', 'Upcoming follow-up', 'Upcoming follow-up', null];
+      vi.mocked(getApplicationPipelineOverview).mockResolvedValue({ ...populated,
+        earliest_follow_ups: populated.earliest_follow_ups.map((row, i) => ({ ...row, follow_up_on: dates[i] })),
+      });
+      const onOpen = vi.fn();
+      render(<ApplicationPipelineOverview refreshKey={0} onOpen={onOpen} opening={false} />);
+      await screen.findByText('Fictional role 0');
+      const entries = within(screen.getByRole('region', { name: 'Earliest scheduled follow-ups' })).getAllByRole('listitem');
+      expect(entries).toHaveLength(5);
+      entries.forEach((entry, i) => {
+        const button = within(entry).getByRole('button', { name: new RegExp(`Fictional role ${i}`) });
+        expect(button).toHaveTextContent(i === 0 ? 'Company not supplied' : 'Example Company');
+        const date = within(entry).getByText(`Follow up: ${formatCalendarDate(dates[i])}`);
+        if (cues[i]) {
+          const cue = within(entry).getByText(cues[i]!);
+          expect(cue).toBeVisible(); expect(date.nextElementSibling).toBe(cue);
+          expect(cue.closest('[role="alert"], [aria-live]')).toBeNull();
+        } else expect(within(entry).queryByText(/Past follow-up date|Follow-up today|Upcoming follow-up/)).toBeNull();
+        button.focus(); expect(button).toHaveFocus(); fireEvent.click(button); expect(onOpen).toHaveBeenLastCalledWith(String(i));
+      });
+      expect(within(screen.getByRole('region', { name: 'Application totals' })).getAllByRole('definition').map((el) => el.textContent)).toEqual(['8', '5', '3']);
+      expect(within(screen.getByRole('region', { name: 'Application pipeline' })).getAllByRole('definition').map((el) => el.textContent)).toEqual(['2', '1', '1', '1', '1', '1', '1']);
+      expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(applicationStatuses)('shows the same factual cue for $value', async ({ value }) => {
+      vi.mocked(getApplicationPipelineOverview).mockResolvedValue({ ...populated, earliest_follow_ups: [{ ...populated.earliest_follow_ups[0], application_status: value, follow_up_on: '2026-10-29' }] });
+      render(<ApplicationPipelineOverview refreshKey={0} onOpen={vi.fn()} opening={false} />);
+      expect(await screen.findByText('Past follow-up date')).toBeVisible();
+      expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses one local day per render and refreshes cues on rerender without extra reads', async () => {
+      vi.mocked(getApplicationPipelineOverview).mockResolvedValue({ ...populated, earliest_follow_ups: populated.earliest_follow_ups.map((row) => ({ ...row, follow_up_on: '2027-01-01' })) });
+      vi.setSystemTime(new Date('2026-12-31T12:01:00Z'));
+      vi.spyOn(Date.prototype, 'getFullYear').mockReturnValue(2027);
+      vi.spyOn(Date.prototype, 'getMonth').mockReturnValue(0);
+      const day = vi.spyOn(Date.prototype, 'getDate').mockReturnValue(1);
+      const props = { refreshKey: 0, onOpen: vi.fn(), opening: false };
+      const view = render(<ApplicationPipelineOverview {...props} />); await screen.findByText('Fictional role 0');
+      expect(screen.getAllByText('Follow-up today')).toHaveLength(5);
+      const reads = day.mock.calls.length; day.mockReturnValue(2);
+      expect(screen.getAllByText('Follow-up today')).toHaveLength(5);
+      view.rerender(<ApplicationPipelineOverview {...props} />);
+      expect(day.mock.calls.length).toBe(reads + 1); expect(screen.getAllByText('Past follow-up date')).toHaveLength(5);
+      expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(1);
+    });
+
+    it('has no cues on empty/error/loading states and retries using current saved metadata', async () => {
+      vi.mocked(getApplicationPipelineOverview).mockRejectedValueOnce(new Error('PRIVATE'));
+      const view = render(<ApplicationPipelineOverview refreshKey={0} onOpen={vi.fn()} opening={false} />);
+      expect(screen.queryByText(/Past follow-up date|Follow-up today|Upcoming follow-up/)).toBeNull();
+      await screen.findByRole('alert');
+      vi.mocked(getApplicationPipelineOverview).mockResolvedValueOnce({ ...populated, earliest_follow_ups: [{ ...populated.earliest_follow_ups[0], follow_up_on: '2026-10-30' }] });
+      fireEvent.click(screen.getByText('Retry overview')); expect(await screen.findByText('Follow-up today')).toBeVisible();
+      view.rerender(<ApplicationPipelineOverview refreshKey={1} onOpen={vi.fn()} opening={false} />);
+      await screen.findByText('No scheduled follow-ups.'); expect(screen.queryByText('Follow-up today')).toBeNull();
+      expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(3);
+    });
+  });
+
   it('shows independent loading without false zero counts', async () => {
     const pending = deferred();
     vi.mocked(getApplicationPipelineOverview).mockReturnValueOnce(pending.promise);
@@ -76,7 +143,7 @@ describe('ApplicationPipelineOverview', () => {
     expect(onOpen).toHaveBeenCalledExactlyOnceWith('0');
     rerender(<ApplicationPipelineOverview refreshKey={0} onOpen={onOpen} opening />);
     expect(button).toBeDisabled();
-    expect(screen.queryByText(/overdue|due today|due soon|upcoming/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/overdue|due today|due soon/i)).not.toBeInTheDocument();
     expect(storage).not.toHaveBeenCalled();
     expect(localStorage.length).toBe(0); expect(sessionStorage.length).toBe(0); expect(document.cookie).toBe('');
     storage.mockRestore();
