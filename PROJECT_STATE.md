@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-26
+Last updated: 2026-10-29
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #41 merge, 2026-10-23 IST):
+Latest verified completed main (PR #42 merge, 2026-10-26):
 
-`4d64da3edd4e34d61667be58480177e7a160bd64`
+`19739c414c1df2e7c629770b3f3d4bdcb9348342`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 37 — Kanban Follow-Up Sorting**
+**Commit 38 — Kanban Reset All Criteria**
 
 ## Completed MVP-1 Roadmap
 
@@ -61,44 +61,45 @@ These milestones must not be replayed or rebuilt.
 - Commit 35 — Kanban Match Score Filters — COMPLETE (PR #39, merged 2026-10-22)
 - Commit 36 — Kanban AI Enrichment Filter — COMPLETE (PR #40, merged 2026-10-23 IST)
 - Commit 37 — Kanban Follow-Up Sorting — COMPLETE (PR #41, merged 2026-10-23 IST)
+- Commit 38 — Kanban Reset All Criteria — COMPLETE (PR #42, merged 2026-10-26)
 
 ## Post-MVP Active Work
 
-**Commit 38 — Kanban Reset All Criteria**
+**Commit 39 — Kanban Board CSV Export**
 
 Status: **Authorized active development.**
 
-Reset all Board criteria beside Refresh board restores search, follow-up
-presence/dates, score bounds, AI presence, and newest-first sorting. It discards
-all unsent drafts without validation, explicitly clears native date and number
-controls, and clears filter validation errors. One complete default context
-updates the authoritative ref before the existing shared refresh. Changed applied
-criteria cause exactly seven first-page requests containing only each lane's
-application_status. Default applied criteria cause no refresh or request even
-with dirty/invalid drafts or rapid repeated resets.
+Download Board CSV explicitly requests the existing bounded server CSV endpoint
+using a flat immutable snapshot of appliedFiltersRef.current at click time.
+Search, follow-up presence/dates, score bounds, AI presence, and sorting map to
+existing History filters, preserving false and zero. Default criteria send {}.
+No application_status, limit, or offset is sent: every matching saved summary
+across all seven statuses is eligible, independently of loaded cards, in global
+server order. Unsent filter/editor drafts and List criteria are excluded.
 
-Existing interaction guards protect open quick editors, pending writes, status
-confirmation/persistence, and detail loading. Changed context invalidates active
-drags and stale requests, resets independent offsets, and preserves ten-card
-pages, lookahead, deduplication, Load more/Retry, and safe errors. Subsequent
-refreshes and successful status/follow-up writes use defaults; note-only writes
-avoid summary reloads. Native controls, help text, live applied summaries, and
-existing focus styling remain. Individual Apply/Clear/Reset controls remain.
+A synchronous request guard suppresses repeated clicks, with disabled button,
+visible progress, separate Board errors, and retry. Safe overflow (HTTP 413),
+persistence (HTTP 503), and generic errors preserve Board/List state and editors.
+The browser downloads pathfinder-kanban-board.csv via a temporary anchor/object
+URL with finally cleanup. Lifecycle/request identity guards discard stale
+completions after unmount, including StrictMode remounts. Board and List exports
+remain independent; Overview, comparison, pagination, and drag state are intact.
 
-Board reset leaves List drafts/applied criteria/order/pages, comparison,
-Overview, and CSV unchanged. It changes view state only: no backend/API/schema,
-dependency, data mutation, score recalculation, AI call, private-content decoding,
-client sorting, browser/URL persistence, telemetry, polling, or integration.
-Board state still resets on unmount/reload. Offset-pagination concurrency and
-local-installation privacy limitations remain. Native partial-input recovery is
-tested at the DOM boundary; real-browser E2E testing has not been performed.
+The existing 10,000-data-row cap, overflow detection, fixed metadata-only columns,
+BOM/quoting/CRLF, formula safeguards, precision, and privacy boundary are reused.
+No backend/API/schema/dependency changes, client serialization, repeated page
+fetches, mutations, AI calls, storage, telemetry, or external integrations.
+Downloaded job-search metadata requires careful handling. Existing local privacy
+and offset-pagination limitations remain; captured criteria do not promise an
+atomic database snapshot across concurrent updates. Deterministic component and
+integration tests mock browser download APIs. Real-browser E2E testing has not
+been performed for Board CSV export.
 
-The maintainer authorized reconciliation of Commit 37 following PR #41's merge
-at `4d64da3edd4e34d61667be58480177e7a160bd64` on 2026-10-23 IST
-(2026-10-22 UTC).
+The maintainer authorized reconciliation of Commit 38 following PR #42's merge
+at `19739c414c1df2e7c629770b3f3d4bdcb9348342` on 2026-10-26.
 Codex performs local implementation, tests, validation, review, and staging.
 The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 38 PR number is assigned.
+pull request, review, and merge. No Commit 39 PR number is assigned.
 Local implementation does not mark this milestone merged or complete.
 
 ## Existing Capabilities
@@ -144,7 +145,8 @@ The repository already contains:
 - Board-specific server-backed minimum/maximum score filters
 - Board-specific server-backed AI enrichment presence filter
 - Board-specific server-backed follow-up sorting
-- Board-level reset of filtering/sorting drafts and applied values (authorized active development)
+- Board-level reset of filtering/sorting drafts and applied values
+- Explicit applied-criteria Board CSV export across all seven statuses (authorized active development)
 
 ## Architectural Boundary
 
