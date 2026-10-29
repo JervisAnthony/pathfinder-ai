@@ -4,6 +4,7 @@ import { ApiError, downloadApplicationPipelineCsv, getAnalysisHistory, getAnalys
 import type { AnalysisHistoryFilters, AnalysisHistorySort } from '../../api/pathfinder';
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
+import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 import { ApplicationNoteEditor } from './ApplicationNoteEditor';
@@ -78,8 +79,9 @@ function safeError(error: unknown, action: 'load' | 'update'): string {
     : 'Pathfinder could not change the application status. Please try again.';
 }
 
-function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd, onFollowUp, onNote }: {
+function BoardCard({ item, localToday, status, disabled, opening, onOpen, onReview, dragging, onDragStart, onDragEnd, onFollowUp, onNote }: {
   item: SavedAnalysisSummary;
+  localToday: string;
   status: ApplicationStatus;
   disabled: boolean;
   opening: boolean;
@@ -93,6 +95,7 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
 }) {
   const [target, setTarget] = useState(status);
   const selector = useRef<HTMLSelectElement>(null);
+  const timing = classifyFollowUpDate(item.follow_up_on, localToday);
   return <li className={`pipeline-card${dragging ? ' pipeline-card-dragging' : ''}`}>
     <h5>{item.job_title}</h5>
     <button id={`drag-${item.analysis_id}`} type="button" className="pipeline-drag-handle"
@@ -106,6 +109,7 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
     <p>{item.score === null ? 'Not scored' : `${item.score}% match`}</p>
     <p>Saved: {formatSavedTimestamp(item.created_at)}</p>
     <p>{item.follow_up_on ? `Follow up: ${formatCalendarDate(item.follow_up_on)}` : 'No follow-up scheduled'}</p>
+    {timing && <p><strong>{followUpTimingLabels[timing]}</strong></p>}
     <button id={`follow-up-${item.analysis_id}`} type="button" disabled={opening || disabled}
       onClick={() => onFollowUp(item)}>Edit follow-up</button>
     <button id={`note-${item.analysis_id}`} type="button" disabled={opening || disabled}
@@ -122,6 +126,8 @@ function BoardCard({ item, status, disabled, opening, onOpen, onReview, dragging
 }
 
 export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, refreshKey, onFollowUpUpdated, onQuickEditorMutatingChange }: Props) {
+  // One browser-local calendar reference for every card in this render. No timer.
+  const localToday = localCalendarDay(new Date());
   const [draftQuery, setDraftQuery] = useState('');
   const draftQueryRef = useRef('');
   const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
@@ -719,7 +725,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
           {lane.error && <div role="alert"><p>{lane.error}</p><button type="button" disabled={lane.loading || updating} onClick={() => void loadLane(value, lane.offset, generation.current)}>Retry {label}</button></div>}
           {!lane.loading && !lane.error && lane.items.length === 0 && <p>{appliedQuery || followUpFiltered || scoreFiltered || appliedFilters.ai !== 'all' ? 'No matching saved analyses' : 'No saved analyses'} in {label}.</p>}
           {lane.items.length > 0 && <ul className="pipeline-cards">
-            {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} status={value}
+            {lane.items.map((item) => <BoardCard key={`${revision}-${item.analysis_id}`} item={item} localToday={localToday} status={value}
               opening={opening} disabled={updating || quickEditorMutating || change !== null}
               onOpen={(id) => { if (!quickEditorPending.current) onOpen(id); }}
               onFollowUp={(item) => openEditor('follow-up', item)}

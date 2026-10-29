@@ -136,6 +136,54 @@ const detail: SavedAnalysisDetail = {
   ai_enrichment: { provider_name: 'OpenAI', content: 'Historical insight' },
 };
 
+describe('Board-only follow-up date cue integration', () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  it('keeps List, Overview, details and CSV metadata independent of Board presentation', async () => {
+    vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date(2026, 9, 29, 12));
+    const dated = { ...summary, follow_up_on: '2026-10-29' };
+    vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({ items: !filters?.application_status || filters.application_status === 'not_applied' ? [dated] : [] }));
+    vi.mocked(getSavedAnalysis).mockResolvedValue(detail);
+    vi.mocked(getApplicationPipelineOverview).mockResolvedValue({ total_analyses: 1,
+      status_counts: applicationStatuses.map(({ value }) => ({ status: value, count: value === 'not_applied' ? 1 : 0 })),
+      scheduled_follow_up_count: 1, unscheduled_follow_up_count: 0,
+      earliest_follow_ups: [{ ...dated, follow_up_on: '2026-10-29' }],
+    });
+    const createUrl = vi.fn(() => 'blob:cue-export'); const revokeUrl = vi.fn();
+    vi.stubGlobal('URL', class extends URL { static createObjectURL = createUrl; static revokeObjectURL = revokeUrl; });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    vi.mocked(downloadApplicationPipelineCsv).mockResolvedValue(new Blob(['unchanged server metadata']));
+    render(<AnalysisHistory />); await screen.findAllByText('Platform Engineer');
+    expect(screen.queryByText('Follow-up today')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'List applied' } });
+    fireEvent.click(screen.getByText('Apply filters')); await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { query: 'List applied' }));
+    fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'List draft' } });
+    fireEvent.click(screen.getByText('Board view')); const board = within(await screen.findByRole('region', { name: 'Application Pipeline Board' }));
+    expect(await board.findByText('Follow-up today')).toBeVisible();
+    const overview = screen.getByRole('region', { name: 'Application Pipeline Overview' });
+    expect(within(overview).queryByText('Follow-up today')).toBeNull();
+    const requests = vi.mocked(getAnalysisHistory).mock.calls.length;
+    const overviewCalls = vi.mocked(getApplicationPipelineOverview).mock.calls.length;
+    for (const name of ['Download Board CSV', 'Download filtered CSV', 'Download all CSV']) {
+      fireEvent.click(screen.getByText(name)); await waitFor(() => expect(screen.getByText(name)).toBeEnabled());
+    }
+    expect(downloadApplicationPipelineCsv).toHaveBeenNthCalledWith(1, {});
+    expect(downloadApplicationPipelineCsv).toHaveBeenNthCalledWith(2, { query: 'List applied' });
+    expect(downloadApplicationPipelineCsv).toHaveBeenNthCalledWith(3, {});
+    expect(revokeUrl).toHaveBeenCalledTimes(3);
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(requests); expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
+    fireEvent.click(screen.getByText('Open details')); await screen.findByRole('heading', { name: 'Candidate Profile' });
+    expect(screen.queryByText('Follow-up today')).toBeNull();
+    fireEvent.click(await screen.findByRole('button', { name: /Back to History/ }));
+    expect(await screen.findByText('Follow-up today')).toBeVisible();
+    fireEvent.click(screen.getByText('List view')); expect(screen.queryByText('Follow-up today')).toBeNull();
+    expect(screen.getByLabelText('Search job title or company')).toHaveValue('List draft');
+    expect(updateAnalysisTracking).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+    expect(compareSavedAnalyses).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+});
+
 describe('History board integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
