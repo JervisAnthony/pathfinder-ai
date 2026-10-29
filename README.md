@@ -300,6 +300,34 @@ semantics, and individual deletion remain unchanged.
 
 ### Application pipeline Kanban board
 
+Scheduled card dates have a separate static label: **Past follow-up date**,
+**Follow-up today**, or **Upcoming follow-up**. The existing formatted date stays
+visible; unscheduled records retain **No follow-up scheduled** without a cue.
+Invalid calendar dates receive no cue. Labels compare valid `YYYY-MM-DD` strings
+against one browser-local calendar day shared by every card in a Board render.
+Local year/month/day components define today; saved date-only values are never
+converted to timestamps or shifted across timezones. Leap years and the supported
+0001–9999 date range use the existing canonical date validator.
+
+Cues apply to every application status and describe dates only. A past date does
+not establish that a task is overdue or incomplete, or that an employer owes a
+response. No completion tracking, reminders, notifications, or automatic actions
+are added. Labels update on normal Board rerenders or explicit refresh; a page
+left open across midnight can retain its previous labels until then. There are
+no background timers, polling, or extra network requests for labels.
+
+Only authoritative saved `follow_up_on` summary metadata determines a cue.
+Successful follow-up saves/reschedules/clears use the existing summary refresh;
+unsaved drafts and failed writes do not optimistically change saved-date cues.
+Static visible text conveys meaning without color, alerts, or repeated live
+announcements. Existing card styles, responsive wrapping, keyboard controls,
+editing, drag/status confirmation, filtering, sorting, pagination, and CSV exports
+remain intact. Cues are scoped to Board cards; List, Detail, Overview, comparison,
+and exports retain their established presentation and data. No private content,
+backend/API/schema changes, AI calls, dependencies, integrations, or browser
+persistence are involved. Component tests cover date and workflow boundaries;
+real-browser E2E and visual narrow-layout testing have not been performed.
+
 **Download Board CSV**, beside Refresh board and Reset all Board criteria, exports
 the complete server result for the currently applied Board search, follow-up
 presence/calendar bounds, score bounds, AI presence, and sort. Unsent filter or

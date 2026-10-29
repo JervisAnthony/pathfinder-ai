@@ -125,6 +125,158 @@ async function review(target = 'applied') {
   fireEvent.click(lane().getByRole('button', { name: 'Review change' }));
 }
 
+describe('Board follow-up date cues', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 9, 29, 12));
+  });
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+
+  it('shows static text beside unchanged dates in all seven lanes, including invalid and unscheduled records', async () => {
+    const dates = ['2026-10-28', '2026-10-29', '2026-10-30', null, '2026-02-30'];
+    supply(applicationStatuses.flatMap(({ value }) => dates.map((date, i) => ({ ...record(`${value}-${i}`, value), follow_up_on: date }))));
+    render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer withdrawn-0');
+    for (const { label } of applicationStatuses) {
+      const region = lane(label);
+      for (const text of ['Past follow-up date', 'Follow-up today', 'Upcoming follow-up']) {
+        const cue = region.getByText(text);
+        expect(cue).toBeVisible(); expect(cue.closest('[role="alert"], [aria-live]')).toBeNull();
+      }
+      for (const date of dates.slice(0, 3)) expect(region.getByText(`Follow up: ${formatCalendarDate(date!)}`)).toBeInTheDocument();
+      expect(region.getByText('No follow-up scheduled')).toBeInTheDocument();
+      expect(region.getByText('Follow up: Unknown date')).toBeInTheDocument();
+      expect(region.getAllByRole('listitem')).toHaveLength(5);
+    }
+    expect(history).toHaveBeenCalledTimes(7);
+    expect(update).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+    expect(downloadApplicationPipelineCsv).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
+  });
+
+  it('uses one local day across cards and updates only on normal rerender or refresh without timers', async () => {
+    supply(applicationStatuses.map(({ value }) => ({ ...record(value, value), follow_up_on: '2026-10-29' })));
+    // Browser-local October 29 while UTC could already be October 30.
+    vi.spyOn(Date.prototype, 'getFullYear').mockReturnValue(2026);
+    vi.spyOn(Date.prototype, 'getMonth').mockReturnValue(9);
+    const localDay = vi.spyOn(Date.prototype, 'getDate').mockReturnValue(29);
+    const view = render(<ApplicationPipelineBoard {...props} />);
+    await screen.findByText('Fictional Engineer withdrawn');
+    expect(screen.getAllByText('Follow-up today')).toHaveLength(7);
+    const requests = history.mock.calls.length;
+    const reads = localDay.mock.calls.length;
+    localDay.mockReturnValue(30);
+    expect(screen.getAllByText('Follow-up today')).toHaveLength(7);
+    view.rerender(<ApplicationPipelineBoard {...props} />);
+    expect(localDay.mock.calls.length).toBe(reads + 1);
+    expect(screen.getAllByText('Past follow-up date')).toHaveLength(7);
+    expect(history).toHaveBeenCalledTimes(requests);
+    localDay.mockReturnValue(28); fireEvent.click(screen.getByText('Refresh board'));
+    await screen.findByText('Fictional Engineer withdrawn');
+    expect(screen.getAllByText('Upcoming follow-up')).toHaveLength(7);
+    expect(history).toHaveBeenCalledTimes(requests + 7);
+  });
+
+  it.each([
+    [null, '2026-10-29', 'Follow-up today'],
+    ['2026-10-28', '2026-10-30', 'Upcoming follow-up'],
+    ['2026-10-30', '2026-10-28', 'Past follow-up date'],
+    ['2026-10-29', null, null],
+  ] as const)('updates authoritative cue after save/reschedule/clear %s -> %s', async (original, next, cue) => {
+    supply([{ ...record(), follow_up_on: original }]);
+    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue(original));
+    const saved = deferred<AnalysisFollowUp>(); const removed = deferred<void>();
+    vi.mocked(updateAnalysisFollowUp).mockReturnValue(saved.promise); vi.mocked(clearAnalysisFollowUp).mockReturnValue(removed.promise);
+    render(<ApplicationPipelineBoard {...props} />); const input = await openFollowUp();
+    const before = lane().getAllByRole('listitem')[0].textContent;
+    if (next) {
+      fireEvent.change(input, { target: { value: next } }); fireEvent.click(screen.getByText('Save follow-up'));
+    } else {
+      fireEvent.click(screen.getByText('Clear follow-up')); fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up'));
+    }
+    expect(lane().getAllByRole('listitem')[0].textContent).toBe(before);
+    supply([{ ...record(), follow_up_on: next }]);
+    await act(async () => { if (next) saved.resolve(followUpValue(next)); else removed.resolve(); });
+    await screen.findByText(next ? 'Follow-up date saved.' : 'Follow-up date cleared.');
+    if (cue) expect(lane().getByText(cue)).toBeVisible();
+    else {
+      expect(lane().getByText('No follow-up scheduled')).toBeVisible();
+      expect(lane().queryByText(/Past follow-up date|Follow-up today|Upcoming follow-up/)).toBeNull();
+    }
+    expect(history).toHaveBeenCalledTimes(14);
+  });
+
+  it('retains the saved cue on unsent drafts/failed persistence and updates on explicit retry', async () => {
+    supply([{ ...record(), follow_up_on: '2026-10-28' }]);
+    vi.mocked(getAnalysisFollowUp).mockResolvedValue(followUpValue('2026-10-28'));
+    vi.mocked(updateAnalysisFollowUp).mockRejectedValueOnce(new Error('PRIVATE')).mockResolvedValueOnce(followUpValue('2026-10-30'));
+    render(<ApplicationPipelineBoard {...props} />);
+    fireEvent.change(await openFollowUp(), { target: { value: '2026-10-30' } });
+    expect(lane().getByText('Past follow-up date')).toBeVisible();
+    fireEvent.click(screen.getByText('Save follow-up')); await screen.findByRole('alert');
+    expect(lane().getByText('Past follow-up date')).toBeVisible(); expect(lane().queryByText('Upcoming follow-up')).toBeNull();
+    expect(history).toHaveBeenCalledTimes(7);
+    supply([{ ...record(), follow_up_on: '2026-10-30' }]);
+    fireEvent.click(screen.getByText('Save follow-up')); await screen.findByText('Follow-up date saved.');
+    expect(lane().getByText('Upcoming follow-up')).toBeVisible(); expect(screen.getByLabelText('Follow-up date')).toHaveValue('2026-10-30');
+  });
+
+  it('preserves drag confirmation, note editing, keyboard focus and navigation while cues rerender', async () => {
+    supply([{ ...record(), follow_up_on: '2026-10-29' }]);
+    const view = render(<ApplicationPipelineBoard {...props} />);
+    const drag = await startDrag();
+    vi.setSystemTime(new Date(2026, 9, 30, 0, 1));
+    view.rerender(<ApplicationPipelineBoard {...props} />);
+    expect(lane().getByText('Past follow-up date')).toBeVisible();
+    expect(document.querySelector('.pipeline-card-dragging')).not.toBeNull();
+    dropIn('Applied', drag.dataTransfer);
+    expect(screen.getByText('Confirm status change')).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+    supply([{ ...record('record', 'applied'), follow_up_on: '2026-10-29' }]);
+    fireEvent.click(screen.getByText('Confirm status change')); await screen.findByText('Application status changed to Applied.');
+    expect(lane('Applied').getByText('Past follow-up date')).toBeVisible();
+    fireEvent.click(screen.getByText('Edit note'));
+    const input = await screen.findByRole('textbox', { name: 'Application note' });
+    fireEvent.change(input, { target: { value: 'fictional note draft' } }); input.focus();
+    const requests = history.mock.calls.length;
+    vi.setSystemTime(new Date(2026, 9, 28, 12)); view.rerender(<ApplicationPipelineBoard {...props} />);
+    expect(input).toHaveValue('fictional note draft'); expect(input).toHaveFocus();
+    expect(lane('Applied').getByText('Upcoming follow-up')).toBeVisible();
+    vi.mocked(updateAnalysisNote).mockResolvedValueOnce(noteValue('fictional note draft'));
+    fireEvent.click(screen.getByText('Save note')); await screen.findByText('Application note saved.');
+    expect(history).toHaveBeenCalledTimes(requests);
+    fireEvent.click(screen.getByText('Close editing')); expect(screen.getByText('Edit note')).toHaveFocus();
+    fireEvent.click(screen.getByText('Open details')); expect(onOpen).toHaveBeenCalledWith('record');
+    expect(downloadApplicationPipelineCsv).not.toHaveBeenCalled();
+  });
+
+  it('preserves loaded order/offsets, filtered requests, stale generations and StrictMode/unmount behavior', async () => {
+    const rows = Array.from({ length: 21 }, (_, i) => ({ ...record(String(i)), follow_up_on: i % 2 ? '2026-10-30' : '2026-10-28' }));
+    supply(rows);
+    const view = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>);
+    await screen.findByText('Fictional Engineer 0'); searchBoard('Engineer'); applySort();
+    await screen.findByText('Fictional Engineer 0');
+    const stale = deferred<AnalysisHistoryResponse>();
+    history.mockImplementationOnce(() => stale.promise);
+    fireEvent.click(lane().getByRole('button', { name: /Load more/ }));
+    fireEvent.click(screen.getByText('Clear search')); await screen.findByText('Fictional Engineer 0');
+    await act(async () => stale.resolve({ items: [{ ...record('stale'), follow_up_on: '2026-10-29' }] }));
+    expect(screen.queryByText('Fictional Engineer stale')).toBeNull();
+    history.mockRejectedValueOnce(new Error('PRIVATE'));
+    fireEvent.click(lane().getByRole('button', { name: /Load more/ })); await lane().findByRole('alert');
+    fireEvent.click(lane().getByText('Retry Not applied')); await screen.findByText('Fictional Engineer 19');
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', sort: 'follow_up_asc' });
+    expect(lane().getAllByRole('listitem').map((card) => within(card).getByRole('heading').textContent)).toEqual(rows.slice(0, 20).map((r) => r.job_title));
+    expect(lane().getAllByText('Past follow-up date')).toHaveLength(10); expect(lane().getAllByText('Upcoming follow-up')).toHaveLength(10);
+    fireEvent.click(screen.getByText('Reset all Board criteria')); await screen.findByText('Fictional Engineer 0');
+    expect(lane().getAllByRole('listitem')).toHaveLength(10);
+    view.rerender(<StrictMode><ApplicationPipelineBoard {...props} refreshKey={1} /></StrictMode>);
+    await screen.findByText('Fictional Engineer 0'); expect(lane().getAllByText('Past follow-up date')).toHaveLength(5);
+    const pending = deferred<AnalysisHistoryResponse>(); history.mockImplementationOnce(() => pending.promise);
+    fireEvent.click(lane().getByRole('button', { name: /Load more/ })); view.unmount();
+    await act(async () => pending.resolve({ items: rows })); expect(screen.queryByText('Past follow-up date')).toBeNull();
+  });
+});
+
 describe('Board CSV export', () => {
   const csv = vi.mocked(downloadApplicationPipelineCsv);
   const button = () => screen.getByRole('button', { name: 'Download Board CSV' });
