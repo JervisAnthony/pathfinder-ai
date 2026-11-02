@@ -990,6 +990,54 @@ installation privacy limits still apply. This dashboard adds no reminders,
 notifications, calendar sync, automated applications, AI calls, hiring predictions,
 success rates, or application success probabilities.
 
+### History List follow-up timing quick filters
+
+Within the List filter form, **Past dates**, **Today**, and **Upcoming dates**
+immediately apply server filters to saved follow-up calendar dates. Past selects
+strictly before browser-local today; Today selects exactly today; Upcoming selects
+strictly after today. Past and Upcoming both exclude today, and all three exclude
+unscheduled records. These dates describe saved metadata, with no overdue-task,
+completion, or employer-response inference.
+
+Each click captures `localCalendarDay(new Date())`. The existing inclusive server
+bounds use `has_follow_up=true` plus yesterday as `follow_up_to` for Past, today
+as both bounds for Today, or tomorrow as `follow_up_from` for Upcoming. Pure calendar
+component arithmetic handles leap years and centuries without timezone conversion
+or timestamp arithmetic. Dates are supported from 0001-01-01 to 9999-12-31:
+Past is disabled on the first day and Upcoming on the last, with explanatory help.
+An invalid or unsupported browser-local date cannot apply a preset.
+
+**Applied** and **As of** text identify the chosen preset and captured date. Bounds
+stay fixed across midnight until reapplied; there is no automatic midnight
+refilter, polling, notification, or reminder. Reapplying after the local day
+changes captures new bounds. Manual date-range editing and **Apply filters** remain
+available; successful manual Apply removes preset attribution.
+
+A preset changes only applied follow-up presence/date bounds and synchronizes
+those three form drafts, clearing stale validation and native partial date state.
+It preserves unrelated applied search, AI presence (including false), status,
+score bounds (including zero), and ordering, plus unrelated unsent drafts.
+**Clear timing filter** removes only follow-up criteria and clears their drafts;
+**Clear filters** still resets all List criteria and preset feedback.
+
+Presets reset List pagination to the first 20-record server page. They never
+filter only the visible page; normal ordering and stale-response protection remain.
+Repeated unchanged selections on page one avoid duplicate requests. **Download
+filtered CSV** inherits the complete applied criteria for all matching records,
+within the existing 10,000-data-row cap. **Download all CSV** stays unfiltered;
+CSV columns, persisted values, and download lifecycle remain unchanged.
+
+Board filters, drafts, sorting, pagination, CSV, and editing remain independent.
+Overview continues counting all saved records and selecting its existing earliest
+five, irrespective of List presets. Saved follow-up edits refresh authoritative
+server results under the active List criteria; a record moved outside the range
+can disappear from the List. Preset buttons never mutate application data.
+No API/schema changes, new dependencies, private content decoding, AI calls,
+telemetry, or browser persistence are introduced. Native buttons, descriptive help,
+visible focus, and text feedback support keyboard access and responsive wrapping.
+Deterministic Vitest tests cover these contracts; real-browser E2E,
+assistive-technology, and narrow-layout visual testing have not been performed.
+
 ### Saved analysis application follow-up date
 
 Saved Analysis Detail provides one optional follow-up calendar date per

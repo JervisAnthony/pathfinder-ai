@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-10-30
+Last updated: 2026-11-02
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #44 merge, 2026-10-30 IST):
+Latest verified completed main (PR #45 merge, 2026-10-30 IST):
 
-`973e106aa82008634c7493e44964b69261e65b5b`
+`2580ed037cbdefbfab4c1d6b471205814fcd4594`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 40 — Kanban Follow-Up Date Cues**
+**Commit 41 — History Follow-Up Date Cues**
 
 ## Completed MVP-1 Roadmap
 
@@ -64,48 +64,55 @@ These milestones must not be replayed or rebuilt.
 - Commit 38 — Kanban Reset All Criteria — COMPLETE (PR #42, merged 2026-10-26)
 - Commit 39 — Kanban Board CSV Export — COMPLETE (PR #43, merged 2026-10-29)
 - Commit 40 — Kanban Follow-Up Date Cues — COMPLETE (PR #44, merged 2026-10-30 IST)
+- Commit 41 — History Follow-Up Date Cues — COMPLETE (PR #45 merged 2026-10-30 IST)
 
 ## Post-MVP Active Work
 
-**Commit 41 — History Follow-Up Date Cues**
+**Commit 42 — History Follow-Up Timing Quick Filters**
 
 Status: **Authorized active development.**
 
-History List entries and Pipeline Overview's five earliest follow-ups now show
-the same static Past follow-up date, Follow-up today, or Upcoming follow-up label
-beneath the unchanged formatted saved date. Existing followUpTiming helpers and
-calendar validation are reused unchanged. Null and invalid dates receive no cue.
-One browser-local day is derived per component render and shared across that
-surface's entries. Date-only values are compared without timezone conversion.
+History List adds native Past dates, Today, Upcoming dates, and Clear timing
+filter buttons within its existing filter form. Presets immediately apply the
+existing server has_follow_up/follow_up_from/follow_up_to criteria, selecting
+strictly earlier dates, exactly today, or strictly later dates. Inclusive server
+bounds use the previous/next calendar day. All three exclude unscheduled records.
+The existing localCalendarDay helper captures browser-local today at click time;
+bounds remain fixed across midnight until explicitly reapplied. No timers.
 
-Cues describe saved calendar dates across all seven statuses, without completion,
-urgency, overdue-task, deadline, or employer-response inference. Existing List
-navigation, focus, filters, sort, pages, stale-response protection, and empty/error
-states remain. Overview totals, status counts, server-selected earliest-five
-order, navigation, loading/error/retry, and refresh behavior are unchanged.
-Successful Board follow-up saves/reschedules/clears update authoritative List and
-Overview summaries through existing refresh paths; drafts and failed writes do
-not produce optimistic cues. Board rendering and its local-day policy are intact.
+Pure calendar component arithmetic reuses canonical date validation and supports
+0001-01-01 through 9999-12-31, including Gregorian century rules. Impossible Past
+or Upcoming actions are disabled with help; unsupported local dates cannot apply
+presets. No timestamp arithmetic, UTC conversion, or date dependencies are used.
 
-Labels use existing responsive small-text styles, with visible text and no alerts,
-live regions, or new controls. CSV remains persisted metadata with no cue columns;
-comparison, Detail, JSON/Markdown exports, notes, status tracking, privacy, and
-matching retain their existing behavior. No extra requests, timers, polling,
-notifications, reminders, automatic actions, backend/API/schema changes,
-dependencies, AI calls, telemetry, browser persistence, or shared clock state.
-Labels update on normal rerender or explicit refresh; a page left open across
-midnight may retain previous cues until then. Existing privacy/pagination limits
-remain. Deterministic tests cover calendar/timezone boundaries, saved-date refresh,
-navigation, filtering/pagination, stale responses, and cross-surface isolation.
-Real-browser E2E and visual narrow-layout testing have not been performed.
+Only the three timing criteria and corresponding drafts change. Other applied
+criteria (including false and zero), unrelated unsent drafts, and comparison
+selection persist. Clear timing removes only timing criteria; full Clear resets
+all List criteria. Successful manual Apply removes preset attribution. Native
+date values are explicitly synchronized to clear partial editor state and stale
+validation. Visible preset text records the captured date without live alerts.
 
-The maintainer authorized reconciliation of Commit 40 following PR #44's merge
-at `973e106aa82008634c7493e44964b69261e65b5b` on 2026-10-30 IST
-(2026-10-29 UTC).
-Codex performs local implementation, tests, validation, review, and staging.
-The human maintainer owns the single implementation commit, publication,
-pull request, review, and merge. No Commit 41 PR number is assigned.
-Local implementation does not mark this milestone merged or complete.
+Presets use the existing 20-record loading effect, pagination and request-generation
+guards. Selection returns to page one, unchanged criteria avoid duplicate requests
+there, and reapplying on a changed local day captures fresh bounds. Filtered CSV
+inherits all applied criteria across all matches within the unchanged 10,000-row
+cap; all-record CSV remains unfiltered. Board filters/drafts/CSV and Overview
+counts/earliest-five remain independent. Saved follow-up mutations use existing
+authoritative refresh paths; filters never save, clear, or optimistically alter
+records. No completion, overdue, reminder, or employer-obligation inference.
+
+Deterministic helper/component tests cover calendar boundaries, local-time
+capture, applied/draft preservation, pagination, stale responses, StrictMode,
+unmount, CSV lifecycle isolation, Board/Overview isolation, and persisted edits.
+Real-browser E2E, assistive-technology, and visual narrow-layout testing have not
+been performed. No backend/API/schema/dependency changes, private content
+decoding, AI calls, notifications, telemetry, or browser persistence are added.
+
+The maintainer authorized reconciliation of Commit 41 following PR #45's merge
+at `2580ed037cbdefbfab4c1d6b471205814fcd4594` on 2026-10-30 IST
+(2026-10-29T20:42:09Z). Codex implements, validates, reviews, and stages locally.
+The human maintainer owns commit creation, publication, PR, review, and merge.
+No Commit 42 PR number is assigned; local work does not mark it complete.
 
 ## Existing Capabilities
 
@@ -153,7 +160,8 @@ The repository already contains:
 - Board-level reset of filtering/sorting drafts and applied values
 - Explicit applied-criteria Board CSV export across all seven statuses
 - Saved follow-up date timing cues on Board cards
-- Saved follow-up date timing cues on List and Overview entries (authorized active development)
+- Saved follow-up date timing cues on List and Overview entries
+- List-only server-backed follow-up timing quick filters (authorized active development)
 
 ## Architectural Boundary
 

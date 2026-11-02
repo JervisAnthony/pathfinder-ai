@@ -11,6 +11,8 @@ import {
 import { ApplicationStatus, SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
+import type { FollowUpTiming } from './followUpTiming';
+import { historyTimingCriteria, replaceHistoryTiming, timingPresetLabels } from './historyTimingFilters';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
 import { applicationStatuses, statusLabel } from './status';
@@ -73,6 +75,10 @@ export function AnalysisHistory() {
   const [followUp, setFollowUp] = useState('all');
   const [followUpFrom, setFollowUpFrom] = useState('');
   const [followUpTo, setFollowUpTo] = useState('');
+  const followUpFromInput = useRef<HTMLInputElement>(null);
+  const followUpToInput = useRef<HTMLInputElement>(null);
+  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpTiming; today: string } | null>(null);
+  const [timingError, setTimingError] = useState<string | null>(null);
   const [sort, setSort] = useState<AnalysisHistorySort>('created_desc');
   const [minScore, setMinScore] = useState('');
   const [maxScore, setMaxScore] = useState('');
@@ -133,6 +139,7 @@ export function AnalysisHistory() {
       return;
     }
     setFilterError(null);
+    setTimingPreset(null); setTimingError(null);
     setOffset(0);
     setFilters({
       ...(normalized ? { query: normalized } : {}),
@@ -148,9 +155,35 @@ export function AnalysisHistory() {
   };
 
   const clearFilters = () => {
+    synchronizeTimingDrafts({});
+    setTimingPreset(null); setTimingError(null);
     setFollowUp('all'); setFollowUpFrom(''); setFollowUpTo(''); setSort('created_desc');
     setQuery(''); setAi('all'); setStatus('all'); setMinScore(''); setMaxScore('');
     setFilterError(null); setOffset(0); setFilters({});
+  };
+
+  const synchronizeTimingDrafts = (criteria: AnalysisHistoryFilters) => {
+    const from = criteria.follow_up_from ?? '';
+    const to = criteria.follow_up_to ?? '';
+    setFollowUp(criteria.has_follow_up ? 'yes' : 'all');
+    setFollowUpFrom(from); setFollowUpTo(to);
+    // Assign even unchanged values to clear native partial/invalid date editing state.
+    if (followUpFromInput.current) followUpFromInput.current.value = from;
+    if (followUpToInput.current) followUpToInput.current.value = to;
+  };
+
+  const applyTiming = (name: FollowUpTiming | null) => {
+    const today = localCalendarDay(new Date());
+    const criteria = name === null ? {} : historyTimingCriteria(name, today);
+    if (criteria === null) {
+      setTimingError('This timing preset is unavailable for the browser-local calendar date. Use a custom date range.');
+      return;
+    }
+    synchronizeTimingDrafts(criteria);
+    setFilterError(null); setTimingError(null);
+    setTimingPreset(name === null ? null : { name, today });
+    setOffset(0);
+    setFilters((current) => replaceHistoryTiming(current, criteria));
   };
 
   const loadHistory = useCallback(async () => {
@@ -345,10 +378,10 @@ export function AnalysisHistory() {
           </select>
         </label>
         <label>Follow-up from
-          <input type="date" min="0001-01-01" max="9999-12-31" value={followUpFrom} onChange={(event) => setFollowUpFrom(event.target.value)} />
+          <input ref={followUpFromInput} type="date" min="0001-01-01" max="9999-12-31" value={followUpFrom} onChange={(event) => setFollowUpFrom(event.target.value)} />
         </label>
         <label>Follow-up to
-          <input type="date" min="0001-01-01" max="9999-12-31" value={followUpTo} onChange={(event) => setFollowUpTo(event.target.value)} />
+          <input ref={followUpToInput} type="date" min="0001-01-01" max="9999-12-31" value={followUpTo} onChange={(event) => setFollowUpTo(event.target.value)} />
         </label>
         <label>Sort order
           <select value={sort} onChange={(event) => setSort(event.target.value as AnalysisHistorySort)}>
@@ -358,6 +391,20 @@ export function AnalysisHistory() {
         </label>
         <button type="submit">Apply filters</button>
         <button type="button" onClick={clearFilters}>Clear filters</button>
+        <fieldset className="history-timing-filters" aria-describedby="history-timing-help history-timing-boundary">
+          <legend>Follow-up timing quick filters</legend>
+          <div className="export-actions">
+            {(['past', 'today', 'upcoming'] as const).map((name) => (
+              <button key={name} type="button" disabled={historyTimingCriteria(name, localToday) === null}
+                aria-pressed={timingPreset?.name === name} onClick={() => applyTiming(name)}>{timingPresetLabels[name]}</button>
+            ))}
+            <button type="button" onClick={() => applyTiming(null)}>Clear timing filter</button>
+          </div>
+          <p id="history-timing-help">Past dates selects dates before today; Today selects today; Upcoming dates selects dates after today. These filters use saved follow-up dates, regardless of task completion. The browser-local date is captured at click time; boundaries stay fixed until reapplied, including across midnight. You can still edit and apply custom date ranges.</p>
+          <p id="history-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates is unavailable on the last day. An invalid or unsupported browser-local date disables all three presets.</p>
+          {timingPreset && <p>Applied: {timingPresetLabels[timingPreset.name]}. As of: {timingPreset.today}.</p>}
+          {timingError && <p>{timingError}</p>}
+        </fieldset>
       </form>
       <p>Search matches saved job titles and company names. Score bounds include their endpoints; unscored analyses are excluded when a score filter is active.</p>
       {filterError && <p role="alert">{filterError}</p>}
