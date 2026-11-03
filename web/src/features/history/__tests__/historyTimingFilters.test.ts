@@ -1,0 +1,65 @@
+import { describe, expect, it, vi } from 'vitest';
+import { adjacentCalendarDay, historyTimingCriteria, replaceHistoryTiming } from '../historyTimingFilters';
+import { localCalendarDay } from '../followUpTiming';
+
+describe('date-only timing ranges', () => {
+  it.each([
+    ['2026-11-02', '2026-11-01', '2026-11-03'],
+    ['2026-11-01', '2026-10-31', '2026-11-02'],
+    ['2026-12-31', '2026-12-30', '2027-01-01'],
+    ['2027-01-01', '2026-12-31', '2027-01-02'],
+    ['2024-02-28', '2024-02-27', '2024-02-29'],
+    ['2024-02-29', '2024-02-28', '2024-03-01'],
+    ['2024-03-01', '2024-02-29', '2024-03-02'],
+    ['2026-02-28', '2026-02-27', '2026-03-01'],
+    ['2026-03-01', '2026-02-28', '2026-03-02'],
+    ['1900-02-28', '1900-02-27', '1900-03-01'],
+    ['1900-03-01', '1900-02-28', '1900-03-02'],
+    ['2000-02-28', '2000-02-27', '2000-02-29'],
+    ['2000-03-01', '2000-02-29', '2000-03-02'],
+    ['2100-03-01', '2100-02-28', '2100-03-02'],
+    ['2026-04-30', '2026-04-29', '2026-05-01'],
+    ['2026-05-01', '2026-04-30', '2026-05-02'],
+    ['0001-01-01', null, '0001-01-02'],
+    ['9999-12-31', '9999-12-30', null],
+  ])('builds strict/inclusive ranges at %s', (today, previous, next) => {
+    expect(adjacentCalendarDay(today, -1)).toBe(previous);
+    expect(adjacentCalendarDay(today, 1)).toBe(next);
+    expect(historyTimingCriteria('past', today)).toEqual(previous ? { has_follow_up: true, follow_up_to: previous } : null);
+    expect(historyTimingCriteria('today', today)).toEqual({ has_follow_up: true, follow_up_from: today, follow_up_to: today });
+    expect(historyTimingCriteria('upcoming', today)).toEqual(next ? { has_follow_up: true, follow_up_from: next } : null);
+  });
+
+  it.each(['', 'invalid', '0000-01-01', '10000-01-01', '-001-01-01', '2026-1-01',
+    '2026-02-29', '1900-02-29', '2026-04-31', '2026-00-01', '2026-13-01', '2026-01-00',
+    '2026-11-02T00:00:00Z', ' 2026-11-02'])('rejects invalid reference %s', (value) => {
+    expect(adjacentCalendarDay(value, -1)).toBeNull();
+    expect(adjacentCalendarDay(value, 1)).toBeNull();
+    for (const preset of ['past', 'today', 'upcoming'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
+  });
+
+  it('needs no timestamps or UTC conversion', () => {
+    const iso = vi.spyOn(Date.prototype, 'toISOString').mockImplementation(() => { throw Error('UTC'); });
+    const time = vi.spyOn(Date.prototype, 'getTime').mockImplementation(() => { throw Error('timestamp'); });
+    try {
+      expect(historyTimingCriteria('past', '2026-03-08')).toEqual({ has_follow_up: true, follow_up_to: '2026-03-07' });
+      expect(historyTimingCriteria('upcoming', '2026-11-01')).toEqual({ has_follow_up: true, follow_up_from: '2026-11-02' });
+    } finally { iso.mockRestore(); time.mockRestore(); }
+  });
+
+  it.each([0, -1, 10000])('rejects out-of-range browser year %s', (year) => {
+    const date = new Date(2026, 0, 1); date.setFullYear(year);
+    expect(historyTimingCriteria('today', localCalendarDay(date))).toBeNull();
+  });
+
+  it('replaces only timing and retains identity for equivalent parameters', () => {
+    const unrelated = { query: 'Engineer', ai_enriched: false, min_score: 0, max_score: 0, application_status: 'applied' as const, sort: 'follow_up_asc' as const };
+    const current = { ...unrelated, has_follow_up: false, follow_up_from: '2026-01-01' };
+    const today = historyTimingCriteria('today', '2026-11-02')!;
+    const result = replaceHistoryTiming(current, today);
+    expect(result).toEqual({ ...unrelated, ...today });
+    expect(replaceHistoryTiming(result, today)).toBe(result);
+    expect(replaceHistoryTiming(result, {})).toEqual(unrelated);
+    expect(current.has_follow_up).toBe(false);
+  });
+});
