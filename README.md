@@ -1038,6 +1038,58 @@ visible focus, and text feedback support keyboard access and responsive wrapping
 Deterministic Vitest tests cover these contracts; real-browser E2E,
 assistive-technology, and narrow-layout visual testing have not been performed.
 
+### Board follow-up timing quick filters
+
+The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
+and **Clear timing filter**, alongside the existing status/date fields, **Apply
+filters**, and **Clear follow-up filters**. Presets immediately select scheduled
+records across all seven status lanes. Past ends at yesterday (strictly before
+today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
+(strictly after today). All three exclude unscheduled records.
+
+Board reuses the pure `historyTimingCriteria()` calendar calculations and
+`localCalendarDay(new Date())` from History List. Each click captures the current
+browser-local date without UTC conversion or timestamp arithmetic. Visible
+**Applied Board timing** and **As of** text record that selection. Bounds stay
+fixed across midnight until explicitly reapplied; there are no timers, polling,
+notifications or reminders. Supported calendar dates run from 0001-01-01 to
+9999-12-31. Past is disabled at the minimum, Upcoming at the maximum, and invalid
+local dates disable all presets. Click-time guards also reject impossible ranges
+without submitting an unrestricted query. Explanatory text accompanies these limits.
+
+Presets replace only applied Board follow-up criteria and synchronize their
+status/date drafts, clearing stale follow-up errors and native partial date state.
+Other applied search, score bounds (including zero), AI presence (including no),
+and sorting persist. Unsent search, score, AI and sort drafts remain unsubmitted.
+**Clear timing filter** removes only follow-up criteria and drafts. Successful
+manual **Apply filters** removes preset attribution even if the criteria are
+unchanged; **Clear follow-up filters** and **Reset all Board criteria** also clear
+feedback. Applying unrelated criteria retains attribution for the unchanged range.
+
+Changed criteria use the existing seven-lane refresh, resetting each lane to its
+first ten-card server page with eleventh-record lookahead. Server order, independent
+Load more/Retry, duplicate suppression and stale-response guards are preserved;
+unchanged criteria avoid redundant requests and retain loaded pages. No browser-only
+filtering is used. Presets share existing filter locks during detail opening,
+status confirmation/writes, open quick editors and pending editor writes, including
+same-tick guards. They clear active drag sessions through normal refresh and never
+save or close an editor. Authoritative follow-up edits refresh the same applied
+range; records outside it disappear normally, and failed writes retain saved data.
+
+**Download Board CSV** inherits all applied criteria across all server matches,
+including unloaded cards, within the unchanged 10,000-row cap. Unsent drafts and
+preset labels are excluded; columns, ordering, error handling and Blob URL cleanup
+remain unchanged. History List timing, pagination, comparison and CSV are independent;
+Overview still shows global counts and the earliest five scheduled dates. Board
+state keeps its existing mount/unmount lifecycle, with no shared selection store.
+
+Native buttons, semantic grouping, descriptive help, visible keyboard focus,
+wrapping and text feedback support accessible use. Dates carry no overdue-task,
+completion or employer-obligation inference. There are no backend/API/schema changes,
+new dependencies, private content decoding, AI calls, telemetry or browser persistence.
+Deterministic Vitest tests cover these contracts. Real-browser E2E,
+assistive-technology and narrow-layout visual testing have not been performed.
+
 ### Saved analysis application follow-up date
 
 Saved Analysis Detail provides one optional follow-up calendar date per
