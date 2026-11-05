@@ -254,6 +254,13 @@ describe('History List timing quick filters', () => {
     for (const { value } of applicationStatuses) expect(getAnalysisHistory).toHaveBeenCalledWith(11, 0, { application_status: value });
     expect(getAnalysisHistory).toHaveBeenCalledTimes(listCalls + 7); expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
     expect(within(screen.getByRole('region', { name: 'Application Pipeline Overview' })).getAllByText('Past follow-up date')).toHaveLength(5);
+    fireEvent.click(board.getByRole('button', { name: 'Past dates' })); await board.findByText('Applied Board timing: Past dates. As of: 2026-11-02.');
+    for (const { value } of applicationStatuses) expect(getAnalysisHistory).toHaveBeenCalledWith(11, 0, { application_status: value, has_follow_up: true, follow_up_to: '2026-11-01' });
+    fireEvent.click(board.getByText('Download Board CSV')); await waitFor(() => expect(board.getByText('Download Board CSV')).toBeEnabled());
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_to: '2026-11-01' });
+    click('Download filtered CSV'); await waitFor(() => expect(screen.getByText('Download filtered CSV')).toBeEnabled());
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: '2026-11-03' });
+    expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(overviewCalls);
     click('List view'); expect(screen.getByText(/Applied: Upcoming dates/)).toBeVisible(); expect(screen.getByText('Saved role 43')).toBeVisible();
     expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
   });

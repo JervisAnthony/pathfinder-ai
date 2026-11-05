@@ -5,6 +5,8 @@ import type { AnalysisHistoryFilters, AnalysisHistorySort } from '../../api/path
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
+import type { FollowUpTiming } from './followUpTiming';
+import { historyTimingCriteria, timingPresetLabels } from './historyTimingFilters';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
 import { ApplicationNoteEditor } from './ApplicationNoteEditor';
@@ -132,6 +134,8 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const draftQueryRef = useRef('');
   const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
   const draftFollowUpRef = useRef(draftFollowUp);
+  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpTiming; today: string } | null>(null);
+  const [timingError, setTimingError] = useState<string | null>(null);
   const [draftAi, setDraftAi] = useState<BoardAiFilter>('all');
   const draftAiRef = useRef(draftAi);
   const [draftSort, setDraftSort] = useState<AnalysisHistorySort>('created_desc');
@@ -371,7 +375,33 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       return;
     }
     setFollowUpFilterError(null);
+    setTimingPreset(null);
+    setTimingError(null);
     editFollowUpFilters(next);
+    applyBoardFilters({ ...appliedFiltersRef.current, followUp: next });
+  };
+
+  const applyTiming = (name: FollowUpTiming | null) => {
+    if (!canChangeFilters()) return;
+    const today = localCalendarDay(new Date());
+    const criteria = name === null ? {} : historyTimingCriteria(name, today);
+    if (criteria === null) {
+      setTimingError('This timing preset is unavailable for the browser-local calendar date. Use a custom date range.');
+      return;
+    }
+    const next: BoardFollowUpFilters = {
+      status: name === null ? 'all' : 'yes',
+      from: criteria.follow_up_from ?? '',
+      to: criteria.follow_up_to ?? '',
+    };
+    // Explicit native writes also clear partial/invalid date editing state when
+    // React's controlled value already equals the selected boundary.
+    if (followUpFromInput.current) followUpFromInput.current.value = next.from;
+    if (followUpToInput.current) followUpToInput.current.value = next.to;
+    editFollowUpFilters(next);
+    setFollowUpFilterError(null);
+    setTimingError(null);
+    setTimingPreset(name === null ? null : { name, today });
     applyBoardFilters({ ...appliedFiltersRef.current, followUp: next });
   };
 
@@ -415,6 +445,8 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
 
   const resetAllCriteria = () => {
     if (!canChangeFilters()) return;
+    setTimingPreset(null);
+    setTimingError(null);
     const defaults: BoardFilters = {
       query: '', followUp: emptyBoardFollowUpFilters(), scores: {}, ai: 'all', sort: 'created_desc',
     };
@@ -583,6 +615,20 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     <form className="pipeline-follow-up-filters" aria-labelledby="board-follow-up-filters-title" noValidate
       onSubmit={(event) => { event.preventDefault(); applyFollowUpFilters(); }}>
       <h4 id="board-follow-up-filters-title">Board follow-up filters</h4>
+      <fieldset className="history-timing-filters" aria-describedby="board-timing-help board-timing-boundary">
+        <legend>Board follow-up timing quick filters</legend>
+        <div className="export-actions">
+          {(['past', 'today', 'upcoming'] as const).map((name) => <button key={name} type="button"
+            disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating || historyTimingCriteria(name, localToday) === null}
+            aria-pressed={timingPreset?.name === name} onClick={() => applyTiming(name)}>{timingPresetLabels[name]}</button>)}
+          <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
+            onClick={() => applyTiming(null)}>Clear timing filter</button>
+        </div>
+        <p id="board-timing-help">Past dates selects scheduled dates before today; Today selects today; Upcoming dates selects scheduled dates after today. Apply immediately across all seven lanes, preserving other applied Board criteria and unsent drafts. Clear timing removes only follow-up criteria. The browser-local date is captured at click time; boundaries stay fixed across midnight until reapplied. Custom date filters remain available. Close quick editing before changing timing.</p>
+        <p id="board-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates is unavailable on the last day. An invalid or unsupported browser-local date disables all three presets. Dates do not indicate overdue tasks or completion.</p>
+        {timingPreset && <p>Applied Board timing: {timingPresetLabels[timingPreset.name]}. As of: {timingPreset.today}.</p>}
+        {timingError && <p>{timingError}</p>}
+      </fieldset>
       <div className="pipeline-filter-controls">
         <label>Board follow-up status
           <select value={draftFollowUp.status} aria-invalid={followUpFilterError ? true : undefined}
