@@ -4,6 +4,36 @@ import { localCalendarDay } from '../followUpTiming';
 
 describe('date-only timing ranges', () => {
   it.each([
+    ['2026-11-05', '2026-11-06', '2026-11-12'],
+    ['2026-11-27', '2026-11-28', '2026-12-04'],
+    ['2026-12-29', '2026-12-30', '2027-01-05'],
+    ['2024-02-25', '2024-02-26', '2024-03-03'],
+    ['2026-02-25', '2026-02-26', '2026-03-04'],
+    ['1900-02-25', '1900-02-26', '1900-03-04'],
+    ['2000-02-25', '2000-02-26', '2000-03-03'],
+    ['2100-02-25', '2100-02-26', '2100-03-04'],
+    ['0001-01-01', '0001-01-02', '0001-01-08'],
+    ['9999-12-24', '9999-12-25', '9999-12-31'],
+    ['9999-12-25', '9999-12-26', '9999-12-31'],
+    ['9999-12-29', '9999-12-30', '9999-12-31'],
+    ['9999-12-30', '9999-12-31', '9999-12-31'],
+  ])('bounds Next 7 days at %s, truncating only at the supported maximum', (today, from, to) => {
+    expect(historyTimingCriteria('next_7_days', today)).toEqual({ has_follow_up: true, follow_up_from: from, follow_up_to: to });
+  });
+
+  it('includes tomorrow and day seven, excluding today, day eight and unscheduled dates', () => {
+    const criteria = historyTimingCriteria('next_7_days', '2026-11-05')!;
+    const matches = [null, '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-12', '2026-11-13']
+      .filter((date) => date !== null && date >= criteria.follow_up_from! && date <= criteria.follow_up_to!);
+    expect(matches).toEqual(['2026-11-06', '2026-11-12']);
+    expect(historyTimingCriteria('next_7_days', '9999-12-31')).toBeNull();
+    const current = { query: 'Engineer', ai_enriched: false, min_score: 0, max_score: 0 };
+    const next = replaceHistoryTiming(current, criteria);
+    expect(next).toEqual({ ...current, ...criteria });
+    expect(replaceHistoryTiming(next, criteria)).toBe(next);
+    expect(replaceHistoryTiming(next, {})).toEqual(current);
+  });
+  it.each([
     ['2026-11-02', '2026-11-01', '2026-11-03'],
     ['2026-11-01', '2026-10-31', '2026-11-02'],
     ['2026-12-31', '2026-12-30', '2027-01-01'],
@@ -35,16 +65,18 @@ describe('date-only timing ranges', () => {
     '2026-11-02T00:00:00Z', ' 2026-11-02'])('rejects invalid reference %s', (value) => {
     expect(adjacentCalendarDay(value, -1)).toBeNull();
     expect(adjacentCalendarDay(value, 1)).toBeNull();
-    for (const preset of ['past', 'today', 'upcoming'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
+    for (const preset of ['past', 'today', 'upcoming', 'next_7_days'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
   });
 
   it('needs no timestamps or UTC conversion', () => {
     const iso = vi.spyOn(Date.prototype, 'toISOString').mockImplementation(() => { throw Error('UTC'); });
     const time = vi.spyOn(Date.prototype, 'getTime').mockImplementation(() => { throw Error('timestamp'); });
+    const parse = vi.spyOn(Date, 'parse').mockImplementation(() => { throw Error('parse'); });
     try {
       expect(historyTimingCriteria('past', '2026-03-08')).toEqual({ has_follow_up: true, follow_up_to: '2026-03-07' });
       expect(historyTimingCriteria('upcoming', '2026-11-01')).toEqual({ has_follow_up: true, follow_up_from: '2026-11-02' });
-    } finally { iso.mockRestore(); time.mockRestore(); }
+      expect(historyTimingCriteria('next_7_days', '2026-12-29')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-30', follow_up_to: '2027-01-05' });
+    } finally { iso.mockRestore(); time.mockRestore(); parse.mockRestore(); }
   });
 
   it.each([0, -1, 10000])('rejects out-of-range browser year %s', (year) => {

@@ -5,7 +5,7 @@ import type { AnalysisHistoryFilters, AnalysisHistorySort } from '../../api/path
 import type { ApplicationStatus, SavedAnalysisSummary } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
-import type { FollowUpTiming } from './followUpTiming';
+import type { FollowUpFilterPreset } from './historyTimingFilters';
 import { historyTimingCriteria, timingPresetLabels } from './historyTimingFilters';
 import { applicationStatuses, statusLabel } from './status';
 import { ApplicationFollowUpEditor } from './ApplicationFollowUpEditor';
@@ -134,7 +134,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
   const draftQueryRef = useRef('');
   const [draftFollowUp, setDraftFollowUp] = useState(emptyBoardFollowUpFilters);
   const draftFollowUpRef = useRef(draftFollowUp);
-  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpTiming; today: string } | null>(null);
+  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpFilterPreset; today: string } | null>(null);
   const [timingError, setTimingError] = useState<string | null>(null);
   const [draftAi, setDraftAi] = useState<BoardAiFilter>('all');
   const draftAiRef = useRef(draftAi);
@@ -381,7 +381,7 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
     applyBoardFilters({ ...appliedFiltersRef.current, followUp: next });
   };
 
-  const applyTiming = (name: FollowUpTiming | null) => {
+  const applyTiming = (name: FollowUpFilterPreset | null) => {
     if (!canChangeFilters()) return;
     const today = localCalendarDay(new Date());
     const criteria = name === null ? {} : historyTimingCriteria(name, today);
@@ -618,14 +618,14 @@ export function ApplicationPipelineBoard({ onOpen, onStatusChanged, opening, ref
       <fieldset className="history-timing-filters" aria-describedby="board-timing-help board-timing-boundary">
         <legend>Board follow-up timing quick filters</legend>
         <div className="export-actions">
-          {(['past', 'today', 'upcoming'] as const).map((name) => <button key={name} type="button"
+          {(['past', 'today', 'upcoming', 'next_7_days'] as const).map((name) => <button key={name} type="button"
             disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating || historyTimingCriteria(name, localToday) === null}
             aria-pressed={timingPreset?.name === name} onClick={() => applyTiming(name)}>{timingPresetLabels[name]}</button>)}
           <button type="button" disabled={opening || updating || change !== null || selectedEditor !== null || quickEditorMutating}
             onClick={() => applyTiming(null)}>Clear timing filter</button>
         </div>
-        <p id="board-timing-help">Past dates selects scheduled dates before today; Today selects today; Upcoming dates selects scheduled dates after today. Apply immediately across all seven lanes, preserving other applied Board criteria and unsent drafts. Clear timing removes only follow-up criteria. The browser-local date is captured at click time; boundaries stay fixed across midnight until reapplied. Custom date filters remain available. Close quick editing before changing timing.</p>
-        <p id="board-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates is unavailable on the last day. An invalid or unsupported browser-local date disables all three presets. Dates do not indicate overdue tasks or completion.</p>
+        <p id="board-timing-help">Past dates selects scheduled dates before today; Today selects today; Upcoming dates selects scheduled dates after today. Next 7 days selects tomorrow through the seventh future calendar day, inclusive, excluding today. Apply immediately across all seven lanes, preserving other applied Board criteria and unsent drafts. Clear timing removes only follow-up criteria. The browser-local date is captured at click time; boundaries stay fixed across midnight until reapplied. Custom date filters remain available. Close quick editing before changing timing.</p>
+        <p id="board-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates and Next 7 days are unavailable on the last day. Near that limit, Next 7 days includes only the remaining supported future dates, ending at 9999-12-31. An invalid or unsupported browser-local date disables all four presets. Dates do not indicate overdue tasks or completion.</p>
         {timingPreset && <p>Applied Board timing: {timingPresetLabels[timingPreset.name]}. As of: {timingPreset.today}.</p>}
         {timingError && <p>{timingError}</p>}
       </fieldset>

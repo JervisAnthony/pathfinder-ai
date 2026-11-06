@@ -2,8 +2,10 @@ import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import { isCalendarDate } from './boardFollowUpFilters';
 import type { FollowUpTiming } from './followUpTiming';
 
-export const timingPresetLabels: Record<FollowUpTiming, string> = {
-  past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates',
+export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days';
+
+export const timingPresetLabels: Record<FollowUpFilterPreset, string> = {
+  past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', next_7_days: 'Next 7 days',
 };
 
 type TimingCriteria = Pick<AnalysisHistoryFilters, 'has_follow_up' | 'follow_up_from' | 'follow_up_to'>;
@@ -31,11 +33,20 @@ export function adjacentCalendarDay(value: string, direction: -1 | 1): string | 
   return calendarDay(year, month, day);
 }
 
-export function historyTimingCriteria(preset: FollowUpTiming, today: string): TimingCriteria | null {
+export function historyTimingCriteria(preset: FollowUpFilterPreset, today: string): TimingCriteria | null {
   if (!isCalendarDate(today)) return null;
   if (preset === 'today') return { has_follow_up: true, follow_up_from: today, follow_up_to: today };
   const boundary = adjacentCalendarDay(today, preset === 'past' ? -1 : 1);
   if (boundary === null) return null;
+  if (preset === 'next_7_days') {
+    let end = boundary;
+    for (let day = 1; day < 7; day += 1) {
+      const next = adjacentCalendarDay(end, 1);
+      if (next === null) break; // Keep the last supported day at year 9999.
+      end = next;
+    }
+    return { has_follow_up: true, follow_up_from: boundary, follow_up_to: end };
+  }
   return preset === 'past'
     ? { has_follow_up: true, follow_up_to: boundary }
     : { has_follow_up: true, follow_up_from: boundary };

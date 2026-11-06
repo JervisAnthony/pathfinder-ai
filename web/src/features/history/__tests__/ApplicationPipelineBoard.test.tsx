@@ -139,9 +139,10 @@ describe('Board timing quick filters', () => {
     ['Past dates', '', '2026-11-03'],
     ['Today', '2026-11-04', '2026-11-04'],
     ['Upcoming dates', '2026-11-05', ''],
+    ['Next 7 days', '2026-11-05', '2026-11-11'],
   ])('applies %s to seven lanes, preserving other applied criteria and unsent drafts', async (name, from, to) => {
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
-    for (const label of ['Past dates', 'Today', 'Upcoming dates', 'Clear timing filter']) expect(screen.getByRole('button', { name: label })).toHaveAttribute('type', 'button');
+    for (const label of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'Clear timing filter']) expect(screen.getByRole('button', { name: label })).toHaveAttribute('type', 'button');
     expect(screen.getByRole('group', { name: 'Board follow-up timing quick filters' })).toBeVisible();
     searchBoard('Engineer'); applyScoreFilters('0', '0'); applyAiFilter('no'); applySort();
     fireEvent.change(searchInput(), { target: { value: 'Designer' } }); draftScoreFilters('10', '20'); draftAiFilter('yes'); draftSort('created_desc');
@@ -168,6 +169,19 @@ describe('Board timing quick filters', () => {
     expect(screen.getByLabelText('Board follow-up from')).toHaveValue(''); expect(screen.getByLabelText('Board follow-up to')).toHaveValue('');
     expect(searchInput()).toHaveValue('Designer'); expect(minScore()).toHaveValue(10); expect(aiInput()).toHaveValue('yes'); expect(sortInput()).toHaveValue('created_desc');
     expect(update).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+  });
+
+  it('keeps the seven-day window fixed across midnight until explicitly reapplied', async () => {
+    const view = render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record'); click('Next 7 days');
+    searchBoard('Engineer'); applyScoreFilters('0'); applyAiFilter('no'); applySort(); expect(feedback()).toHaveTextContent('Next 7 days. As of: 2026-11-04.');
+    const count = history.mock.calls.length;
+    vi.setSystemTime(new Date(2026, 10, 5, 0, 1)); view.rerender(<ApplicationPipelineBoard {...props} />);
+    expect(history).toHaveBeenCalledTimes(count); expect(feedback()).toHaveTextContent('As of: 2026-11-04.');
+    click('Next 7 days'); expect(history.mock.calls.slice(-7)).toEqual(applicationStatuses.map(({ value }) => [11, 0, { application_status: value, query: 'Engineer', min_score: 0, ai_enriched: false, sort: 'follow_up_asc', has_follow_up: true, follow_up_from: '2026-11-06', follow_up_to: '2026-11-12' }]));
+    expect(feedback()).toHaveTextContent('As of: 2026-11-05.');
+    const after = history.mock.calls.length; fireEvent.submit(followUpForm()); expect(feedback()).toBeNull(); expect(history).toHaveBeenCalledTimes(after);
+    click('Next 7 days'); click('Clear follow-up filters'); expect(feedback()).toBeNull();
+    click('Next 7 days'); click('Reset all Board criteria'); expect(feedback()).toBeNull(); await act(async () => {});
   });
 
   it('captures the local day only on selection and preserves attribution through unrelated filters and refresh', async () => {
@@ -205,7 +219,8 @@ describe('Board timing quick filters', () => {
   });
 
   it.each([
-    [1, 0, 1, 'Past dates'], [9999, 11, 31, 'Upcoming dates'],
+    [1, 0, 1, 'Past dates'], [9999, 11, 31, 'Upcoming dates'], [9999, 11, 31, 'Next 7 days'],
+    [0, 0, 1, 'Next 7 days'], [10000, 0, 1, 'Next 7 days'],
     [0, 0, 1, 'Today'], [10000, 0, 1, 'Today'],
   ])('disables impossible ranges at year %s and guards a changed click-time date', async (year, month, day, disabled) => {
     const date = new Date(2026, month, day, 12); date.setFullYear(year); vi.setSystemTime(date);
@@ -226,39 +241,39 @@ describe('Board timing quick filters', () => {
     expect(feedback()).toHaveTextContent('As of: 2024-02-29.'); await act(async () => {});
   });
 
-  it.each(['follow-up', 'note'] as const)('blocks preset actions during same-tick %s editor opening and pending writes', async (mode) => {
+  it.each([['follow-up', 'Today'], ['note', 'Today'], ['follow-up', 'Next 7 days'], ['note', 'Next 7 days']] as const)('blocks preset actions during same-tick %s editor opening and pending writes (%s)', async (mode, preset) => {
     const pending = deferred<AnalysisFollowUp & AnalysisNote>();
     vi.mocked(updateAnalysisFollowUp).mockReturnValue(pending.promise); vi.mocked(updateAnalysisNote).mockReturnValue(pending.promise);
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
-    const timing = screen.getByRole('button', { name: 'Today' }); const clear = screen.getByText('Clear timing filter');
+    const timing = screen.getByRole('button', { name: preset }); const clear = screen.getByText('Clear timing filter');
     act(() => { fireEvent.click(screen.getByText(mode === 'note' ? 'Edit note' : 'Edit follow-up')); fireEvent.click(timing); fireEvent.click(clear); });
     expect(history).toHaveBeenCalledTimes(7); expect(timing).toBeDisabled(); expect(clear).toBeDisabled();
     const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
     fireEvent.change(input, { target: { value: mode === 'note' ? 'Fictional draft' : '2026-11-04' } }); click(mode === 'note' ? 'Save note' : 'Save follow-up');
-    click('Today'); expect(history).toHaveBeenCalledTimes(7); expect(screen.getByText('Close editing')).toBeDisabled();
+    click(preset); expect(history).toHaveBeenCalledTimes(7); expect(screen.getByText('Close editing')).toBeDisabled();
     await act(async () => pending.reject(new Error('PRIVATE'))); expect(timing).toBeDisabled(); expect(feedback()).toBeNull();
-    click('Close editing'); click('Today'); await waitFor(() => expect(history).toHaveBeenCalledTimes(14));
+    click('Close editing'); click(preset); await waitFor(() => expect(history).toHaveBeenCalledTimes(14));
   });
 
-  it('guards same-tick confirmation, pending status changes, and detail opening', async () => {
+  it.each(['Today', 'Next 7 days'])('guards same-tick confirmation, pending status changes, and detail opening (%s)', async (preset) => {
     const pending = deferred<AnalysisTracking>(); tracking.mockReturnValue(pending.promise);
     const view = render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
     fireEvent.change(screen.getByLabelText('New status for Fictional Engineer record'), { target: { value: 'applied' } });
-    act(() => { click('Review change'); click('Today'); }); expect(history).toHaveBeenCalledTimes(7); expect(screen.getByText('Today')).toBeDisabled();
+    act(() => { click('Review change'); click(preset); }); expect(history).toHaveBeenCalledTimes(7); expect(screen.getByText(preset)).toBeDisabled();
     click('Confirm status change'); click('Clear timing filter'); expect(history).toHaveBeenCalledTimes(7);
     await act(async () => pending.reject(Error('PRIVATE'))); click('Cancel');
-    view.rerender(<ApplicationPipelineBoard {...props} opening />); click('Today'); expect(history).toHaveBeenCalledTimes(7);
+    view.rerender(<ApplicationPipelineBoard {...props} opening />); click(preset); expect(history).toHaveBeenCalledTimes(7);
     expect(feedback()).toBeNull(); expect(update).not.toHaveBeenCalled();
   });
 
   it('disables all presets for invalid local calendar components', async () => {
     vi.spyOn(Date.prototype, 'getDate').mockReturnValue(NaN);
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
-    for (const name of ['Past dates', 'Today', 'Upcoming dates']) { expect(screen.getByText(name)).toBeDisabled(); click(name); }
+    for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days']) { expect(screen.getByText(name)).toBeDisabled(); click(name); }
     expect(history).toHaveBeenCalledTimes(7); expect(feedback()).toBeNull();
   });
 
-  it('retains pagination, retry offsets, duplicate suppression and generation guards under presets in StrictMode', async () => {
+  it.each(['Past dates', 'Next 7 days'])('retains pagination, retry offsets, duplicate suppression and generation guards in StrictMode (%s)', async (preset) => {
     const rows = Array.from({ length: 24 }, (_, i) => record(String(i)));
     supply(rows);
     const view = render(<StrictMode><ApplicationPipelineBoard {...props} /></StrictMode>); await screen.findByText('Fictional Engineer 0');
@@ -266,36 +281,36 @@ describe('Board timing quick filters', () => {
     expect(lane().getAllByRole('listitem')).toHaveLength(10); expect(screen.queryByText('Fictional Engineer 10')).toBeNull();
     const stale = deferred<AnalysisHistoryResponse>(); history.mockReturnValueOnce(stale.promise);
     fireEvent.click(lane().getByRole('button', { name: /Load more/ }));
-    click('Past dates'); await screen.findByText('Fictional Engineer 0');
+    click(preset); await screen.findByText('Fictional Engineer 0');
     await act(async () => stale.resolve({ items: [record('STALE')] })); expect(screen.queryByText('Fictional Engineer STALE')).toBeNull();
     history.mockRejectedValueOnce(Error('PRIVATE')); fireEvent.click(lane().getByRole('button', { name: /Load more/ })); await lane().findByRole('alert');
     history.mockResolvedValueOnce({ items: [rows[0], ...rows.slice(10, 20)] }); click('Retry Not applied'); await screen.findByText('Fictional Engineer 18');
     expect(lane().getAllByRole('listitem')).toHaveLength(19);
-    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', has_follow_up: true, follow_up_to: '2026-11-03' });
-    const count = history.mock.calls.length; click('Past dates'); expect(history).toHaveBeenCalledTimes(count); // No-op keeps loaded pages.
+    expect(history).toHaveBeenLastCalledWith(11, 10, { application_status: 'not_applied', has_follow_up: true, ...(preset === 'Next 7 days' ? { follow_up_from: '2026-11-05', follow_up_to: '2026-11-11' } : { follow_up_to: '2026-11-03' }) });
+    const count = history.mock.calls.length; click(preset); expect(history).toHaveBeenCalledTimes(count); // No-op keeps loaded pages.
     click('Upcoming dates'); await screen.findByText('Fictional Engineer 0'); expect(lane().getAllByRole('listitem')).toHaveLength(10);
     const drag = await startDrag('0'); click('Today'); dropIn('Applied', drag.dataTransfer); expect(screen.queryByRole('region', { name: 'Confirm application status change' })).toBeNull();
     view.rerender(<StrictMode><ApplicationPipelineBoard {...props} refreshKey={1} /></StrictMode>);
     expect(history.mock.calls.slice(-7).every(([, offset, filters]) => offset === 0 && filters?.follow_up_from === '2026-11-04' && filters.follow_up_to === '2026-11-04')).toBe(true);
     await screen.findByText('Fictional Engineer 0');
-    const late = deferred<AnalysisHistoryResponse>(); history.mockReturnValueOnce(late.promise); click('Past dates'); view.unmount();
+    const late = deferred<AnalysisHistoryResponse>(); history.mockReturnValueOnce(late.promise); click(preset); view.unmount();
     await act(async () => late.resolve({ items: [record('UNMOUNTED')] })); expect(screen.queryByText('Fictional Engineer UNMOUNTED')).toBeNull();
   });
 
-  it.each(['reschedule', 'clear', 'failure'] as const)('retains preset criteria through authoritative follow-up %s', async (action) => {
-    let date: string | null = '2026-11-04';
+  it.each([['reschedule', 'Today'], ['clear', 'Today'], ['failure', 'Today'], ['reschedule', 'Next 7 days'], ['clear', 'Next 7 days'], ['failure', 'Next 7 days']] as const)('retains preset criteria through authoritative follow-up %s (%s)', async (action, preset) => {
+    let date: string | null = preset === 'Today' ? '2026-11-04' : '2026-11-05';
     history.mockImplementation(async (_limit, _offset, filters = {}) => ({ items: filters.application_status === 'not_applied'
       && (!filters.follow_up_from || (date !== null && date >= filters.follow_up_from))
       && (!filters.follow_up_to || (date !== null && date <= filters.follow_up_to)) ? [{ ...record(), follow_up_on: date }] : [] }));
     vi.mocked(getAnalysisFollowUp).mockImplementation(async () => followUpValue(date));
     vi.mocked(updateAnalysisFollowUp).mockImplementation(async (_id, next) => { if (action === 'failure') throw Error('PRIVATE'); date = next; return followUpValue(date); });
     vi.mocked(clearAnalysisFollowUp).mockImplementation(async () => { date = null; });
-    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record'); click('Today'); await screen.findByText('Fictional Engineer record');
+    render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record'); click(preset); await screen.findByText('Fictional Engineer record');
     const input = await openFollowUp();
     if (action === 'clear') { click('Clear follow-up'); fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up')); await screen.findByText('Follow-up date cleared.'); }
-    else { fireEvent.change(input, { target: { value: '2026-11-05' } }); click('Save follow-up'); if (action === 'failure') await screen.findByRole('alert'); else await screen.findByText('Follow-up date saved.'); }
+    else { fireEvent.change(input, { target: { value: '2026-11-12' } }); click('Save follow-up'); if (action === 'failure') await screen.findByRole('alert'); else await screen.findByText('Follow-up date saved.'); }
     expect(feedback()).toHaveTextContent('As of: 2026-11-04.');
-    if (action === 'failure') { expect(lane().getByText('Follow-up today')).toBeVisible(); expect(history).toHaveBeenCalledTimes(14); }
+    if (action === 'failure') { expect(lane().getByText(preset === 'Today' ? 'Follow-up today' : 'Upcoming follow-up')).toBeVisible(); expect(history).toHaveBeenCalledTimes(14); }
     else { expect(lane().queryByText('Fictional Engineer record')).toBeNull(); expect(history).toHaveBeenCalledTimes(21); }
     click('Close editing'); expect(screen.getByText(action === 'failure' ? 'Edit follow-up' : 'Refresh board')).toHaveFocus();
   });
