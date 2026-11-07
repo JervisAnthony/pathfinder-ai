@@ -11,7 +11,7 @@ import {
 import { ApplicationStatus, SavedAnalysisDetail, SavedAnalysisSummary, SavedAnalysisComparison } from '../../types/api';
 import { formatCalendarDate, formatSavedTimestamp } from './formatting';
 import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from './followUpTiming';
-import type { FollowUpTiming } from './followUpTiming';
+import type { FollowUpFilterPreset } from './historyTimingFilters';
 import { historyTimingCriteria, replaceHistoryTiming, timingPresetLabels } from './historyTimingFilters';
 import { SavedAnalysisDetail as SavedDetailView } from './SavedAnalysisDetail';
 import { SavedAnalysisComparison as ComparisonView } from './SavedAnalysisComparison';
@@ -77,7 +77,7 @@ export function AnalysisHistory() {
   const [followUpTo, setFollowUpTo] = useState('');
   const followUpFromInput = useRef<HTMLInputElement>(null);
   const followUpToInput = useRef<HTMLInputElement>(null);
-  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpTiming; today: string } | null>(null);
+  const [timingPreset, setTimingPreset] = useState<{ name: FollowUpFilterPreset; today: string } | null>(null);
   const [timingError, setTimingError] = useState<string | null>(null);
   const [sort, setSort] = useState<AnalysisHistorySort>('created_desc');
   const [minScore, setMinScore] = useState('');
@@ -172,7 +172,7 @@ export function AnalysisHistory() {
     if (followUpToInput.current) followUpToInput.current.value = to;
   };
 
-  const applyTiming = (name: FollowUpTiming | null) => {
+  const applyTiming = (name: FollowUpFilterPreset | null) => {
     const today = localCalendarDay(new Date());
     const criteria = name === null ? {} : historyTimingCriteria(name, today);
     if (criteria === null) {
@@ -394,14 +394,14 @@ export function AnalysisHistory() {
         <fieldset className="history-timing-filters" aria-describedby="history-timing-help history-timing-boundary">
           <legend>Follow-up timing quick filters</legend>
           <div className="export-actions">
-            {(['past', 'today', 'upcoming'] as const).map((name) => (
+            {(['past', 'today', 'upcoming', 'next_7_days'] as const).map((name) => (
               <button key={name} type="button" disabled={historyTimingCriteria(name, localToday) === null}
                 aria-pressed={timingPreset?.name === name} onClick={() => applyTiming(name)}>{timingPresetLabels[name]}</button>
             ))}
             <button type="button" onClick={() => applyTiming(null)}>Clear timing filter</button>
           </div>
-          <p id="history-timing-help">Past dates selects dates before today; Today selects today; Upcoming dates selects dates after today. These filters use saved follow-up dates, regardless of task completion. The browser-local date is captured at click time; boundaries stay fixed until reapplied, including across midnight. You can still edit and apply custom date ranges.</p>
-          <p id="history-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates is unavailable on the last day. An invalid or unsupported browser-local date disables all three presets.</p>
+          <p id="history-timing-help">Past dates selects dates before today; Today selects today; Upcoming dates selects dates after today. Next 7 days selects tomorrow through the seventh future calendar day, inclusive, excluding today. These filters use saved follow-up dates, regardless of task completion. The browser-local date is captured at click time; boundaries stay fixed until reapplied, including across midnight. You can still edit and apply custom date ranges.</p>
+          <p id="history-timing-boundary">Supported dates: 0001-01-01 through 9999-12-31. Past dates is unavailable on the first day; Upcoming dates and Next 7 days are unavailable on the last day. Near that limit, Next 7 days includes only the remaining supported future dates, ending at 9999-12-31. An invalid or unsupported browser-local date disables all four presets.</p>
           {timingPreset && <p>Applied: {timingPresetLabels[timingPreset.name]}. As of: {timingPreset.today}.</p>}
           {timingError && <p>{timingError}</p>}
         </fieldset>

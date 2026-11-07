@@ -992,10 +992,11 @@ success rates, or application success probabilities.
 
 ### History List follow-up timing quick filters
 
-Within the List filter form, **Past dates**, **Today**, and **Upcoming dates**
+Within the List filter form, **Past dates**, **Today**, **Upcoming dates**, and **Next 7 days**
 immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
-strictly after today. Past and Upcoming both exclude today, and all three exclude
+strictly after today. Next 7 days selects tomorrow through the seventh future
+calendar day, inclusive. Past, Upcoming and Next 7 days exclude today; all four exclude
 unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
@@ -1040,12 +1041,13 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 
 ### Board follow-up timing quick filters
 
-The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
+The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**, **Next 7 days**,
 and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
-(strictly after today). All three exclude unscheduled records.
+(strictly after today). Next 7 days selects tomorrow through the seventh future
+calendar day, inclusive, excluding today. All four exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1089,6 +1091,52 @@ completion or employer-obligation inference. There are no backend/API/schema cha
 new dependencies, private content decoding, AI calls, telemetry or browser persistence.
 Deterministic Vitest tests cover these contracts. Real-browser E2E,
 assistive-technology and narrow-layout visual testing have not been performed.
+
+### Next-seven-day follow-up filtering
+
+**Next 7 days** is available in both the History List and Board timing groups.
+It is a bounded subset of Upcoming dates: if the browser-local date is 2026-11-05,
+it applies `has_follow_up=true`, `follow_up_from=2026-11-06` and
+`follow_up_to=2026-11-12`. Both server bounds are inclusive. Today, past dates,
+dates after day seven and unscheduled records are excluded. The shared
+`historyTimingCriteria()` helper advances canonical calendar dates using
+`adjacentCalendarDay()`, without timestamps or timezone conversion. The separate
+filter-preset type leaves the static Past follow-up date, Follow-up today and
+Upcoming follow-up cues unchanged.
+
+Each click captures `localCalendarDay(new Date())`. The applied range and As of
+feedback stay fixed across midnight until explicit reapplication. At the calendar
+maximum the range truncates: 9999-12-29 selects 9999-12-30 through 9999-12-31.
+On 9999-12-31 there is no future date, so Next 7 days is disabled. Invalid or
+unsupported local dates also disable it and are guarded at click time; an
+impossible range never becomes an unrestricted query.
+
+Only timing criteria and their native form drafts change. Other applied search,
+score bounds (including zero), AI presence (including false) and sort order persist;
+unrelated unsent drafts remain unsubmitted. Existing manual date filters remain.
+Clear timing removes the range; successful manual Apply removes preset attribution;
+List Clear filters and Board Clear follow-up/Reset all clear their existing criteria
+and feedback. Board unrelated filter applications preserve the preset attribution.
+
+List uses its existing 20-record pages; changed Board criteria refresh all seven
+lanes to their first ten-card page, retaining lookahead, independent Load more/Retry,
+server order, duplicate suppression, stale-response guards and drag invalidation.
+Unchanged criteria avoid redundant requests. Filtered List CSV and Board CSV inherit
+their independent applied ranges across all matches, including unloaded records,
+within the unchanged 10,000-row cap. All-record List CSV remains unfiltered. CSV
+columns, metadata-only content, formula protection and download lifecycle are unchanged.
+Overview continues showing global counts and its existing earliest five follow-ups.
+
+Board detail/status/quick-editor locks also protect the new button, including
+same-tick actions; editors and unsaved drafts remain open. Saved follow-up edits
+use authoritative refresh paths and may remove records outside the window; failed
+writes retain saved data. Native buttons retain semantic groups, aria-pressed,
+visible keyboard focus, responsive wrapping and visible text feedback.
+No backend/API/schema changes, dependencies, private-content requests, timers,
+scheduled jobs, notifications, reminders, completion/overdue inference, AI calls,
+telemetry or browser persistence are added. Deterministic automated tests cover
+these contracts; real-browser E2E, assistive-technology and narrow-layout visual
+testing have not been performed.
 
 ### Saved analysis application follow-up date
 

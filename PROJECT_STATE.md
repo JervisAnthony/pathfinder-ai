@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-11-04
+Last updated: 2026-11-05
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #46 merge, 2026-11-03 IST):
+Latest verified completed main (PR #47 merge, 2026-11-05 IST):
 
-`c1db7352a4d2279df837244c23b70f15acc5bff0`
+`e257148bd7776adaf885ad981438a0e7419bd59a`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 42 — History Follow-Up Timing Quick Filters**
+**Commit 43 — Kanban Follow-Up Timing Quick Filters**
 
 ## Completed MVP-1 Roadmap
 
@@ -68,56 +68,62 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 42 — History Follow-Up Timing Quick Filters — COMPLETE (PR #46 merged 2026-11-03 IST)
 
+- Commit 43 — Kanban Follow-Up Timing Quick Filters — COMPLETE (PR #47 merged 2026-11-05 IST)
+
 ## Post-MVP Active Work
 
-**Commit 43 — Kanban Follow-Up Timing Quick Filters**
+**Commit 44 — Upcoming Seven-Day Follow-Up Filter**
 
 Status: **Authorized active development.**
 
-Board adds Past dates, Today, Upcoming dates, and Clear timing filter beside
-its existing manual follow-up controls. Presets reuse localCalendarDay and
-historyTimingCriteria from the List implementation: scheduled-only ranges end
-at yesterday, equal today, or start tomorrow. Each selection captures the
-browser-local calendar day; boundaries stay fixed across midnight until reapplied.
-Supported dates remain 0001-01-01 through 9999-12-31. Impossible calendar ranges
-are disabled with help and guarded again at click time; no unbounded fallback.
+History List and Kanban Board add Next 7 days to their existing follow-up timing
+quick-filter groups. The preset selects scheduled dates from tomorrow through
+the seventh future calendar day, inclusive; today, earlier dates, later dates and
+unscheduled records are excluded. The separate FollowUpFilterPreset type extends
+filter choices without changing FollowUpTiming, classifyFollowUpDate or the three
+static date cues. historyTimingCriteria reuses adjacentCalendarDay for date-only
+advancement, without timestamp conversion or duplicated Gregorian arithmetic.
 
-Only applied Board follow-up criteria and corresponding drafts change. Native
-date editors synchronize and stale follow-up validation clears. Other applied
-search, scores (including zero), AI presence (including no), and sorting persist;
-unrelated unsent drafts and errors remain independent. Clear timing removes only
-follow-up criteria. Successful manual Apply, Clear follow-up filters, and Reset
-all Board criteria remove preset attribution, including unchanged-query Apply.
-Unrelated filter applications preserve visible preset and captured-date feedback.
+Each selection captures localCalendarDay(new Date()) at click time. Boundaries
+stay fixed across midnight until explicitly reapplied. Near year 9999 the upper
+bound truncates to 9999-12-31; the final supported day has no future range and
+disables the preset. Invalid or unsupported local dates are disabled and guarded
+again at click time, without an unrestricted-query fallback.
 
-Existing applyBoardFilters/refresh/loadLane paths refresh all seven lanes only
-when criteria change, reset to their first ten-card page, and retain lookahead,
-server ordering, independent pagination/retry, duplicate suppression and stale
-response guards. Unchanged criteria remain a no-op. Presets use canChangeFilters
-and existing UI locks for detail opening, confirmation, status writes, open quick
-editors and pending writes, including same-tick actions. Existing drag invalidation,
-authoritative follow-up/note writes and focus recovery remain in place.
+Both views retain their own applied criteria, drafts and preset attribution.
+Only follow-up presence/date criteria and corresponding native drafts change;
+unrelated applied search, zero score bounds, AI false and sorting, plus unsent
+drafts, remain independent. Clear timing removes the range; manual Apply and
+existing full Clear/Reset remove attribution. Board unrelated criteria changes
+retain attribution. Existing manual date filters remain available.
 
-Board CSV inherits applied criteria across all matching records within the
-existing 10,000-row cap; drafts, CSV columns and download lifecycle are unchanged.
-List presets, drafts, pagination, comparison and CSV remain independent. Overview
-retains global counts and its earliest five follow-ups. No shared selection state,
-API/schema/backend changes, dependencies, timers, notifications, reminders,
-completion/overdue inference, private content decoding, AI calls, telemetry or
+List uses its existing 20-record pagination and request guards. Board uses its
+existing seven-lane refresh, ten-card pages, eleventh-record lookahead, independent
+Load more/Retry, duplicate suppression, stale-response protection and drag
+invalidation. Unchanged criteria avoid redundant requests. Existing detail,
+confirmation, status-write and quick-editor locks remain in place. Authoritative
+saved follow-up edits refresh matching results; failed writes retain saved data.
+
+Filtered List CSV and Board CSV inherit their respective applied ranges across
+all matching records within the existing 10,000-row cap; all-record List CSV stays
+unfiltered. Export columns, metadata-only privacy protections, ordering, errors,
+duplicate-click guards, unmount protections and Blob URL cleanup remain unchanged.
+List/Board criteria remain independent; Overview retains global counts, seven
+status counts and its earliest five follow-ups with existing date cues.
+
+Native type=button controls retain semantic grouping, aria-pressed, visible focus,
+wrapping and text feedback. Tests cover calendar boundaries, local dates,
+applied/draft isolation, server requests, pagination, stale responses, exports,
+mutation locks and saved-data refresh. Real-browser E2E, assistive-technology and
+narrow-layout visual testing have not been performed. No backend/API/schema,
+dependency, clock context, timers, scheduled jobs, reminders, notifications,
+completion/overdue inference, private-content requests, AI calls, telemetry or
 browser persistence are introduced.
 
-Deterministic component tests extend calendar-helper coverage with seven-lane
-requests, applied/draft isolation, local-date capture, bounds, native date writes,
-mutation locks, pagination, stale responses, StrictMode/unmount, persisted edits
-and cross-view/export isolation. Native buttons use a semantic group, wrapping,
-visible focus, explanatory help and text feedback without new live announcements.
-Real-browser E2E, assistive-technology and narrow-layout visual testing have not
-been performed.
-
-The maintainer authorized reconciliation of Commit 42 following PR #46's merge
-at `c1db7352a4d2279df837244c23b70f15acc5bff0` on 2026-11-03 IST
-(2026-11-03T17:07:54Z). Codex implements, validates, reviews and stages locally.
-The human maintainer owns commits, publication, PR, review and merge. No Commit 43
+The maintainer authorized reconciliation of Commit 43 following PR #47's merge
+at `e257148bd7776adaf885ad981438a0e7419bd59a` on 2026-11-05 IST
+(2026-11-05T16:55:56Z). Codex implements, validates, reviews and stages locally.
+The human maintainer owns commits, publication, PR, review and merge. No Commit 44
 PR number is assigned; local implementation does not mark it complete.
 
 ## Existing Capabilities
@@ -168,7 +174,8 @@ The repository already contains:
 - Saved follow-up date timing cues on Board cards
 - Saved follow-up date timing cues on List and Overview entries
 - List-only server-backed follow-up timing quick filters
-- Board-specific timing quick filters (authorized active development)
+- Board-specific timing quick filters
+- Next-seven-day timing preset in List and Board (authorized active development)
 
 ## Architectural Boundary
 
