@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-11-05
+Last updated: 2026-11-07
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #47 merge, 2026-11-05 IST):
+Latest verified completed main (PR #48 merge, 2026-11-07 IST):
 
-`e257148bd7776adaf885ad981438a0e7419bd59a`
+`80e561f625c19ba9fea3bd9ea4677d171247ca6b`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 43 — Kanban Follow-Up Timing Quick Filters**
+**Commit 44 — Upcoming Seven-Day Follow-Up Filter**
 
 ## Completed MVP-1 Roadmap
 
@@ -70,25 +70,29 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 43 — Kanban Follow-Up Timing Quick Filters — COMPLETE (PR #47 merged 2026-11-05 IST)
 
+- Commit 44 — Upcoming Seven-Day Follow-Up Filter — COMPLETE (PR #48 merged 2026-11-07 IST)
+
 ## Post-MVP Active Work
 
-**Commit 44 — Upcoming Seven-Day Follow-Up Filter**
+**Commit 45 — This Week Follow-Up Filtering**
 
 Status: **Authorized active development.**
 
-History List and Kanban Board add Next 7 days to their existing follow-up timing
-quick-filter groups. The preset selects scheduled dates from tomorrow through
-the seventh future calendar day, inclusive; today, earlier dates, later dates and
-unscheduled records are excluded. The separate FollowUpFilterPreset type extends
-filter choices without changing FollowUpTiming, classifyFollowUpDate or the three
-static date cues. historyTimingCriteria reuses adjacentCalendarDay for date-only
-advancement, without timestamp conversion or duplicated Gregorian arithmetic.
+History List and Kanban Board add This week alongside all four existing presets.
+It selects scheduled dates in the fixed Monday-Sunday calendar week, inclusive
+of both endpoints, today and earlier dates this week. Next 7 days still selects
+tomorrow through the seventh future day. Only FollowUpFilterPreset gains this_week;
+FollowUpTiming, classifyFollowUpDate and the three static date cues are unchanged.
 
-Each selection captures localCalendarDay(new Date()) at click time. Boundaries
-stay fixed across midnight until explicitly reapplied. Near year 9999 the upper
-bound truncates to 9999-12-31; the final supported day has no future range and
-disables the preset. Invalid or unsupported local dates are disabled and guarded
-again at click time, without an unrestricted-query fallback.
+historyTimingCriteria counts Gregorian days since Monday 0001-01-01 with integer
+components, obtaining month lengths from the canonical validator and reusing
+adjacentCalendarDay to reach Monday/Sunday. No duplicated leap-year calculation,
+timestamps or timezone conversion are introduced. Each selection captures
+localCalendarDay(new Date()) at click time; bounds stay fixed across midnight and
+week rollover until explicitly reapplied. The first week spans 0001-01-01 through
+0001-01-07. The last week clamps to 9999-12-27 through 9999-12-31, remaining
+available on the final supported day. Invalid or unsupported local dates disable
+the preset and are guarded again at click time without an unbounded fallback.
 
 Both views retain their own applied criteria, drafts and preset attribution.
 Only follow-up presence/date criteria and corresponding native drafts change;
@@ -120,11 +124,12 @@ dependency, clock context, timers, scheduled jobs, reminders, notifications,
 completion/overdue inference, private-content requests, AI calls, telemetry or
 browser persistence are introduced.
 
-The maintainer authorized reconciliation of Commit 43 following PR #47's merge
-at `e257148bd7776adaf885ad981438a0e7419bd59a` on 2026-11-05 IST
-(2026-11-05T16:55:56Z). Codex implements, validates, reviews and stages locally.
-The human maintainer owns commits, publication, PR, review and merge. No Commit 44
-PR number is assigned; local implementation does not mark it complete.
+The maintainer authorized reconciliation of Commit 44 following PR #48's merge
+at `80e561f625c19ba9fea3bd9ea4677d171247ca6b`, recorded as 2026-11-07 IST in
+the authorization (merge timestamp 2026-11-07T17:21:16Z). Codex implements,
+validates, reviews and stages locally. The human maintainer owns commits,
+publication, PR, review and merge. Commit 45 remains authorized active work;
+no future PR number is assigned and local implementation does not mark it complete.
 
 ## Existing Capabilities
 
@@ -175,7 +180,8 @@ The repository already contains:
 - Saved follow-up date timing cues on List and Overview entries
 - List-only server-backed follow-up timing quick filters
 - Board-specific timing quick filters
-- Next-seven-day timing preset in List and Board (authorized active development)
+- Next-seven-day timing preset in List and Board
+- This-week Monday-Sunday timing preset in List and Board (authorized active development)
 
 ## Architectural Boundary
 
