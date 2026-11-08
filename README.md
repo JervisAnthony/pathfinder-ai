@@ -992,12 +992,13 @@ success rates, or application success probabilities.
 
 ### History List follow-up timing quick filters
 
-Within the List filter form, **Past dates**, **Today**, **Upcoming dates**, and **Next 7 days**
-immediately apply server filters to saved follow-up calendar dates. Past selects
+Within the List filter form, **Past dates**, **Today**, **Upcoming dates**,
+**Next 7 days**, and **This week** immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
 strictly after today. Next 7 days selects tomorrow through the seventh future
-calendar day, inclusive. Past, Upcoming and Next 7 days exclude today; all four exclude
-unscheduled records. These dates describe saved metadata, with no overdue-task,
+calendar day, inclusive. This week selects the inclusive Monday-Sunday calendar
+week, including today and earlier dates this week. Past, Upcoming and Next 7 days
+exclude today; all five exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
 Each click captures `localCalendarDay(new Date())`. The existing inclusive server
@@ -1041,13 +1042,15 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 
 ### Board follow-up timing quick filters
 
-The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**, **Next 7 days**,
-and **Clear timing filter**, alongside the existing status/date fields, **Apply
+The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
+**Next 7 days**, **This week**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
 (strictly after today). Next 7 days selects tomorrow through the seventh future
-calendar day, inclusive, excluding today. All four exclude unscheduled records.
+calendar day, inclusive, excluding today. This week selects the inclusive
+Monday-Sunday calendar week, including today and earlier dates this week. All five
+exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1137,6 +1140,58 @@ scheduled jobs, notifications, reminders, completion/overdue inference, AI calls
 telemetry or browser persistence are added. Deterministic automated tests cover
 these contracts; real-browser E2E, assistive-technology and narrow-layout visual
 testing have not been performed.
+
+### This-week follow-up filtering
+
+**This week** in History List and Kanban Board selects scheduled dates in the
+current **Monday-through-Sunday** calendar week. Both endpoints, today, and earlier
+dates this week are included; unscheduled dates and dates outside the week are
+excluded. Monday is fixed, independent of browser locale. For browser-local
+Saturday 2026-11-07, the existing server parameters are `has_follow_up=true`,
+`follow_up_from=2026-11-02`, and `follow_up_to=2026-11-08`. **Next 7 days** remains
+available and instead selects tomorrow through the seventh future day.
+
+The shared pure Gregorian calculation counts days since Monday 0001-01-01 using
+integer year/month/day components and the canonical date validator for month
+lengths. It then uses `adjacentCalendarDay()` to reach Monday and Sunday, without
+Date parsing, timestamps, UTC conversion or duplicated leap-year rules. At the
+minimum the week is 0001-01-01 through 0001-01-07. At the maximum it clamps to
+9999-12-27 through 9999-12-31; This week remains available on the final day.
+Invalid or unsupported browser-local dates disable the preset and are guarded
+again at click time, preventing unbounded requests.
+
+Each selection captures browser-local today at click time. Applied bounds and
+As of feedback remain fixed across midnight and a new week until explicitly
+reapplied. Manual date controls remain available. Only follow-up criteria and
+native drafts change; other applied filters (including score zero and AI false),
+unsent drafts, and unrelated Board validation remain independent. Successful manual
+Apply removes attribution; Clear timing removes follow-up criteria; List Clear
+filters and Board Reset all retain their existing scope. Unrelated Board Apply
+keeps preset attribution.
+
+List retains 20-record pagination and page-one reset. Changed Board criteria
+refresh all seven status lanes with identical week bounds and per-lane status,
+ten-card pages and eleventh-record lookahead. Existing server order, Load more,
+Retry, deduplication, stale-response guards and drag invalidation remain in use.
+Unchanged criteria avoid redundant requests. Detail, confirmation, mutation and
+quick-editor locks apply to the Board preset, without discarding editor drafts.
+Saved follow-up edits refresh authoritative results; failed writes retain data.
+
+Filtered List CSV and Board CSV inherit their own applied week and other criteria
+across all server matches within the existing 10,000-row limit. All-record List
+CSV stays unfiltered. Columns, metadata-only content, formula protection, request
+guards and Blob URL cleanup are unchanged. List and Board selection, drafts,
+pagination and export criteria remain independent; Overview keeps global counts,
+seven status counts and the existing earliest five follow-ups. Static date cues
+remain past/today/upcoming, with no overdue or completion inference.
+
+Native buttons retain semantic grouping, aria-pressed, descriptive help, visible
+focus, responsive wrapping and textual feedback. No backend, API, schema,
+dependency, saved-data mutation, shared filter store, persistence, timers,
+reminders, notifications, AI calls or telemetry are added. Deterministic Vitest
+coverage includes week boundaries, request behavior and cross-view isolation.
+Real-browser E2E, assistive-technology and narrow-layout visual testing have not
+been performed.
 
 ### Saved analysis application follow-up date
 

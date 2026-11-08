@@ -1,8 +1,42 @@
 import { describe, expect, it, vi } from 'vitest';
 import { adjacentCalendarDay, historyTimingCriteria, replaceHistoryTiming } from '../historyTimingFilters';
-import { localCalendarDay } from '../followUpTiming';
+import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from '../followUpTiming';
 
 describe('date-only timing ranges', () => {
+  it.each([
+    ...['02', '03', '04', '05', '06', '07', '08'].map((day) => [`2026-11-${day}`, '2026-11-02', '2026-11-08']),
+    ['2026-11-09', '2026-11-09', '2026-11-15'],
+    ['2026-11-01', '2026-10-26', '2026-11-01'],
+    ['2026-12-31', '2026-12-28', '2027-01-03'],
+    ['2024-02-29', '2024-02-26', '2024-03-03'],
+    ['2026-02-28', '2026-02-23', '2026-03-01'],
+    ['1900-02-28', '1900-02-26', '1900-03-04'],
+    ['2000-02-29', '2000-02-28', '2000-03-05'],
+    ['2100-03-01', '2100-03-01', '2100-03-07'],
+    ['0001-01-01', '0001-01-01', '0001-01-07'],
+    ['0001-01-07', '0001-01-01', '0001-01-07'],
+    ['0099-01-01', '0098-12-29', '0099-01-04'],
+    ['9999-12-27', '9999-12-27', '9999-12-31'],
+    ['9999-12-31', '9999-12-27', '9999-12-31'],
+  ])('selects the inclusive Monday-Sunday week containing %s', (today, from, to) => {
+    const criteria = historyTimingCriteria('this_week', today)!;
+    expect(criteria).toEqual({ has_follow_up: true, follow_up_from: from, follow_up_to: to });
+    expect(from <= today && today <= to).toBe(true);
+    const current = replaceHistoryTiming({ query: 'Engineer', ai_enriched: false, min_score: 0 }, criteria);
+    expect(replaceHistoryTiming(current, criteria)).toBe(current);
+  });
+
+  it('includes past, present and future dates in the week without changing factual date cues', () => {
+    const criteria = historyTimingCriteria('this_week', '2026-11-07')!;
+    const dates = [null, '2026-11-01', '2026-11-02', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09'];
+    expect(dates.filter((date) => date !== null && date >= criteria.follow_up_from! && date <= criteria.follow_up_to!))
+      .toEqual(['2026-11-02', '2026-11-06', '2026-11-07', '2026-11-08']);
+    expect(classifyFollowUpDate('2026-11-02', '2026-11-07')).toBe('past');
+    expect(classifyFollowUpDate('2026-11-07', '2026-11-07')).toBe('today');
+    expect(classifyFollowUpDate('2026-11-08', '2026-11-07')).toBe('upcoming');
+    expect(Object.keys(followUpTimingLabels)).toEqual(['past', 'today', 'upcoming']);
+  });
+
   it.each([
     ['2026-11-05', '2026-11-06', '2026-11-12'],
     ['2026-11-27', '2026-11-28', '2026-12-04'],
@@ -65,7 +99,7 @@ describe('date-only timing ranges', () => {
     '2026-11-02T00:00:00Z', ' 2026-11-02'])('rejects invalid reference %s', (value) => {
     expect(adjacentCalendarDay(value, -1)).toBeNull();
     expect(adjacentCalendarDay(value, 1)).toBeNull();
-    for (const preset of ['past', 'today', 'upcoming', 'next_7_days'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
+    for (const preset of ['past', 'today', 'upcoming', 'next_7_days', 'this_week'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
   });
 
   it('needs no timestamps or UTC conversion', () => {
@@ -76,12 +110,14 @@ describe('date-only timing ranges', () => {
       expect(historyTimingCriteria('past', '2026-03-08')).toEqual({ has_follow_up: true, follow_up_to: '2026-03-07' });
       expect(historyTimingCriteria('upcoming', '2026-11-01')).toEqual({ has_follow_up: true, follow_up_from: '2026-11-02' });
       expect(historyTimingCriteria('next_7_days', '2026-12-29')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-30', follow_up_to: '2027-01-05' });
+      expect(historyTimingCriteria('this_week', '2026-12-31')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-28', follow_up_to: '2027-01-03' });
     } finally { iso.mockRestore(); time.mockRestore(); parse.mockRestore(); }
   });
 
   it.each([0, -1, 10000])('rejects out-of-range browser year %s', (year) => {
     const date = new Date(2026, 0, 1); date.setFullYear(year);
     expect(historyTimingCriteria('today', localCalendarDay(date))).toBeNull();
+    expect(historyTimingCriteria('this_week', localCalendarDay(date))).toBeNull();
   });
 
   it('replaces only timing and retains identity for equivalent parameters', () => {

@@ -2,10 +2,11 @@ import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import { isCalendarDate } from './boardFollowUpFilters';
 import type { FollowUpTiming } from './followUpTiming';
 
-export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days';
+export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'this_week';
 
 export const timingPresetLabels: Record<FollowUpFilterPreset, string> = {
   past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', next_7_days: 'Next 7 days',
+  this_week: 'This week',
 };
 
 type TimingCriteria = Pick<AnalysisHistoryFilters, 'has_follow_up' | 'follow_up_from' | 'follow_up_to'>;
@@ -36,6 +37,31 @@ export function adjacentCalendarDay(value: string, direction: -1 | 1): string | 
 export function historyTimingCriteria(preset: FollowUpFilterPreset, today: string): TimingCriteria | null {
   if (!isCalendarDate(today)) return null;
   if (preset === 'today') return { has_follow_up: true, follow_up_from: today, follow_up_to: today };
+  if (preset === 'this_week') {
+    const [year, month, day] = today.split('-').map(Number);
+    const precedingYears = year - 1;
+    let elapsed = 365 * precedingYears + Math.floor(precedingYears / 4)
+      - Math.floor(precedingYears / 100) + Math.floor(precedingYears / 400) + day - 1;
+    // Ask the canonical validator for month lengths, including Gregorian leap days.
+    for (let previousMonth = 1; previousMonth < month; previousMonth += 1) {
+      let days = 31;
+      while (!isCalendarDate(calendarDay(year, previousMonth, days))) days -= 1;
+      elapsed += days;
+    }
+    // 0001-01-01 was Monday: fixed Monday=0 through Sunday=6, independent of locale.
+    const weekday = elapsed % 7;
+    let monday = today;
+    let sunday = today;
+    for (let offset = 0; offset < weekday; offset += 1) {
+      monday = adjacentCalendarDay(monday, -1) ?? monday;
+    }
+    for (let offset = weekday; offset < 6; offset += 1) {
+      const next = adjacentCalendarDay(sunday, 1);
+      if (next === null) break; // Clamp the week to the last supported calendar day.
+      sunday = next;
+    }
+    return { has_follow_up: true, follow_up_from: monday, follow_up_to: sunday };
+  }
   const boundary = adjacentCalendarDay(today, preset === 'past' ? -1 : 1);
   if (boundary === null) return null;
   if (preset === 'next_7_days') {
