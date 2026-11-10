@@ -993,12 +993,13 @@ success rates, or application success probabilities.
 ### History List follow-up timing quick filters
 
 Within the List filter form, **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, and **This week** immediately apply server filters to saved follow-up calendar dates. Past selects
+**Next 7 days**, **This week**, and **Next week** immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
 strictly after today. Next 7 days selects tomorrow through the seventh future
 calendar day, inclusive. This week selects the inclusive Monday-Sunday calendar
-week, including today and earlier dates this week. Past, Upcoming and Next 7 days
-exclude today; all five exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
+week, including today and earlier dates this week. Next week selects the following
+Monday-Sunday week, with both endpoints included. Past, Upcoming, Next 7 days and
+Next week exclude today; all six exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
 Each click captures `localCalendarDay(new Date())`. The existing inclusive server
@@ -1043,14 +1044,14 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 ### Board follow-up timing quick filters
 
 The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, **This week**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
+**Next 7 days**, **This week**, **Next week**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
 (strictly after today). Next 7 days selects tomorrow through the seventh future
 calendar day, inclusive, excluding today. This week selects the inclusive
-Monday-Sunday calendar week, including today and earlier dates this week. All five
-exclude unscheduled records.
+Monday-Sunday calendar week, including today and earlier dates this week. Next week
+selects the following Monday-Sunday week, inclusive. All six exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1192,6 +1193,46 @@ reminders, notifications, AI calls or telemetry are added. Deterministic Vitest
 coverage includes week boundaries, request behavior and cross-view isolation.
 Real-browser E2E, assistive-technology and narrow-layout visual testing have not
 been performed.
+
+### Next-week follow-up filtering
+
+**Next week** selects scheduled follow-up dates in the Monday-Sunday calendar week
+immediately after the week containing the browser-local click date. Both endpoints
+are inclusive; the current week, dates outside the range and unscheduled records
+are excluded. Monday is fixed regardless of locale. These three presets have
+distinct meanings. On browser-local 2026-11-09:
+
+| Preset | From (inclusive) | To (inclusive) |
+| --- | --- | --- |
+| This week | 2026-11-09 | 2026-11-15 |
+| Next 7 days | 2026-11-10 | 2026-11-16 |
+| Next week | 2026-11-16 | 2026-11-22 |
+
+The shared integer Gregorian weekday calculation and canonical calendar stepping
+reach next Monday before advancing toward Sunday. If Monday is supported but Sunday
+is beyond 9999-12-31, only the upper bound clamps: clicks from 9999-12-20 through
+9999-12-26 select 9999-12-27 through 9999-12-31. From 9999-12-27 onward there is no
+following supported Monday, so Next week is unavailable. This week remains
+available throughout that final week. Invalid local dates and newly unavailable
+click-time ranges preserve existing applied criteria rather than making an
+unbounded request.
+
+Each selection captures `localCalendarDay(new Date())`. Applied bounds and **As of**
+feedback stay fixed across midnight, Monday rollover and refresh until explicit
+reapplication. Reapplication within the same week updates As of without a redundant
+page-one request. List reapplication still returns to the first 20-record page;
+equivalent Board criteria retain loaded cards and pages. Both views reuse their
+existing request guards, draft synchronization, manual controls and editing locks.
+Their applied criteria and unsent drafts stay independent. Filtered List CSV and
+Board CSV inherit their own applied range across all server matches, including
+unloaded records, within the 10,000-row cap; all-record List CSV remains unfiltered.
+Overview retains global counts and the earliest five follow-ups. This filters one
+user-managed saved date; it does not imply task completion, an overdue obligation,
+an employer response or a reminder being scheduled.
+
+Deterministic helper and React tests cover boundaries, reapplication, request/state
+isolation, exports and locks. Real-browser E2E, assistive-technology and narrow-layout
+visual checks have not been performed.
 
 ### Saved analysis application follow-up date
 
