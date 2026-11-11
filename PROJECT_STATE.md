@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-11-07
+Last updated: 2026-11-09
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #48 merge, 2026-11-07 IST):
+Latest verified completed main (PR #49 merge, 2026-11-08 IST):
 
-`80e561f625c19ba9fea3bd9ea4677d171247ca6b`
+`00e749808afa453498c79cbcaf09418d63fdfd0f`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 44 — Upcoming Seven-Day Follow-Up Filter**
+**Commit 45 — This Week Follow-Up Filtering**
 
 ## Completed MVP-1 Roadmap
 
@@ -72,64 +72,63 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 44 — Upcoming Seven-Day Follow-Up Filter — COMPLETE (PR #48 merged 2026-11-07 IST)
 
+- Commit 45 — This Week Follow-Up Filtering — COMPLETE (PR #49 merged 2026-11-08 IST)
+
 ## Post-MVP Active Work
 
-**Commit 45 — This Week Follow-Up Filtering**
+**Commit 46 — Next Week Follow-Up Filtering**
 
 Status: **Authorized active development.**
 
-History List and Kanban Board add This week alongside all four existing presets.
-It selects scheduled dates in the fixed Monday-Sunday calendar week, inclusive
-of both endpoints, today and earlier dates this week. Next 7 days still selects
-tomorrow through the seventh future day. Only FollowUpFilterPreset gains this_week;
-FollowUpTiming, classifyFollowUpDate and the three static date cues are unchanged.
+History List and Kanban Board add Next week as the sixth timing preset, selecting
+scheduled dates in the following Monday-Sunday calendar week with inclusive bounds.
+This week continues to select the containing week; Next 7 days selects tomorrow
+through the seventh future calendar day. Factual past/today/upcoming cues remain
+unchanged. The shared integer Gregorian weekday calculation and canonical calendar
+stepping require a supported next Monday before clamping Sunday at 9999-12-31.
+Clicks from 9999-12-20 through 9999-12-26 select 9999-12-27 through 9999-12-31;
+Next week is unavailable from 9999-12-27 onward. This week stays available.
 
-historyTimingCriteria counts Gregorian days since Monday 0001-01-01 with integer
-components, obtaining month lengths from the canonical validator and reusing
-adjacentCalendarDay to reach Monday/Sunday. No duplicated leap-year calculation,
-timestamps or timezone conversion are introduced. Each selection captures
-localCalendarDay(new Date()) at click time; bounds stay fixed across midnight and
-week rollover until explicitly reapplied. The first week spans 0001-01-01 through
-0001-01-07. The last week clamps to 9999-12-27 through 9999-12-31, remaining
-available on the final supported day. Invalid or unsupported local dates disable
-the preset and are guarded again at click time without an unbounded fallback.
+Each selection captures browser-local today at click time. Bounds and As of remain
+fixed across midnight, Monday rollover, refresh and unrelated actions until explicit
+reapplication. Only follow-up presence/date criteria and native drafts change;
+unrelated applied criteria, false/zero values and unsent drafts remain independent.
+Manual Apply removes attribution; targeted Clear and existing full Clear/Reset retain
+their established scopes. Unrelated Board Apply preserves timing attribution.
+List retains 20-record pages and reset-on-reapply; equivalent Board ranges retain
+loaded pages without seven extra requests. Changed Board ranges use the existing
+seven-lane refresh, ten-card pages, lookahead, ordering and stale-response guards.
+Detail, confirmation, mutation and quick-editor locks remain in force. Saved
+follow-up edits refresh authoritative data; failed writes preserve saved data.
 
-Both views retain their own applied criteria, drafts and preset attribution.
-Only follow-up presence/date criteria and corresponding native drafts change;
-unrelated applied search, zero score bounds, AI false and sorting, plus unsent
-drafts, remain independent. Clear timing removes the range; manual Apply and
-existing full Clear/Reset remove attribution. Board unrelated criteria changes
-retain attribution. Existing manual date filters remain available.
+Filtered List CSV and Board CSV inherit their own applied range across all matching
+server records within the existing 10,000-row cap. All-record List CSV stays unfiltered.
+Export privacy, columns, ordering and download lifecycle remain unchanged. Overview
+keeps global counts, seven status counts and its earliest five follow-ups. Native
+buttons retain grouping, aria-pressed, visible focus, wrapping and text feedback.
+No backend/API/schema, dependencies, matching, AI, private-content requests, shared
+clock/filter store, browser persistence, timers, notifications or reminder delivery
+are introduced. Dates carry no completion, overdue or employer-response inference.
 
-List uses its existing 20-record pagination and request guards. Board uses its
-existing seven-lane refresh, ten-card pages, eleventh-record lookahead, independent
-Load more/Retry, duplicate suppression, stale-response protection and drag
-invalidation. Unchanged criteria avoid redundant requests. Existing detail,
-confirmation, status-write and quick-editor locks remain in place. Authoritative
-saved follow-up edits refresh matching results; failed writes retain saved data.
+Local validation on Python 3.13.7 in the existing .venv and Node 24.19.0 / npm
+11.17.0 passed: Ruff lint, Ruff format check (88 files), mypy (42 source files),
+759 backend tests with 100% production line coverage (2,874 statements, zero missed),
+frontend lint, TypeScript checking, 997 Vitest tests across 25 files, and production
+build. Existing dependencies were reused; no install or manifest/lockfile change
+was needed. An initial global-Python test run lacked httpx2; the established .venv
+provided the declared dependencies and passed. The successful backend run reported
+an anyio BlockingPortal deprecation, a pytest cache permission warning and a coverage
+module-already-imported warning; the measured production coverage remained 100%.
+Sandbox filesystem restrictions required elevated local Git/test/build execution.
+Real-browser E2E, assistive-technology and narrow-layout visual checks have not
+been performed. These are local results, not CI or independent review.
 
-Filtered List CSV and Board CSV inherit their respective applied ranges across
-all matching records within the existing 10,000-row cap; all-record List CSV stays
-unfiltered. Export columns, metadata-only privacy protections, ordering, errors,
-duplicate-click guards, unmount protections and Blob URL cleanup remain unchanged.
-List/Board criteria remain independent; Overview retains global counts, seven
-status counts and its earliest five follow-ups with existing date cues.
-
-Native type=button controls retain semantic grouping, aria-pressed, visible focus,
-wrapping and text feedback. Tests cover calendar boundaries, local dates,
-applied/draft isolation, server requests, pagination, stale responses, exports,
-mutation locks and saved-data refresh. Real-browser E2E, assistive-technology and
-narrow-layout visual testing have not been performed. No backend/API/schema,
-dependency, clock context, timers, scheduled jobs, reminders, notifications,
-completion/overdue inference, private-content requests, AI calls, telemetry or
-browser persistence are introduced.
-
-The maintainer authorized reconciliation of Commit 44 following PR #48's merge
-at `80e561f625c19ba9fea3bd9ea4677d171247ca6b`, recorded as 2026-11-07 IST in
-the authorization (merge timestamp 2026-11-07T17:21:16Z). Codex implements,
-validates, reviews and stages locally. The human maintainer owns commits,
-publication, PR, review and merge. Commit 45 remains authorized active work;
-no future PR number is assigned and local implementation does not mark it complete.
+The maintainer authorized reconciliation of Commit 45 following PR #49's merge at
+`00e749808afa453498c79cbcaf09418d63fdfd0f` on 2026-11-08 IST
+(2026-11-08T17:57:48Z). Codex implements, validates, reviews and stages locally.
+The human maintainer owns commits, publication, PR, review and merge. Commit 46
+remains authorized active work; no future PR number or merge SHA is assigned.
+Local implementation and staging do not mark it complete.
 
 ## Existing Capabilities
 
@@ -181,7 +180,8 @@ The repository already contains:
 - List-only server-backed follow-up timing quick filters
 - Board-specific timing quick filters
 - Next-seven-day timing preset in List and Board
-- This-week Monday-Sunday timing preset in List and Board (authorized active development)
+- This-week Monday-Sunday timing preset in List and Board
+- Next-week Monday-Sunday timing preset in List and Board (authorized active development)
 
 ## Architectural Boundary
 
