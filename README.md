@@ -993,13 +993,14 @@ success rates, or application success probabilities.
 ### History List follow-up timing quick filters
 
 Within the List filter form, **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, **This week**, and **Next week** immediately apply server filters to saved follow-up calendar dates. Past selects
+**Next 7 days**, **This week**, **Next week**, and **This month** immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
 strictly after today. Next 7 days selects tomorrow through the seventh future
 calendar day, inclusive. This week selects the inclusive Monday-Sunday calendar
 week, including today and earlier dates this week. Next week selects the following
 Monday-Sunday week, with both endpoints included. Past, Upcoming, Next 7 days and
-Next week exclude today; all six exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
+Next week exclude today. This month includes the whole captured calendar month,
+including earlier dates and today; all seven exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
 Each click captures `localCalendarDay(new Date())`. The existing inclusive server
@@ -1044,14 +1045,15 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 ### Board follow-up timing quick filters
 
 The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, **This week**, **Next week**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
+**Next 7 days**, **This week**, **Next week**, **This month**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
 (strictly after today). Next 7 days selects tomorrow through the seventh future
 calendar day, inclusive, excluding today. This week selects the inclusive
 Monday-Sunday calendar week, including today and earlier dates this week. Next week
-selects the following Monday-Sunday week, inclusive. All six exclude unscheduled records.
+selects the following Monday-Sunday week, inclusive. This month includes the entire
+captured calendar month, including earlier dates and today. All seven exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1233,6 +1235,37 @@ an employer response or a reminder being scheduled.
 Deterministic helper and React tests cover boundaries, reapplication, request/state
 isolation, exports and locks. Real-browser E2E, assistive-technology and narrow-layout
 visual checks have not been performed.
+
+### This-month follow-up filtering
+
+**This month** selects scheduled follow-up dates from the first through the last
+Gregorian day of the month containing the browser-local click date, inclusive.
+For 2026-11-12 it applies `has_follow_up=true`, `follow_up_from=2026-11-01` and
+`follow_up_to=2026-11-30`. It includes earlier dates, today and later dates in that
+month, excluding unscheduled records and other months. It is a calendar month.
+The six existing presets retain their meanings and supported boundaries.
+
+All valid reference dates from 0001-01-01 through 9999-12-31 support This month;
+the final month is 9999-12-01 through 9999-12-31. The shared canonical validator
+supplies Gregorian month lengths without timestamps, UTC conversion or crossing
+into year 10000. Invalid click-time dates preserve the applied range and attribution.
+
+Each click captures the local date. Bounds and **As of** stay fixed across passive
+midnight, month/year rollover, refresh and unrelated filter actions until explicit
+reapplication. Same-month reapplication updates As of without another page-one List
+request or Board refresh. List reapplication from a later page returns to page one;
+equivalent Board ranges retain loaded pages. Changed Board ranges refresh all seven
+lanes. Existing manual Apply, targeted Clear, full Clear/Reset and editing guards
+retain their scopes. List and Board applied criteria, unsent drafts and paging remain
+independent. Filtered List CSV and Board CSV inherit their own applied month and
+other criteria across all matching records, including unloaded records, within the
+10,000-row cap. All-record List CSV stays unfiltered; Overview remains global.
+
+Deterministic helper and React tests cover month lengths, leap centuries, endpoints,
+local capture, rollover, paging, exports, request guards and editing locks.
+Real-browser E2E, assistive-technology and narrow-layout visual checks have not been
+performed. These saved-date filters add no completion or employer-response inference,
+reminders, timers, polling or browser persistence.
 
 ### Saved analysis application follow-up date
 

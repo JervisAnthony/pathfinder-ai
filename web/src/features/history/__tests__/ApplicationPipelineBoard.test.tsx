@@ -234,6 +234,17 @@ describe('Board timing quick filters', () => {
     expect(screen.getByText('Follow-up from must be on or before Follow-up to.')).toBeVisible();
     click(preset); expect(screen.queryByText('Follow-up from must be on or before Follow-up to.')).toBeNull();
     expect(screen.getByText('Minimum match score must be no greater than maximum match score.')).toBeVisible();
+    const monthFrom = screen.getByLabelText('Board follow-up from') as HTMLInputElement;
+    const monthTo = screen.getByLabelText('Board follow-up to') as HTMLInputElement;
+    const expectedFrom = monthFrom.value; const expectedTo = monthTo.value;
+    // Native invalid editing can expose an empty value without a React change.
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    nativeSetter.call(monthFrom, '2026-02-30'); nativeSetter.call(monthTo, 'invalid');
+    const fromWrite = vi.spyOn(monthFrom, 'value', 'set'); const toWrite = vi.spyOn(monthTo, 'value', 'set');
+    click(preset);
+    expect(fromWrite).toHaveBeenCalledWith(expectedFrom); expect(toWrite).toHaveBeenCalledWith(expectedTo);
+    expect(monthFrom).toHaveValue(expectedFrom); expect(monthTo).toHaveValue(expectedTo);
+    fromWrite.mockRestore(); toWrite.mockRestore();
     click('Clear timing filter');
     const from = screen.getByLabelText('Board follow-up from') as HTMLInputElement;
     const to = screen.getByLabelText('Board follow-up to') as HTMLInputElement;
@@ -281,7 +292,12 @@ describe('Board timing quick filters', () => {
     const input = mode === 'note' ? await screen.findByRole('textbox', { name: 'Application note' }) : await screen.findByLabelText('Follow-up date');
     fireEvent.change(input, { target: { value: mode === 'note' ? 'Fictional draft' : '2026-11-04' } }); click(mode === 'note' ? 'Save note' : 'Save follow-up');
     click(preset); expect(history).toHaveBeenCalledTimes(7); expect(screen.getByText('Close editing')).toBeDisabled();
+    expect(input).toHaveValue(mode === 'note' ? 'Fictional draft' : '2026-11-04');
     await act(async () => pending.reject(new Error('PRIVATE'))); expect(timing).toBeDisabled(); expect(feedback()).toBeNull();
+    expect(input).toHaveValue(mode === 'note' ? 'Fictional draft' : '2026-11-04');
+    expect(updateAnalysisFollowUp).toHaveBeenCalledTimes(mode === 'note' ? 0 : 1);
+    expect(updateAnalysisNote).toHaveBeenCalledTimes(mode === 'note' ? 1 : 0);
+    expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisNote).not.toHaveBeenCalled();
     click('Close editing'); click(preset); await waitFor(() => expect(history).toHaveBeenCalledTimes(14));
   });
 
