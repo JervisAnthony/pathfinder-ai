@@ -2,13 +2,14 @@ import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import { isCalendarDate } from './boardFollowUpFilters';
 import type { FollowUpTiming } from './followUpTiming';
 
-export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'this_week' | 'next_week' | 'this_month';
+export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'this_week' | 'next_week' | 'this_month' | 'next_month';
 
 export const timingPresetLabels: Record<FollowUpFilterPreset, string> = {
   past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', next_7_days: 'Next 7 days',
   this_week: 'This week',
   next_week: 'Next week',
   this_month: 'This month',
+  next_month: 'Next month',
 };
 
 type TimingCriteria = Pick<AnalysisHistoryFilters, 'has_follow_up' | 'follow_up_from' | 'follow_up_to'>;
@@ -39,8 +40,13 @@ export function adjacentCalendarDay(value: string, direction: -1 | 1): string | 
 export function historyTimingCriteria(preset: FollowUpFilterPreset, today: string): TimingCriteria | null {
   if (!isCalendarDate(today)) return null;
   if (preset === 'today') return { has_follow_up: true, follow_up_from: today, follow_up_to: today };
-  if (preset === 'this_month') {
-    const [year, month] = today.split('-').map(Number);
+  if (preset === 'this_month' || preset === 'next_month') {
+    let [year, month] = today.split('-').map(Number);
+    if (preset === 'next_month') {
+      month += 1;
+      if (month === 13) { year += 1; month = 1; }
+      if (year > 9999) return null;
+    }
     let lastDay = 31;
     while (!isCalendarDate(calendarDay(year, month, lastDay))) lastDay -= 1;
     return { has_follow_up: true, follow_up_from: calendarDay(year, month, 1), follow_up_to: calendarDay(year, month, lastDay) };
