@@ -153,6 +153,7 @@ describe('History List timing quick filters', () => {
     ['This week', { has_follow_up: true, follow_up_from: '2026-11-02', follow_up_to: '2026-11-08' }, '2026-11-02', '2026-11-08'],
     ['Next week', { has_follow_up: true, follow_up_from: '2026-11-09', follow_up_to: '2026-11-15' }, '2026-11-09', '2026-11-15'],
     ['This month', { has_follow_up: true, follow_up_from: '2026-11-01', follow_up_to: '2026-11-30' }, '2026-11-01', '2026-11-30'],
+    ['Next month', { has_follow_up: true, follow_up_from: '2026-12-01', follow_up_to: '2026-12-31' }, '2026-12-01', '2026-12-31'],
   ] as const)('applies %s immediately, synchronizes only timing drafts, and preserves all applied criteria', async (name, timing, from, to) => {
     render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     const changes = { 'Search job title or company': 'Engineer', 'AI enrichment': 'no', 'Application status': 'applied', 'Minimum score': '0', 'Maximum score': '0', 'Sort order': 'follow_up_asc' };
@@ -181,7 +182,7 @@ describe('History List timing quick filters', () => {
     expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
   });
 
-  it.each([['This week', 7, '2026-11-02', '2026-11-08', '2026-11-09', '2026-11-15'], ['Next week', 14, '2026-11-16', '2026-11-22', '2026-11-23', '2026-11-29'], ['This month', 29, '2026-11-01', '2026-11-30', '2026-12-01', '2026-12-31']] as const)('keeps %s bounds fixed until reapplication, resetting pagination only once', async (preset, day, from, to, nextFrom, nextTo) => {
+  it.each([['This week', 7, '2026-11-02', '2026-11-08', '2026-11-09', '2026-11-15'], ['Next week', 14, '2026-11-16', '2026-11-22', '2026-11-23', '2026-11-29'], ['This month', 29, '2026-11-01', '2026-11-30', '2026-12-01', '2026-12-31'], ['Next month', 29, '2026-12-01', '2026-12-31', '2027-01-01', '2027-01-31']] as const)('keeps %s bounds fixed until reapplication, resetting pagination only once', async (preset, day, from, to, nextFrom, nextTo) => {
     vi.setSystemTime(new Date(2026, 10, day, 12));
     vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, offset) => ({ items: Array.from({ length: 20 }, (_, i) => ({ ...summary, analysis_id: String(i), job_title: `Week ${offset}-${i}` })) }));
     const view = render(<AnalysisHistory />); await screen.findByText('Week 0-0');
@@ -205,15 +206,19 @@ describe('History List timing quick filters', () => {
     await act(async () => {}); expect(getAnalysisHistory).toHaveBeenCalledTimes(before + 5);
   });
 
-  it.each(['This week', 'Next week', 'This month'])('keeps List and Board ranges and exports independent while Overview remains global (%s)', async (preset) => {
-    vi.setSystemTime(new Date(2026, 10, 7, 12));
-    const dates = preset === 'This month'
-      ? ['2026-10-31', '2026-11-01', '2026-11-05', '2026-11-07', '2026-11-30', '2026-12-01', '2026-12-31', '2027-01-01', null]
-      : preset === 'Next week'
-      ? ['2026-11-08', '2026-11-09', '2026-11-12', '2026-11-14', '2026-11-15', '2026-11-16', '2026-11-22', '2026-11-23', null]
-      : ['2026-11-01', '2026-11-02', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-15', '2026-11-16', null];
+  it.each([
+    { preset: 'This week', listDay: 7, boardMonth: 10, listBounds: ['2026-11-02', '2026-11-08'], boardBounds: ['2026-11-09', '2026-11-15'], bulkDates: [],
+      dates: ['2026-11-01', '2026-11-02', '2026-11-06', '2026-11-07', '2026-11-08', '2026-11-09', '2026-11-15', '2026-11-16', null] },
+    { preset: 'Next week', listDay: 7, boardMonth: 10, listBounds: ['2026-11-09', '2026-11-15'], boardBounds: ['2026-11-16', '2026-11-22'], bulkDates: ['2026-11-10', '2026-11-18'],
+      dates: ['2026-11-08', '2026-11-09', '2026-11-12', '2026-11-14', '2026-11-15', '2026-11-16', '2026-11-22', '2026-11-23', null] },
+    { preset: 'This month', listDay: 7, boardMonth: 11, listBounds: ['2026-11-01', '2026-11-30'], boardBounds: ['2026-12-01', '2026-12-31'], bulkDates: ['2026-11-10', '2026-12-18'],
+      dates: ['2026-10-31', '2026-11-01', '2026-11-05', '2026-11-07', '2026-11-30', '2026-12-01', '2026-12-31', '2027-01-01', null] },
+    { preset: 'Next month', listDay: 13, boardMonth: 11, listBounds: ['2026-12-01', '2026-12-31'], boardBounds: ['2027-01-01', '2027-01-31'], bulkDates: ['2026-12-15', '2027-01-18'],
+      dates: ['2026-11-30', '2026-12-01', '2026-12-05', '2026-12-13', '2026-12-31', '2027-01-01', '2027-01-31', '2027-02-01', null] },
+  ])('keeps List and Board ranges and exports independent while Overview remains global ($preset)', async ({ preset, listDay, boardMonth, listBounds, boardBounds, bulkDates, dates }) => {
+    vi.setSystemTime(new Date(2026, 10, listDay, 12));
     const rows = dates.map((date, i) => ({ ...summary, analysis_id: String(i), job_title: `Week role ${i}`, follow_up_on: date }));
-    if (preset !== 'This week') rows.push(...Array.from({ length: 44 }, (_, i) => ({ ...summary, analysis_id: String(i + 9), job_title: `Week role ${i + 9}`, follow_up_on: preset === 'This month' ? (i < 22 ? '2026-11-10' : '2026-12-18') : i < 22 ? '2026-11-10' : '2026-11-18' })));
+    if (bulkDates.length) rows.push(...Array.from({ length: 44 }, (_, i) => ({ ...summary, analysis_id: String(i + 9), job_title: `Week role ${i + 9}`, follow_up_on: bulkDates[i < 22 ? 0 : 1] })));
     vi.mocked(getAnalysisHistory).mockImplementation(async (limit = 20, offset = 0, filters = {}) => ({ items: rows.filter((row) =>
       (!filters.application_status || filters.application_status === row.application_status)
       && (!filters.has_follow_up || row.follow_up_on !== null)
@@ -225,7 +230,7 @@ describe('History List timing quick filters', () => {
     vi.mocked(downloadApplicationPipelineCsv).mockResolvedValue(new Blob(['metadata']));
     render(<StrictMode><AnalysisHistory /></StrictMode>); await screen.findAllByText('Week role 0'); click(preset);
     const list = () => within(document.querySelector('.history-list:not(.pipeline-follow-ups)') as HTMLElement);
-    await waitFor(() => expect(list().getAllByRole('listitem')).toHaveLength(preset !== 'This week' ? 20 : 4));
+    await waitFor(() => expect(list().getAllByRole('listitem')).toHaveLength(bulkDates.length > 0 ? 20 : 4));
     for (const i of [1, 2, 3, 4]) expect(list().getByText(`Week role ${i}`)).toBeVisible();
     for (const i of [0, 5, 6, 7, 8]) expect(list().queryByText(`Week role ${i}`)).toBeNull();
     const overview = within(screen.getByRole('region', { name: 'Application Pipeline Overview' }));
@@ -239,24 +244,25 @@ describe('History List timing quick filters', () => {
     fireEvent.change(screen.getByLabelText('Search job title or company'), { target: { value: 'unsent List' } });
     click('Board view'); const board = within(screen.getByRole('region', { name: 'Application Pipeline Board' })); await board.findByText('Week role 8');
     expect(board.getByRole('button', { name: preset })).toHaveAttribute('aria-pressed', 'false');
-    vi.setSystemTime(preset === 'This month' ? new Date(2026, 11, 9, 12) : new Date(2026, 10, 9, 12)); fireEvent.click(board.getByRole('button', { name: preset }));
+    vi.setSystemTime(new Date(2026, boardMonth, 9, 12)); fireEvent.click(board.getByRole('button', { name: preset }));
     await waitFor(() => expect(board.queryByText('Week role 1')).toBeNull());
     for (const i of [5, 6]) expect(board.getByText(`Week role ${i}`)).toBeVisible();
     for (const i of [0, 1, 2, 3, 4, 7, 8]) expect(board.queryByText(`Week role ${i}`)).toBeNull();
-    if (preset !== 'This week') {
+    if (bulkDates.length > 0) {
       expect(board.getAllByRole('listitem')).toHaveLength(10);
       expect(board.queryByText('Week role 52')).toBeNull();
       expect(board.getByRole('button', { name: 'Load more Not applied' })).toBeVisible();
     }
+    expect(board.getByText(`Applied Board timing: ${preset}. As of: 2026-${String(boardMonth + 1).padStart(2, '0')}-09.`)).toBeVisible();
     fireEvent.change(board.getByLabelText('Search board by job title or company'), { target: { value: 'unsent Board' } });
     fireEvent.click(board.getByText('Download Board CSV')); await waitFor(() => expect(board.getByText('Download Board CSV')).toBeEnabled());
-    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: preset === 'This month' ? '2026-12-01' : preset === 'Next week' ? '2026-11-16' : '2026-11-09', follow_up_to: preset === 'This month' ? '2026-12-31' : preset === 'Next week' ? '2026-11-22' : '2026-11-15' });
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: boardBounds[0], follow_up_to: boardBounds[1] });
     click('Download filtered CSV'); await waitFor(() => expect(screen.getByText('Download filtered CSV')).toBeEnabled());
-    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: preset === 'This month' ? '2026-11-01' : preset === 'Next week' ? '2026-11-09' : '2026-11-02', follow_up_to: preset === 'This month' ? '2026-11-30' : preset === 'Next week' ? '2026-11-15' : '2026-11-08' });
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: listBounds[0], follow_up_to: listBounds[1] });
     click('Download all CSV'); await waitFor(() => expect(screen.getByText('Download all CSV')).toBeEnabled()); expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({});
     click('List view');
-    if (preset !== 'This week') { expect(list().queryByText('Week role 30')).toBeNull(); expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled(); }
-    expect(screen.getByText(`Applied: ${preset}. As of: 2026-11-07.`)).toBeVisible();
+    if (bulkDates.length > 0) { expect(list().queryByText('Week role 30')).toBeNull(); expect(screen.getByRole('button', { name: 'Next' })).toBeEnabled(); }
+    expect(screen.getByText(`Applied: ${preset}. As of: 2026-11-${String(listDay).padStart(2, '0')}.`)).toBeVisible();
     expect(screen.getByLabelText('Search job title or company')).toHaveValue('unsent List');
     expect(getApplicationPipelineOverview).toHaveBeenCalledTimes(count);
     expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
@@ -266,20 +272,24 @@ describe('History List timing quick filters', () => {
   });
 
   it.each([
-    ['list', 1, 0, 1, '0001-01-01', '0001-01-31'],
-    ['board', 1, 0, 1, '0001-01-01', '0001-01-31'],
-    ['list', 9999, 11, 31, '9999-12-01', '9999-12-31'],
-    ['board', 9999, 11, 31, '9999-12-01', '9999-12-31'],
-  ] as const)('supports This month in %s at year %s and preserves applied state on an invalid click', async (mode, year, month, day, from, to) => {
+    ['list', 1, 0, 1, '0001-01-01', '0001-01-31', 'This month', '0001-01-01'],
+    ['board', 1, 0, 1, '0001-01-01', '0001-01-31', 'This month', '0001-01-01'],
+    ['list', 9999, 11, 31, '9999-12-01', '9999-12-31', 'This month', '9999-12-31'],
+    ['list', 1, 0, 1, '0001-02-01', '0001-02-28', 'Next month', '0001-01-01'],
+    ['list', 9999, 10, 30, '9999-12-01', '9999-12-31', 'Next month', '9999-11-30'],
+    ['board', 9999, 11, 31, '9999-12-01', '9999-12-31', 'This month', '9999-12-31'],
+    ['board', 1, 0, 1, '0001-02-01', '0001-02-28', 'Next month', '0001-01-01'],
+    ['board', 9999, 10, 30, '9999-12-01', '9999-12-31', 'Next month', '9999-11-30'],
+  ] as const)('supports month filters in %s at year %s and preserves applied state on an invalid click', async (mode, year, month, day, from, to, preset, asOf) => {
     const date = new Date(2026, month, day, 12); date.setFullYear(year); vi.setSystemTime(date);
     vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({ items: !filters?.application_status || filters.application_status === 'not_applied' ? [summary] : [] }));
     const view = render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     if (mode === 'board') { click('Board view'); await within(screen.getByRole('region', { name: 'Application Pipeline Board' })).findByText('Platform Engineer'); }
     const group = () => within(screen.getByRole('group', { name: mode === 'board' ? 'Board follow-up timing quick filters' : 'Follow-up timing quick filters' }));
-    const button = group().getByRole('button', { name: 'This month' });
+    const button = group().getByRole('button', { name: preset });
     expect(button).toBeEnabled(); fireEvent.click(button);
     await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: from, follow_up_to: to })));
-    const feedback = mode === 'board' ? `Applied Board timing: This month. As of: ${year === 1 ? from : to}.` : `Applied: This month. As of: ${year === 1 ? from : to}.`;
+    const feedback = mode === 'board' ? `Applied Board timing: ${preset}. As of: ${asOf}.` : `Applied: ${preset}. As of: ${asOf}.`;
     const prefix = mode === 'board' ? 'Board follow-up' : 'Follow-up';
     fireEvent.change(screen.getByLabelText(`${prefix} from`), { target: { value: '2026-04-01' } });
     const count = vi.mocked(getAnalysisHistory).mock.calls.length;
@@ -293,26 +303,83 @@ describe('History List timing quick filters', () => {
     expect(screen.getByLabelText(`${prefix} status`)).toHaveValue('yes');
     expect(getAnalysisHistory).toHaveBeenCalledTimes(count);
     view.rerender(<AnalysisHistory />);
-    for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'This month']) expect(group().getByRole('button', { name })).toBeDisabled();
+    for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'This month', 'Next month']) expect(group().getByRole('button', { name })).toBeDisabled();
     expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled();
     invalid.mockRestore();
   });
 
-  it.each(['list', 'board'] as const)('retains December across passive year rollover in %s until reapplying This month', async (mode) => {
-    vi.setSystemTime(new Date(2026, 11, 31, 12));
+  it.each((['list', 'board'] as const).flatMap((mode) => [
+    { mode, preset: 'This month', year: 2026, from: '2026-12-01', to: '2026-12-31', nextFrom: '2027-01-01', nextTo: '2027-01-31' },
+    { mode, preset: 'Next month', year: 2026, from: '2027-01-01', to: '2027-01-31', nextFrom: '2027-02-01', nextTo: '2027-02-28' },
+    { mode, preset: 'Next month', year: 2023, from: '2024-01-01', to: '2024-01-31', nextFrom: '2024-02-01', nextTo: '2024-02-29' },
+  ]))('retains captured bounds through passive year rollover and refresh in $mode ($preset, $year)', async ({ mode, preset, year, from, to, nextFrom, nextTo }) => {
+    vi.setSystemTime(new Date(year, 11, 31, 12));
     vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, filters) => ({ items: !filters?.application_status || filters.application_status === 'not_applied' ? [summary] : [] }));
     const view = render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     if (mode === 'board') { click('Board view'); await within(screen.getByRole('region', { name: 'Application Pipeline Board' })).findByText('Platform Engineer'); }
-    click('This month');
-    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: '2026-12-01', follow_up_to: '2026-12-31' })));
+    click(preset);
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: from, follow_up_to: to })));
     const count = vi.mocked(getAnalysisHistory).mock.calls.length;
-    vi.setSystemTime(new Date(2027, 0, 1, 0, 1)); view.rerender(<AnalysisHistory />);
-    expect(screen.getByText(/This month. As of: 2026-12-31/)).toBeVisible();
+    vi.setSystemTime(new Date(year + 1, 0, 1, 0, 1)); view.rerender(<AnalysisHistory />);
+    expect(screen.getByText(new RegExp(`${preset}. As of: ${year}-12-31`))).toBeVisible();
     expect(getAnalysisHistory).toHaveBeenCalledTimes(count);
-    click('This month');
-    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: '2027-01-01', follow_up_to: '2027-01-31' })));
-    expect(getAnalysisHistory).toHaveBeenCalledTimes(count + (mode === 'board' ? 7 : 1));
-    expect(screen.getByText(/This month. As of: 2027-01-01/)).toBeVisible();
+    click(mode === 'board' ? 'Refresh board' : 'Refresh');
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledTimes(count + (mode === 'board' ? 7 : 1)));
+    expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: from, follow_up_to: to }));
+    expect(screen.getByText(new RegExp(`${preset}. As of: ${year}-12-31`))).toBeVisible();
+    click(preset);
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: nextFrom, follow_up_to: nextTo })));
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(count + (mode === 'board' ? 14 : 2));
+    expect(screen.getByText(new RegExp(`${preset}. As of: ${year + 1}-01-01`))).toBeVisible();
+  });
+
+  it.each((['list', 'board'] as const).flatMap((mode) => ['unsupported month', 'invalid date'].map((reason) => ({ mode, reason }))))('preserves loaded pages, drafts and applied Next month on a rejected click in $mode ($reason)', async ({ mode, reason }) => {
+    vi.setSystemTime(new Date(9999, 10, 30, 12));
+    const rows = Array.from({ length: 24 }, (_, i) => ({ ...summary, analysis_id: String(i), job_title: `Final month role ${i}`, follow_up_on: '9999-12-15' }));
+    vi.mocked(getAnalysisHistory).mockImplementation(async (limit = 20, offset = 0, filters = {}) => ({ items: !filters.application_status || filters.application_status === 'not_applied' ? rows.slice(offset, offset + limit) : [] }));
+    const view = render(<AnalysisHistory />); await screen.findByText('Final month role 0');
+    if (mode === 'board') { click('Board view'); await within(screen.getByRole('region', { name: 'Application Pipeline Board' })).findByText('Final month role 0'); }
+    click('Next month');
+    await screen.findByText(/Next month. As of: 9999-11-30/);
+    const records = () => within(mode === 'board' ? screen.getByRole('region', { name: 'Application Pipeline Board' }) : document.querySelector('.history-list:not(.pipeline-follow-ups)') as HTMLElement);
+    click(mode === 'board' ? 'Load more Not applied' : 'Next');
+    await waitFor(() => expect(records().getByText(mode === 'board' ? 'Final month role 19' : 'Final month role 23')).toBeVisible());
+    const prefix = mode === 'board' ? 'Board follow-up' : 'Follow-up';
+    fireEvent.change(screen.getByLabelText(`${prefix} from`), { target: { value: '9999-12-02' } });
+    fireEvent.change(screen.getByLabelText(mode === 'board' ? 'Search board by job title or company' : 'Search job title or company'), { target: { value: 'unsent search' } });
+    const count = vi.mocked(getAnalysisHistory).mock.calls.length;
+    const button = screen.getByRole('button', { name: 'Next month' }); expect(button).toBeEnabled();
+    if (reason === 'unsupported month') vi.setSystemTime(new Date(9999, 11, 1, 12));
+    else vi.spyOn(Date.prototype, 'getDate').mockReturnValue(NaN);
+    fireEvent.click(button);
+    expect(screen.getByText(/This timing preset is unavailable/)).toBeVisible();
+    expect(screen.getByText(/Next month. As of: 9999-11-30/)).toBeVisible();
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText(`${prefix} from`)).toHaveValue('9999-12-02');
+    expect(screen.getByLabelText(`${prefix} to`)).toHaveValue('9999-12-31');
+    expect(screen.getByLabelText(`${prefix} status`)).toHaveValue('yes');
+    expect(screen.getByLabelText(mode === 'board' ? 'Search board by job title or company' : 'Search job title or company')).toHaveValue('unsent search');
+    expect(records().getByText(mode === 'board' ? 'Final month role 19' : 'Final month role 23')).toBeVisible();
+    expect(records().getAllByRole('listitem')).toHaveLength(mode === 'board' ? 20 : 4);
+    expect(getAnalysisHistory).toHaveBeenCalledTimes(count);
+    view.rerender(<AnalysisHistory />); expect(button).toBeDisabled();
+    if (reason === 'invalid date') {
+      const group = within(screen.getByRole('group', { name: mode === 'board' ? 'Board follow-up timing quick filters' : 'Follow-up timing quick filters' }));
+      for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'This month', 'Next month']) expect(group.getByRole('button', { name })).toBeDisabled();
+    } else expect(screen.getByRole('button', { name: 'This month' })).toBeEnabled();
+    vi.mocked(downloadApplicationPipelineCsv).mockReturnValue(new Promise(() => {}));
+    click(mode === 'board' ? 'Download Board CSV' : 'Download filtered CSV');
+    expect(downloadApplicationPipelineCsv).toHaveBeenLastCalledWith({ has_follow_up: true, follow_up_from: '9999-12-01', follow_up_to: '9999-12-31' });
+    expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisTracking).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
+    click('Clear timing filter');
+    expect(screen.queryByText(/Next month. As of:/)).toBeNull();
+    await waitFor(() => expect(screen.getByLabelText(`${prefix} from`)).toHaveValue(''));
+    fireEvent.change(screen.getByLabelText(`${prefix} status`), { target: { value: 'yes' } });
+    fireEvent.change(screen.getByLabelText(`${prefix} from`), { target: { value: '9999-12-03' } });
+    fireEvent.change(screen.getByLabelText(`${prefix} to`), { target: { value: '9999-12-30' } });
+    if (mode === 'board') fireEvent.submit(screen.getByRole('form', { name: 'Board follow-up filters' }));
+    else click('Apply filters');
+    await waitFor(() => expect(getAnalysisHistory).toHaveBeenCalledWith(mode === 'board' ? 11 : 20, 0, expect.objectContaining({ has_follow_up: true, follow_up_from: '9999-12-03', follow_up_to: '9999-12-30' })));
   });
 
   it.each(['list', 'board'] as const)('allows the final supported week and rejects invalid click-time dates in %s', async (mode) => {
@@ -401,7 +468,7 @@ describe('History List timing quick filters', () => {
     await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-11-02' })); expect(screen.queryByText(/^Applied:/)).toBeNull();
   });
 
-  it.each(['Today', 'Next week', 'This month'])('clears stale validation and explicitly resets native date state even for unchanged empty drafts (%s)', async (preset) => {
+  it.each(['Today', 'Next week', 'This month', 'Next month'])('clears stale validation and explicitly resets native date state even for unchanged empty drafts (%s)', async (preset) => {
     render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     fireEvent.change(screen.getByLabelText('Follow-up from'), { target: { value: '2026-12-01' } }); fireEvent.change(screen.getByLabelText('Follow-up to'), { target: { value: '2026-01-01' } }); click('Apply filters');
     expect(screen.getByRole('alert')).toHaveTextContent('Follow-up from'); click(preset); await screen.findByText(`Applied: ${preset}. As of: 2026-11-02.`); expect(screen.queryByRole('alert')).toBeNull();
@@ -433,7 +500,7 @@ describe('History List timing quick filters', () => {
     click('Clear timing filter'); expect(fromSet).toHaveBeenCalledWith(''); expect(toSet).toHaveBeenCalledWith(''); expect(from).toHaveValue(''); expect(to).toHaveValue('');
   });
 
-  it.each([[1, 0, 1, 'Past dates'], [9999, 11, 31, 'Upcoming dates'], [9999, 11, 31, 'Next 7 days'], [10000, 0, 1, 'Today'], [0, 0, 1, 'Today'], [0, 0, 1, 'This week'], [10000, 0, 1, 'This week'], [0, 0, 1, 'Next week'], [10000, 0, 1, 'Next week'], [9999, 11, 27, 'Next week'], [0, 0, 1, 'This month'], [10000, 0, 1, 'This month']] as const)('safely disables unavailable presets at year %s', async (year, month, day, name) => {
+  it.each([[1, 0, 1, 'Past dates'], [9999, 11, 31, 'Upcoming dates'], [9999, 11, 31, 'Next 7 days'], [10000, 0, 1, 'Today'], [0, 0, 1, 'Today'], [0, 0, 1, 'This week'], [10000, 0, 1, 'This week'], [0, 0, 1, 'Next week'], [10000, 0, 1, 'Next week'], [9999, 11, 27, 'Next week'], [0, 0, 1, 'This month'], [10000, 0, 1, 'This month'], [0, 0, 1, 'Next month'], [10000, 0, 1, 'Next month'], [9999, 11, 1, 'Next month'], [9999, 11, 15, 'Next month'], [9999, 11, 31, 'Next month']] as const)('safely disables unavailable presets at year %s', async (year, month, day, name) => {
     const date = new Date(2026, month, day, 12); date.setFullYear(year); vi.setSystemTime(date);
     render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     const button = screen.getByRole('button', { name }); expect(button).toBeDisabled(); click(name);
@@ -447,11 +514,11 @@ describe('History List timing quick filters', () => {
     expect(screen.getByText(/This timing preset is unavailable/)).toBeVisible(); expect(getAnalysisHistory).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['Today', 'Next 7 days', 'This week', 'Next week', 'This month'])('uses browser-local click components when the UTC day differs (%s)', async (preset) => {
+  it.each(['Today', 'Next 7 days', 'This week', 'Next week', 'This month', 'Next month'])('uses browser-local click components when the UTC day differs (%s)', async (preset) => {
     render(<AnalysisHistory />); await screen.findByText('Platform Engineer');
     vi.setSystemTime(new Date('2026-12-31T12:01:00Z'));
     vi.spyOn(Date.prototype, 'getFullYear').mockReturnValue(2027); vi.spyOn(Date.prototype, 'getMonth').mockReturnValue(0); vi.spyOn(Date.prototype, 'getDate').mockReturnValue(1);
-    click(preset); await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { has_follow_up: true, follow_up_from: preset === 'This month' ? '2027-01-01' : preset === 'Next week' ? '2027-01-04' : preset === 'This week' ? '2026-12-28' : preset === 'Today' ? '2027-01-01' : '2027-01-02', follow_up_to: preset === 'This month' ? '2027-01-31' : preset === 'Next week' ? '2027-01-10' : preset === 'This week' ? '2027-01-03' : preset === 'Today' ? '2027-01-01' : '2027-01-08' }));
+    click(preset); await waitFor(() => expect(getAnalysisHistory).toHaveBeenLastCalledWith(20, 0, { has_follow_up: true, follow_up_from: preset === 'Next month' ? '2027-02-01' : preset === 'This month' ? '2027-01-01' : preset === 'Next week' ? '2027-01-04' : preset === 'This week' ? '2026-12-28' : preset === 'Today' ? '2027-01-01' : '2027-01-02', follow_up_to: preset === 'Next month' ? '2027-02-28' : preset === 'This month' ? '2027-01-31' : preset === 'Next week' ? '2027-01-10' : preset === 'This week' ? '2027-01-03' : preset === 'Today' ? '2027-01-01' : '2027-01-08' }));
   });
 
   it.each(['Upcoming dates', 'Next 7 days', 'Next week'])('uses server pages and exports all matches, keeping Board and Overview independent during a pending CSV (%s)', async (preset) => {
@@ -494,12 +561,12 @@ describe('History List timing quick filters', () => {
     expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(analyzeCandidateJob).not.toHaveBeenCalled();
   });
 
-  it.each(['Today', 'Next week', 'This month'])('rejects stale preset responses, recovers on Refresh, and protects unmount in StrictMode (%s)', async (preset) => {
+  it.each(['Today', 'Next week', 'This month', 'Next month'])('rejects stale preset responses, recovers on Refresh, and protects unmount in StrictMode (%s)', async (preset) => {
     const view = render(<StrictMode><AnalysisHistory /></StrictMode>); await screen.findByText('Platform Engineer');
     let resolveOld!: (value: { items: SavedAnalysisSummary[] }) => void;
     vi.mocked(getAnalysisHistory).mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve; }));
     click('Past dates'); expect(screen.getByText('Loading saved analyses…')).toBeVisible();
-    vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [{ ...summary, job_title: 'Current', follow_up_on: '2026-11-09' }] }); click(preset); await screen.findByText('Current');
+    vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [{ ...summary, job_title: 'Current', follow_up_on: preset === 'Next month' ? '2026-12-15' : '2026-11-09' }] }); click(preset); await screen.findByText('Current');
     await act(async () => resolveOld({ items: [{ ...summary, job_title: 'STALE' }] })); expect(screen.queryByText('STALE')).toBeNull();
     vi.mocked(getAnalysisHistory).mockRejectedValueOnce(new Error('PRIVATE')); click('Upcoming dates'); expect(await screen.findByRole('alert')).not.toHaveTextContent('PRIVATE');
     vi.mocked(getAnalysisHistory).mockResolvedValueOnce({ items: [] }); click('Refresh'); await screen.findByText('No saved analyses match these filters.');
@@ -508,8 +575,8 @@ describe('History List timing quick filters', () => {
     await act(async () => resolveOld({ items: [{ ...summary, job_title: 'AFTER UNMOUNT' }] })); expect(screen.queryByText('AFTER UNMOUNT')).toBeNull();
   });
 
-  it.each([['reschedule', 'Today'], ['clear', 'Today'], ['failure', 'Today'], ['reschedule', 'Next 7 days'], ['clear', 'Next 7 days'], ['failure', 'Next 7 days'], ['reschedule', 'This week'], ['clear', 'This week'], ['failure', 'This week'], ['reschedule', 'Next week'], ['clear', 'Next week'], ['failure', 'Next week'], ['reschedule', 'This month'], ['clear', 'This month'], ['failure', 'This month']] as const)('preserves the preset on authoritative Board %s and lets server filtering remove changed dates (%s)', async (action, preset) => {
-    let date: string | null = preset === 'Next week' ? '2026-11-09' : preset === 'Today' ? '2026-11-02' : '2026-11-03';
+  it.each([['reschedule', 'Today'], ['clear', 'Today'], ['failure', 'Today'], ['reschedule', 'Next 7 days'], ['clear', 'Next 7 days'], ['failure', 'Next 7 days'], ['reschedule', 'This week'], ['clear', 'This week'], ['failure', 'This week'], ['reschedule', 'Next week'], ['clear', 'Next week'], ['failure', 'Next week'], ['reschedule', 'This month'], ['clear', 'This month'], ['failure', 'This month'], ['reschedule', 'Next month'], ['clear', 'Next month'], ['failure', 'Next month']] as const)('preserves the preset on authoritative Board %s and lets server filtering remove changed dates (%s)', async (action, preset) => {
+    let date: string | null = preset === 'Next month' ? '2026-12-15' : preset === 'Next week' ? '2026-11-09' : preset === 'Today' ? '2026-11-02' : '2026-11-03';
     vi.mocked(getAnalysisHistory).mockImplementation(async (_limit, _offset, criteria = {}) => ({ items:
       (!criteria.application_status || criteria.application_status === 'not_applied')
       && (!criteria.has_follow_up || date !== null)
@@ -528,7 +595,7 @@ describe('History List timing quick filters', () => {
       click('Clear follow-up'); fireEvent.click(within(screen.getByRole('alertdialog')).getByText('Clear follow-up'));
       await screen.findByText('Follow-up date cleared.');
     } else {
-      fireEvent.change(input, { target: { value: preset === 'This month' ? '2026-12-01' : preset === 'Next week' ? '2026-11-16' : '2026-11-10' } }); click('Save follow-up');
+      fireEvent.change(input, { target: { value: preset === 'Next month' ? '2027-01-01' : preset === 'This month' ? '2026-12-01' : preset === 'Next week' ? '2026-11-16' : '2026-11-10' } }); click('Save follow-up');
       if (action === 'failure') expect(await screen.findByRole('alert')).not.toHaveTextContent('PRIVATE');
       else await screen.findByText('Follow-up date saved.');
     }
@@ -536,7 +603,7 @@ describe('History List timing quick filters', () => {
     if (action === 'failure') expect(screen.getByRole('button', { name: /Platform Engineer/ })).toBeVisible();
     else {
       expect(screen.getByText('No saved analyses match these filters.')).toBeVisible();
-      expect(getAnalysisHistory).toHaveBeenCalledWith(20, 0, { has_follow_up: true, follow_up_from: preset === 'This month' ? '2026-11-01' : preset === 'Next week' ? '2026-11-09' : preset === 'Next 7 days' ? '2026-11-03' : '2026-11-02', follow_up_to: preset === 'This month' ? '2026-11-30' : preset === 'Next week' ? '2026-11-15' : preset === 'This week' ? '2026-11-08' : preset === 'Today' ? '2026-11-02' : '2026-11-09' });
+      expect(getAnalysisHistory).toHaveBeenCalledWith(20, 0, { has_follow_up: true, follow_up_from: preset === 'Next month' ? '2026-12-01' : preset === 'This month' ? '2026-11-01' : preset === 'Next week' ? '2026-11-09' : preset === 'Next 7 days' ? '2026-11-03' : '2026-11-02', follow_up_to: preset === 'Next month' ? '2026-12-31' : preset === 'This month' ? '2026-11-30' : preset === 'Next week' ? '2026-11-15' : preset === 'This week' ? '2026-11-08' : preset === 'Today' ? '2026-11-02' : '2026-11-09' });
     }
   });
 });

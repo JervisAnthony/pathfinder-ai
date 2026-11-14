@@ -1,19 +1,19 @@
 # Pathfinder AI — Project State
 
-Last updated: 2026-11-12
+Last updated: 2026-11-14
 
 This file records the current repository state and roadmap position.
 Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #50 merge, 2026-11-11 IST):
+Latest verified completed main (PR #51 merge, 2026-11-13 IST):
 
-`193bcba33ab2e3c57f089cfe95467bf02d350594`
+`32c6ba91269c2ab56065bd8d7affc645f6050312`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 46 — Next Week Follow-Up Filtering**
+**Commit 47 — This Month Follow-Up Filtering**
 
 ## Completed MVP-1 Roadmap
 
@@ -76,27 +76,33 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 46 — Next Week Follow-Up Filtering — COMPLETE (PR #50 merged 2026-11-11 IST)
 
+- Commit 47 — This Month Follow-Up Filtering — COMPLETE (PR #51 merged 2026-11-13 IST)
+
 ## Post-MVP Active Work
 
-**Commit 47 — This Month Follow-Up Filtering**
+**Commit 48 — Next Month Follow-Up Filtering**
 
 Status: **Authorized active development.**
 
-History List and Kanban Board add This month as the seventh timing preset. It
-selects scheduled follow-up dates from the first through the last Gregorian day
-of the browser-local click month, inclusive, including earlier dates and today.
-For 2026-11-12 the bounds are 2026-11-01 through 2026-11-30. Other months and
-unscheduled records are excluded. All valid reference dates from 0001-01-01 through
-9999-12-31 support this preset; December 9999 ends at 9999-12-31 without requiring
-a date in year 10000. The existing canonical validator supplies month lengths and
-leap rules. The six prior presets and factual past/today/upcoming cues are preserved.
+History List and Kanban Board add Next month as the eighth timing preset. It
+selects scheduled dates from the first through last Gregorian day of the calendar
+month immediately following the browser-local click month, inclusive. A 2026-11-13
+click selects 2026-12-01 through 2026-12-31. The current month, today, later months
+and unscheduled records are excluded. December rolls to January of the next year.
+References from 0001-01-01 through 9999-11-30 are supported; November 9999 selects
+the final full December. Every December-9999 reference is unavailable because
+January 10000 is unsupported, with no clamped or unbounded request. This month
+remains available through 9999-12-31. The shared month branch increments calendar
+components and uses the canonical validator for the target month's last day without
+timestamps or UTC conversion. All seven prior presets and factual date cues remain.
 
 Each selection captures browser-local today at click time. Bounds and As of remain
 fixed across midnight, month/year rollover, refresh and unrelated actions until
-explicit reapplication. Same-month reapplication updates As of without a redundant
-page-one List request or seven-lane Board refresh. Invalid click-time dates preserve
-the applied criteria, drafts and attribution. Only follow-up presence/date criteria
-and native drafts change; unrelated applied criteria, false/zero values and unsent
+explicit reapplication. Reapplication in the same reference month updates As of
+without a redundant page-one List request or seven-lane Board refresh. Unavailable
+or invalid click-time dates preserve the applied criteria, drafts and attribution.
+Only follow-up presence/date criteria and native drafts change; unrelated applied
+criteria, false/zero values and unsent
 drafts remain independent. List retains its shared validation clearing behavior;
 Board preserves unrelated validation errors. Manual Apply, targeted Clear and full
 Clear/Reset retain their scopes. Unrelated Board Apply preserves timing attribution.
@@ -119,27 +125,27 @@ matching, AI, private-content request, shared clock/filter store, browser persis
 timer, polling, notification or reminder behavior is added. Dates carry no completion,
 overdue or employer-response inference.
 
-Recovery validation on Python 3.13.7 in the existing .venv and Node 24.19.0 / npm
+Local validation on Python 3.13.7 in the existing .venv and Node 24.19.0 / npm
 11.17.0 passed: Ruff lint, Ruff format check (88 files), mypy (42 source files),
 759 backend tests with 100% production line coverage (2,874 statements, zero missed),
-frontend lint, TypeScript checking, 1,054 Vitest tests across 25 files, and production
+frontend lint, TypeScript checking, 1,125 Vitest tests across 25 files, and production
 build. Existing declared dependencies were reused without installation or manifest/
 lockfile changes. The backend run reported an anyio BlockingPortal deprecation,
 a pytest cache permission warning and a coverage module-not-measured warning;
-measured production line coverage remained 100%. These results were rerun for the
-recovery state and are independent of the published checkpoint's CI results.
+measured production line coverage remained 100%. Elevated local Git and Vitest
+execution was needed after sandbox filesystem/network restrictions. Initial focused
+regressions exposed test-query scoping/waiting issues, corrected before the full
+passing run. These are fresh local results for Commit 48, independent of PR #51 CI.
 Real-browser E2E, assistive-technology and narrow-layout visual checks have not
 been performed. Local validation is not CI or independent review.
 
-The maintainer authorized reconciliation of Commit 46 following PR #50's merge at
-`193bcba33ab2e3c57f089cfe95467bf02d350594` on 2026-11-11 IST
-(2026-11-11T17:46:39Z). Recovery preserves the already published feature checkpoint
-`f9dc8cb3bcb95848d08ca3bc18b5380747159cc6` and existing PR #51, preparing only a
-local staged correction for one human-created corrective commit. This explicitly
-authorized recovery exception preserves shared history. Codex implements, validates,
-reviews and stages locally; the human maintainer owns commits, publication, PR
-metadata, independent reviews and squash merge. Commit 47 remains active until
-human review/merge; local implementation and staging do not mark it complete.
+The maintainer authorized reconciliation of Commit 47 following PR #51's merge at
+`32c6ba91269c2ab56065bd8d7affc645f6050312` on 2026-11-13 IST
+(2026-11-13T17:01:33Z). Commit 47's published recovery history is complete and is
+preserved. Codex implements, validates, reviews and stages locally; the human
+maintainer owns the one implementation commit, publication, PR, independent reviews
+and merge. Commit 48 remains authorized active work; no PR number or future merge
+SHA is assigned. Local implementation and staging do not mark it complete.
 
 ## Existing Capabilities
 
@@ -193,7 +199,8 @@ The repository already contains:
 - Next-seven-day timing preset in List and Board
 - This-week Monday-Sunday timing preset in List and Board
 - Next-week Monday-Sunday timing preset in List and Board
-- This-month calendar timing preset in List and Board (authorized active development)
+- This-month calendar timing preset in List and Board
+- Next-month calendar timing preset in List and Board (authorized active development)
 
 ## Architectural Boundary
 
