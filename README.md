@@ -993,15 +993,16 @@ success rates, or application success probabilities.
 ### History List follow-up timing quick filters
 
 Within the List filter form, **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, **This week**, **Next week**, **This month**, and **Next month** immediately apply server filters to saved follow-up calendar dates. Past selects
+**Next 7 days**, **This week**, **Next week**, **Last month**, **This month**, and **Next month** immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
 strictly after today. Next 7 days selects tomorrow through the seventh future
 calendar day, inclusive. This week selects the inclusive Monday-Sunday calendar
 week, including today and earlier dates this week. Next week selects the following
 Monday-Sunday week, with both endpoints included. Past, Upcoming, Next 7 days and
 Next week exclude today. This month includes the whole captured calendar month,
-including earlier dates and today. Next month selects the following full calendar
-month, excluding today and the current month. All eight exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
+including earlier dates and today. Last month selects the preceding full calendar
+month, excluding today and the current month. Next month selects the following full calendar
+month, excluding today and the current month. All nine exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
 Each click captures `localCalendarDay(new Date())`. The existing inclusive server
@@ -1046,7 +1047,7 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 ### Board follow-up timing quick filters
 
 The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
-**Next 7 days**, **This week**, **Next week**, **This month**, **Next month**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
+**Next 7 days**, **This week**, **Next week**, **Last month**, **This month**, **Next month**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
@@ -1054,8 +1055,9 @@ today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
 calendar day, inclusive, excluding today. This week selects the inclusive
 Monday-Sunday calendar week, including today and earlier dates this week. Next week
 selects the following Monday-Sunday week, inclusive. This month includes the entire
-captured calendar month, including earlier dates and today. Next month selects the
-following full calendar month, excluding the current month. All eight exclude unscheduled records.
+captured calendar month, including earlier dates and today. Last month selects the
+preceding full calendar month, excluding the current month. Next month selects the
+following full calendar month, excluding the current month. All nine exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1268,6 +1270,49 @@ local capture, rollover, paging, exports, request guards and editing locks.
 Real-browser E2E, assistive-technology and narrow-layout visual checks have not been
 performed. These saved-date filters add no completion or employer-response inference,
 reminders, timers, polling or browser persistence.
+
+### Last-month follow-up filtering
+
+**Last month**, immediately before This month, is the ninth timing preset in
+History List and Kanban Board. It selects scheduled dates from the first through
+last Gregorian day of the calendar month immediately preceding the browser-local
+click month, inclusive. A 2026-11-24 click applies `has_follow_up=true`,
+`follow_up_from=2026-10-01` and `follow_up_to=2026-10-31`. It excludes today,
+the current month, other months and unscheduled records. January selects December
+of the preceding year; March 31 selects all of February, including its leap day
+when applicable. Saved dates retain their factual past-date cues.
+
+References from 0001-02-01 through 9999-12-31 are supported. February 0001 selects
+all of January 0001; December 9999 selects 9999-11-01 through 9999-11-30. Last month
+is unavailable throughout January 0001 because December of year zero is unsupported.
+The range is never clamped or made unbounded. This month remains available throughout
+January 0001, and Next month's existing December-9999 limit is unchanged.
+Unavailable or invalid click-time dates preserve applied filters, native drafts,
+attribution and loaded pages without a filter request or mutation.
+
+Each explicit selection captures browser-local today. Bounds and As of stay fixed
+through passive midnight, month/year rollover, refreshes and unrelated actions until
+reapplication. Within the same reference month, reapplication updates As of without
+a redundant page-one List request or Board refresh. Later-page List reapplication
+returns to page one once; equivalent Board ranges retain loaded pages. Changed
+Board ranges refresh all seven status lanes from offset zero.
+
+List and Board keep independent applied filters, unsent drafts, attribution, pages
+and CSV criteria. Timing changes synchronize only native follow-up status/date
+drafts, preserving unrelated false/zero criteria and unsent work. Manual Apply,
+Clear timing and full Clear/Reset retain their scopes, as do Board detail, status
+and quick-editor locks. Filtered List CSV and Board CSV use each view's applied
+range across all matching server records, including unloaded rows, within the
+existing 10,000-row cap. All-record List CSV stays unfiltered; Overview retains
+global totals, seven status counts and its earliest five follow-ups.
+
+All eight prior timing presets retain their behavior. No backend/API/schema,
+dependency, private-content request, shared clock/filter state, persistence, timer,
+polling, reminder or notification behavior is added. Dates remain user-managed
+metadata without completion, overdue-task or employer-response inference.
+Deterministic helper and component tests cover calendar boundaries, rejected clicks,
+rollover, paging, exports and editing guards. Real-browser E2E, assistive-technology
+and narrow-layout visual checks have not been performed.
 
 ### Next-month follow-up filtering
 
