@@ -2,10 +2,10 @@ import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import { isCalendarDate } from './boardFollowUpFilters';
 import type { FollowUpTiming } from './followUpTiming';
 
-export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'last_week' | 'this_week' | 'next_week' | 'last_month' | 'this_month' | 'next_month';
+export type FollowUpFilterPreset = FollowUpTiming | 'last_7_days' | 'next_7_days' | 'last_week' | 'this_week' | 'next_week' | 'last_month' | 'this_month' | 'next_month';
 
 export const timingPresetLabels: Record<FollowUpFilterPreset, string> = {
-  past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', next_7_days: 'Next 7 days',
+  past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', last_7_days: 'Last 7 days', next_7_days: 'Next 7 days',
   last_week: 'Last week',
   this_week: 'This week',
   next_week: 'Next week',
@@ -97,16 +97,17 @@ export function historyTimingCriteria(preset: FollowUpFilterPreset, today: strin
     }
     return { has_follow_up: true, follow_up_from: monday, follow_up_to: sunday };
   }
-  const boundary = adjacentCalendarDay(today, preset === 'past' ? -1 : 1);
+  const direction = preset === 'past' || preset === 'last_7_days' ? -1 : 1;
+  const boundary = adjacentCalendarDay(today, direction);
   if (boundary === null) return null;
-  if (preset === 'next_7_days') {
+  if (preset === 'last_7_days' || preset === 'next_7_days') {
     let end = boundary;
     for (let day = 1; day < 7; day += 1) {
-      const next = adjacentCalendarDay(end, 1);
-      if (next === null) break; // Keep the last supported day at year 9999.
+      const next = adjacentCalendarDay(end, direction);
+      if (next === null) break; // Keep the supported endpoint in this direction.
       end = next;
     }
-    return { has_follow_up: true, follow_up_from: boundary, follow_up_to: end };
+    return { has_follow_up: true, follow_up_from: direction === -1 ? end : boundary, follow_up_to: direction === -1 ? boundary : end };
   }
   return preset === 'past'
     ? { has_follow_up: true, follow_up_to: boundary }
