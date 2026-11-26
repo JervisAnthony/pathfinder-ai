@@ -993,11 +993,12 @@ success rates, or application success probabilities.
 ### History List follow-up timing quick filters
 
 Within the List filter form, **Past dates**, **Today**, **Upcoming dates**,
-**Last 7 days**, **Next 7 days**, **Next 30 days**, **Last week**, **This week**, **Next week**, **Last month**, **This month**, and **Next month** immediately apply server filters to saved follow-up calendar dates. Past selects
+**Last 7 days**, **Next 7 days**, **Last 30 days**, **Next 30 days**, **Last week**, **This week**, **Next week**, **Last month**, **This month**, and **Next month** immediately apply server filters to saved follow-up calendar dates. Past selects
 strictly before browser-local today; Today selects exactly today; Upcoming selects
 strictly after today. Last 7 days selects seven days before capture through yesterday,
 inclusive, excluding today. Next 7 days selects tomorrow through the seventh future
-calendar day, inclusive. Next 30 days selects tomorrow through the thirtieth
+calendar day, inclusive. Last 30 days selects thirty days before capture through yesterday,
+inclusive, excluding today. Next 30 days selects tomorrow through the thirtieth
 following calendar date, inclusive, excluding today. Last week selects the preceding Monday-Sunday calendar
 week, including both endpoints and excluding the current week. This week selects the inclusive Monday-Sunday calendar
 week, including today and earlier dates this week. Next week selects the following
@@ -1005,7 +1006,7 @@ Monday-Sunday week, with both endpoints included. Past, Upcoming, Next 7 days an
 Next week exclude today. This month includes the whole captured calendar month,
 including earlier dates and today. Last month selects the preceding full calendar
 month, excluding today and the current month. Next month selects the following full calendar
-month, excluding today and the current month. All twelve exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
+month, excluding today and the current month. All thirteen exclude unscheduled records. These dates describe saved metadata, with no overdue-task,
 completion, or employer-response inference.
 
 Each click captures `localCalendarDay(new Date())`. The existing inclusive server
@@ -1050,20 +1051,21 @@ assistive-technology, and narrow-layout visual testing have not been performed.
 ### Board follow-up timing quick filters
 
 The Board follow-up filter area offers **Past dates**, **Today**, **Upcoming dates**,
-**Last 7 days**, **Next 7 days**, **Next 30 days**, **Last week**, **This week**, **Next week**, **Last month**, **This month**, **Next month**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
+**Last 7 days**, **Next 7 days**, **Last 30 days**, **Next 30 days**, **Last week**, **This week**, **Next week**, **Last month**, **This month**, **Next month**, and **Clear timing filter**, alongside the existing status/date fields, **Apply
 filters**, and **Clear follow-up filters**. Presets immediately select scheduled
 records across all seven status lanes. Past ends at yesterday (strictly before
 today); Today uses today as both inclusive bounds; Upcoming starts at tomorrow
 (strictly after today). Last 7 days selects seven days before capture through
 yesterday, inclusive, excluding today. Next 7 days selects tomorrow through the seventh future
-calendar day, inclusive, excluding today. Next 30 days selects tomorrow through
+calendar day, inclusive, excluding today. Last 30 days selects thirty days before
+capture through yesterday, inclusive, excluding today. Next 30 days selects tomorrow through
 the thirtieth following calendar date, inclusive, excluding today. Last week selects the preceding
 Monday-Sunday week, inclusive, excluding the current week. This week selects the inclusive
 Monday-Sunday calendar week, including today and earlier dates this week. Next week
 selects the following Monday-Sunday week, inclusive. This month includes the entire
 captured calendar month, including earlier dates and today. Last month selects the
 preceding full calendar month, excluding the current month. Next month selects the
-following full calendar month, excluding the current month. All twelve exclude unscheduled records.
+following full calendar month, excluding the current month. All thirteen exclude unscheduled records.
 
 Board reuses the pure `historyTimingCriteria()` calendar calculations and
 `localCalendarDay(new Date())` from History List. Each click captures the current
@@ -1277,16 +1279,68 @@ Real-browser E2E, assistive-technology and narrow-layout visual checks have not 
 performed. These saved-date filters add no completion or employer-response inference,
 reminders, timers, polling or browser persistence.
 
+### Last-thirty-day follow-up filtering
+
+**Last 30 days** is the thirteenth timing preset in History List and Kanban Board.
+It appears after Next 7 days and immediately before Next 30 days, preserving all
+previous relative ordering. It selects scheduled follow-ups from thirty calendar
+dates before capture through yesterday, both endpoints inclusive. On browser-local
+2026-11-27 it applies `has_follow_up=true`, `follow_up_from=2026-10-28` and
+`follow_up_to=2026-11-26`. Today, future dates, earlier dates and unscheduled records
+are excluded. This rolling window differs from Last month (October 1-31 at that
+capture) and the same date one month earlier. All twelve earlier presets retain
+their separate meanings and limits; the Board still has seven status lanes.
+
+January 1, 0001 is unavailable because no supported yesterday exists. January 2-30
+includes only preceding supported dates, with the lower bound clamped to 0001-01-01.
+January 2 selects January 1 alone, January 8 selects January 1-7, and January 30
+selects January 1-29. January 31 selects the first full thirty-date window, January
+1-30; February 1 selects January 2-31. Last 7 days is already full on January 8;
+Last week requires its complete preceding week, and Last month is unavailable
+throughout January 0001. This week and This month remain available at the minimum.
+Last 30 days remains available on 9999-12-31, selecting December 1-30, even though
+future-only presets are unavailable there. Invalid local references disable all
+thirteen presets. Unavailable/invalid click-time dates preserve bounds, native
+drafts, selected preset, captured As of, pages, exports and unsaved work without
+requests or writes. Clear timing and available/custom criteria remain usable.
+
+The existing canonical validator and single bounded calendar-day loop step backward
+from yesterday, avoiding month shifts, timestamps or UTC arithmetic. Explicit clicks
+capture browser-local today; bounds and As of stay fixed across passive midnight,
+rerenders, refreshes and unrelated actions. November-28 reapplication selects October
+29-November 27, shifting daily even within the same calendar week/month. December-31,
+2026 capture selects December 1-30; January-1, 2027 reapplication selects December
+2-31. Leap days, century rules and early years use the same supported calendar.
+
+Equivalent page-one criteria avoid a List request or Board refresh. Later-page List
+reapplication returns to page one once; equivalent Board bounds retain loaded lane
+pages. New-day bounds refresh all seven lanes from offset zero. At January 8, 0001,
+Last 7 days and Last 30 days both select January 1-7; switching names updates
+attribution/native drafts with the same request and paging rules.
+
+Only follow-up drafts/criteria synchronize, preserving unrelated false/zero applied
+values and unsent drafts. List and Board criteria, attribution, pages and exports
+remain independent. Filtered List CSV and Board CSV use each view's applied bounds
+across all matching server records, including unloaded rows, within the 10,000-row
+cap; all-record CSV stays unfiltered. Overview stays global with seven status counts
+and its earliest five follow-ups. Existing editing/detail/status locks, same-tick
+write guards and stale-response protection are reused. Selected dates keep factual
+past-date cues without implying completion, overdue tasks or employer response.
+Native controls retain semantic groups, focus, aria-pressed, wrapping, disabled
+states and visible feedback. Real-browser E2E, assistive-technology and narrow-layout
+visual checks have not been performed. No reminder, timer, polling or persistence
+behavior is added.
+
 ### Next-thirty-day follow-up filtering
 
-**Next 30 days** is the twelfth timing preset in History List and Kanban Board,
-immediately after Next 7 days. It selects scheduled follow-ups from tomorrow through
+**Next 30 days** appears in History List and Kanban Board immediately after
+Last 30 days, which follows Next 7 days. It selects scheduled follow-ups from tomorrow through
 the thirtieth following calendar date, both endpoints inclusive. A browser-local
 2026-11-26 click applies `has_follow_up=true`, `follow_up_from=2026-11-27` and
 `follow_up_to=2026-12-26`. Today, past dates, dates after the upper bound and
 unscheduled records are excluded. This is thirty following calendar dates, not the
 next calendar month or the same date one month later. January 31, 2026 selects
-February 1-March 2; January 31, 2024 selects February 1-March 1. All eleven earlier
+February 1-March 2; January 31, 2024 selects February 1-March 1. All other
 presets retain their distinct behavior, including both seven-day windows.
 
 References from 0001-01-01 through 9999-12-30 are available. The minimum selects
@@ -1298,7 +1352,7 @@ Last 7 days, This week and This month remain available there. Next month stays
 unavailable throughout December 9999 without disabling Next 30 days before the last
 day. Invalid/unavailable clicks preserve filters, native drafts, preset, As of,
 pages and unsaved work without a request or write; Clear timing and custom criteria
-remain usable. Invalid local references disable all twelve timing presets.
+remain usable. Invalid local references disable all thirteen timing presets.
 
 The existing validator and bounded calendar-day loop calculate the range without
 month shifts, elapsed-hour arithmetic or UTC conversion. Each explicit selection
