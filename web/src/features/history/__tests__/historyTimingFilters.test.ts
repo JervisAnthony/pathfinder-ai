@@ -4,6 +4,52 @@ import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from '..
 
 describe('date-only timing ranges', () => {
   it.each([
+    ['2026-11-23', '2026-11-16', '2026-11-22'],
+    ['2026-11-24', '2026-11-16', '2026-11-22'],
+    ['2026-11-25', '2026-11-16', '2026-11-22'],
+    ['2026-11-26', '2026-11-16', '2026-11-22'],
+    ['2026-11-27', '2026-11-16', '2026-11-22'],
+    ['2026-11-28', '2026-11-16', '2026-11-22'],
+    ['2026-11-29', '2026-11-16', '2026-11-22'],
+    ['2026-11-30', '2026-11-23', '2026-11-29'],
+    ['2026-11-01', '2026-10-19', '2026-10-25'],
+    ['2026-12-31', '2026-12-21', '2026-12-27'],
+    ['2027-01-01', '2026-12-21', '2026-12-27'],
+    ['2027-01-04', '2026-12-28', '2027-01-03'],
+    ['2024-02-29', '2024-02-19', '2024-02-25'],
+    ['2024-03-04', '2024-02-26', '2024-03-03'],
+    ['2026-03-02', '2026-02-23', '2026-03-01'],
+    ['1900-03-05', '1900-02-26', '1900-03-04'],
+    ['2000-03-06', '2000-02-28', '2000-03-05'],
+    ['2100-03-01', '2100-02-22', '2100-02-28'],
+    ['0001-01-08', '0001-01-01', '0001-01-07'],
+    ['0001-01-14', '0001-01-01', '0001-01-07'],
+    ['0001-01-15', '0001-01-08', '0001-01-14'],
+    ['0099-01-01', '0098-12-22', '0098-12-28'],
+    ['0099-12-31', '0099-12-21', '0099-12-27'],
+    ['9999-12-20', '9999-12-13', '9999-12-19'],
+    ['9999-12-26', '9999-12-13', '9999-12-19'],
+    ['9999-12-27', '9999-12-20', '9999-12-26'],
+    ['9999-12-31', '9999-12-20', '9999-12-26'],
+  ])('selects the entire preceding Monday-Sunday week from %s', (today, from, to) => {
+    expect(historyTimingCriteria('last_week', today)).toEqual({ has_follow_up: true, follow_up_from: from, follow_up_to: to });
+  });
+
+  it.each(['01', '02', '03', '04', '05', '06', '07'])('rejects Last week throughout the first supported week (%s), preserving This week', (day) => {
+    expect(historyTimingCriteria('last_week', `0001-01-${day}`)).toBeNull();
+    expect(historyTimingCriteria('this_week', `0001-01-${day}`)).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-07' });
+  });
+
+  it('includes only scheduled preceding-week endpoints and interior dates with factual past cues', () => {
+    const timing = historyTimingCriteria('last_week', '2026-11-25')!;
+    const dates = [null, '2026-11-15', '2026-11-16', '2026-11-19', '2026-11-22', '2026-11-23', '2026-11-25', '2026-11-29', '2026-11-30'];
+    expect(dates.filter((date) => date !== null && date >= timing.follow_up_from! && date <= timing.follow_up_to!))
+      .toEqual(['2026-11-16', '2026-11-19', '2026-11-22']);
+    for (const date of ['2026-11-16', '2026-11-19', '2026-11-22']) expect(classifyFollowUpDate(date, '2026-11-25')).toBe('past');
+    expect(Object.keys(followUpTimingLabels)).toEqual(['past', 'today', 'upcoming']);
+  });
+
+  it.each([
     ['2026-02-15', '2026-01-01', '2026-01-31'],
     ['2026-03-31', '2026-02-01', '2026-02-28'],
     ['2026-04-30', '2026-03-01', '2026-03-31'],
@@ -268,14 +314,19 @@ describe('date-only timing ranges', () => {
     '2026-11-02T00:00:00Z', ' 2026-11-02', '2026-11-02 ', '2026-011-02', '2100-02-29'])('rejects invalid reference %s', (value) => {
     expect(adjacentCalendarDay(value, -1)).toBeNull();
     expect(adjacentCalendarDay(value, 1)).toBeNull();
-    for (const preset of ['past', 'today', 'upcoming', 'next_7_days', 'this_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
+    for (const preset of ['past', 'today', 'upcoming', 'next_7_days', 'last_week', 'this_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
   });
 
   it('needs no timestamps or UTC conversion', () => {
     const iso = vi.spyOn(Date.prototype, 'toISOString').mockImplementation(() => { throw Error('UTC'); });
     const time = vi.spyOn(Date.prototype, 'getTime').mockImplementation(() => { throw Error('timestamp'); });
     const parse = vi.spyOn(Date, 'parse').mockImplementation(() => { throw Error('parse'); });
+    const utc = (['getUTCFullYear', 'getUTCMonth', 'getUTCDate'] as const).map((method) => vi.spyOn(Date.prototype, method).mockImplementation(() => { throw Error('UTC getter'); }));
     try {
+      expect(historyTimingCriteria('last_week', '2027-01-04')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-28', follow_up_to: '2027-01-03' });
+      expect(historyTimingCriteria('last_week', '0001-01-01')).toBeNull();
+      expect(historyTimingCriteria('last_week', '0001-01-08')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-07' });
+      expect(historyTimingCriteria('last_week', '9999-12-31')).toEqual({ has_follow_up: true, follow_up_from: '9999-12-20', follow_up_to: '9999-12-26' });
       expect(historyTimingCriteria('last_month', '2027-01-31')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-01', follow_up_to: '2026-12-31' });
       expect(historyTimingCriteria('last_month', '0001-02-01')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-31' });
       expect(historyTimingCriteria('last_month', '0001-01-31')).toBeNull();
@@ -288,7 +339,7 @@ describe('date-only timing ranges', () => {
       expect(historyTimingCriteria('this_month', '9999-12-31')).toEqual({ has_follow_up: true, follow_up_from: '9999-12-01', follow_up_to: '9999-12-31' });
       expect(historyTimingCriteria('next_month', '2026-12-31')).toEqual({ has_follow_up: true, follow_up_from: '2027-01-01', follow_up_to: '2027-01-31' });
       expect(historyTimingCriteria('next_month', '9999-11-30')).toEqual({ has_follow_up: true, follow_up_from: '9999-12-01', follow_up_to: '9999-12-31' });
-    } finally { iso.mockRestore(); time.mockRestore(); parse.mockRestore(); }
+    } finally { iso.mockRestore(); time.mockRestore(); parse.mockRestore(); utc.forEach((spy) => spy.mockRestore()); }
   });
 
   it.each([0, -1, 10000])('rejects out-of-range browser year %s', (year) => {
@@ -296,12 +347,13 @@ describe('date-only timing ranges', () => {
     expect(historyTimingCriteria('today', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('this_week', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('next_week', localCalendarDay(date))).toBeNull();
+    expect(historyTimingCriteria('last_week', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('this_month', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('next_month', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('last_month', localCalendarDay(date))).toBeNull();
   });
 
-  it.each(['today', 'next_week', 'last_month', 'this_month', 'next_month'] as const)('replaces only timing and retains identity for equivalent parameters (%s)', (preset) => {
+  it.each(['today', 'last_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const)('replaces only timing and retains identity for equivalent parameters (%s)', (preset) => {
     const unrelated = { query: 'Engineer', ai_enriched: false, min_score: 0, max_score: 0, application_status: 'applied' as const, sort: 'follow_up_asc' as const };
     const current = Object.freeze({ ...unrelated, has_follow_up: false, follow_up_from: '2026-01-01' });
     const today = historyTimingCriteria(preset, '2026-11-02')!;
