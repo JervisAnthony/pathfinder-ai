@@ -7,13 +7,13 @@ Agents must read it before beginning any roadmap task.
 
 ## Current Main
 
-Latest verified completed main (PR #52 merge, 2026-11-14 IST):
+Latest verified completed main (PR #53 merge, 2026-11-25 IST):
 
-`8324cfebb371b5dd1c882aec5d402ee814bb3bd1`
+`4eee2d85dcedd377ea0ad45ff5c9a0cadadfd1c3`
 
 Current completed roadmap milestone on `main`:
 
-**Commit 48 — Next Month Follow-Up Filtering**
+**Commit 49 — Last Month Follow-Up Filtering**
 
 ## Completed MVP-1 Roadmap
 
@@ -80,73 +80,84 @@ These milestones must not be replayed or rebuilt.
 
 - Commit 48 — Next Month Follow-Up Filtering — COMPLETE (PR #52 merged 2026-11-14 IST)
 
+- Commit 49 — Last Month Follow-Up Filtering — COMPLETE (PR #53 merged 2026-11-25 IST)
+
 ## Post-MVP Active Work
 
-**Commit 49 — Last Month Follow-Up Filtering**
+**Commit 50 — Last Week Follow-Up Filtering**
 
 Status: **Authorized active development.**
 
-History List and Kanban Board add Last month as the ninth timing preset immediately
-before This month. It selects scheduled dates from the first through last Gregorian
-day of the preceding calendar month, inclusive. A 2026-11-24 click selects
-2026-10-01 through 2026-10-31, excluding today, the current month, other months and
-unscheduled records. January selects December of the preceding year. March 31
-selects all of February, including the Gregorian leap day when applicable.
+History List and Kanban Board add Last week as the tenth timing preset immediately
+before This week. It selects scheduled dates from Monday through Sunday of the
+calendar week immediately preceding the captured browser-local click week, with
+inclusive endpoints and Monday as the fixed week start independent of locale.
+A 2026-11-25 click selects November 16-22, excluding the current week, today, other
+weeks and unscheduled records. All references November 23-29 select that same
+preceding week; November-30 reapplication selects November 23-29.
 
-References from 0001-02-01 through 9999-12-31 are supported. February 0001 selects
-the full minimum January; December 9999 selects November 9999. Every January-0001
-reference is unavailable because December of year zero is unsupported. The shared
-month branch decrements validated calendar components and checks the year before
-using the existing formatter/validator for month bounds. There is no timestamp or
-UTC calculation. This month remains available at both endpoints, Next month's
-December-9999 limit is unchanged, and all eight prior presets and factual cues remain.
+References from 0001-01-08 through 9999-12-31 are supported. Every reference January
+1-7, 0001 is unavailable because no preceding supported Monday exists. There is no
+partial, clamped, current-week or unbounded fallback. January 8-14 selects January
+1-7; This week remains available at the minimum. December 31, 9999 selects December
+20-26. All nine prior presets retain their behavior, including This week's final
+week truncation, Next week's final Sunday truncation and December-27 unavailability,
+and every month-preset boundary. Factual date classification stays unchanged.
+
+The existing pure Gregorian weekday calculation and adjacentCalendarDay stepping
+are reused. Last week steps backward weekday+7 days, rejecting any unsupported
+step, then uses the shared six-day Sunday calculation. There is no new calendar
+infrastructure, production Date construction/parsing, timestamp or UTC arithmetic.
 
 Explicit selection captures browser-local today. Bounds and As of stay fixed across
-passive midnight, month/year rollover, refresh and unrelated actions until reapplication.
-Same-reference-month reapplication updates As of without a redundant page-one List
-request or Board refresh. List reapplication from a later page returns to page one;
-equivalent Board ranges retain loaded pages. Changed Board bounds refresh all seven
-status lanes from offset zero, retaining ten-card pages and eleventh-record lookahead.
-Unavailable/invalid click-time dates preserve criteria, native drafts, attribution,
-loaded pages and unsaved work without a filter request or mutation.
+passive midnight, Monday/month/year rollover, rerenders, refresh and unrelated
+actions until reapplication. Reapplying within one current week updates As of
+without a redundant page-one List request or Board refresh. December 31, 2026 and
+January 1, 2027 both select December 21-27; January-1 reapplication only updates
+As of. Monday January 4 selects December 28-January 3. Later-page List reapplication
+returns to page one once; equivalent Board ranges retain loaded pages. Changed
+Board bounds refresh all seven lanes from offset zero, retaining ten-card pages
+and eleventh-record lookahead.
 
-Only follow-up presence/date criteria and native drafts change. Unrelated applied
-criteria, false/zero values and unsent drafts remain independent. List shared-error
-clearing and Board unrelated-validation preservation remain. Manual Apply, targeted
-Clear and full Clear/Reset retain their scopes; unrelated Board Apply retains timing
-attribution. Detail/status/quick-editor locks, same-tick guards, authoritative saved
-follow-up refreshes, failed-write preservation, paging, Retry, duplicate suppression,
-stale-response/generation/unmount guards and drag invalidation reuse existing flows.
+Unavailable/invalid click-time dates preserve applied criteria, native drafts,
+selected preset, captured As of, pages and unsaved work without a request or write.
+Only follow-up status/date drafts and criteria change. Unrelated false/zero applied
+values and unsent drafts remain independent. List shared-error clearing, Board
+unrelated-validation preservation, manual Apply/Clear/Reset scopes, unrelated Board
+attribution, editing/status/detail locks and same-tick guards reuse existing flows.
+Authoritative follow-up refreshes, failed-write preservation, pagination, Retry,
+duplicate suppression, stale-response/generation/unmount guards and drag invalidation
+retain their contracts.
 
-Filtered List CSV and Board CSV use their own independent applied range across all
-matching server records, including unloaded rows, within the existing 10,000-row cap.
-All-record List CSV stays unfiltered. Export privacy, columns, order and download
-lifecycle remain. Overview keeps global totals, seven status counts and its earliest
-five follow-ups. Native buttons retain grouping, focus, aria-pressed, wrapping,
-disabled states and visible feedback. No backend/API/schema, dependency, matching/AI,
-private-content request, shared clock/filter store, browser persistence, timer,
-polling, reminder or notification behavior is added. Dates remain user-managed
+Filtered List CSV and Board CSV use each view's independent applied range across
+all matching server records, including unloaded rows, within the 10,000-row cap.
+All-record List CSV stays unfiltered. CSV columns, metadata-only privacy, order and
+download lifecycle remain. Overview retains global totals, seven status counts and
+its earliest five follow-ups. Native buttons preserve grouping, focus, aria-pressed,
+wrapping, disabled states and visible feedback. No backend/API/schema, dependency,
+matching/AI, private-content request, shared clock/filter store, browser persistence,
+timer, polling, reminder or notification behavior is added. Dates remain user-managed
 metadata without completion, overdue-task or employer-response inference.
 
 Local validation on Python 3.13.7 in the existing .venv and Node 24.19.0 / npm
 11.17.0 passed: Ruff lint, Ruff format check (88 files), mypy (42 source files),
 759 backend tests with 100% production line coverage (2,874 statements, zero missed),
-frontend lint, TypeScript checking, 1,205 Vitest tests across 25 files, and production
-build. The focused helper/List/Board run also passed all 787 tests. Existing declared
-dependencies were reused without installation or manifest/lockfile changes. Backend
-output reported an anyio BlockingPortal deprecation, a pytest cache permission
-warning and a coverage module-not-measured warning; measured production line
-coverage remained 100%. Elevated Git branch creation and remote branch inspection
-were needed after sandbox filesystem/network restrictions. Test execution needed
-no elevation. These are fresh local Commit 49 results, independent of PR #52 CI.
+frontend lint, TypeScript checking, 1,305 Vitest tests across 25 files, and production
+build. Existing declared dependencies were reused without installation or manifest/
+lockfile changes. Backend output reported an anyio BlockingPortal deprecation,
+a pytest cache permission warning and a coverage module-not-measured warning;
+measured production line coverage remained 100%. Feature branch creation required
+elevated Git access after the sandbox blocked index access; tests needed no elevation.
+An initial test-table tuple inference error was corrected before the full passing
+validation. These are fresh local Commit 50 results, independent of PR #53 CI.
 Real-browser E2E, assistive-technology and narrow-layout visual checks have not been
 performed. Local validation is not CI or independent review.
 
-The maintainer authorized reconciliation of Commit 48 following PR #52's merge at
-`8324cfebb371b5dd1c882aec5d402ee814bb3bd1` on 2026-11-14 IST
-(2026-11-14T16:12:49Z). Prior completed milestone history is preserved. Codex
+The maintainer authorized reconciliation of Commit 49 following PR #53's merge at
+`4eee2d85dcedd377ea0ad45ff5c9a0cadadfd1c3` on 2026-11-25 IST
+(2026-11-25T12:34:30Z). All prior completed milestone history is preserved. Codex
 implements, validates, reviews and stages locally; the human maintainer owns the
-implementation commit, publication, PR, independent reviews and merge. Commit 49
+implementation commit, publication, PR, independent reviews and merge. Commit 50
 remains authorized active work; no PR number or future merge SHA is assigned.
 Local implementation and staging do not mark it complete.
 
@@ -204,7 +215,8 @@ The repository already contains:
 - Next-week Monday-Sunday timing preset in List and Board
 - This-month calendar timing preset in List and Board
 - Next-month calendar timing preset in List and Board (complete via PR #52)
-- Last-month calendar timing preset in List and Board (authorized active development)
+- Last-month calendar timing preset in List and Board (complete via PR #53)
+- Last-week Monday-Sunday timing preset in List and Board (authorized active development)
 
 ## Architectural Boundary
 

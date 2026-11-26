@@ -140,6 +140,7 @@ describe('Board timing quick filters', () => {
     ['Today', '2026-11-04', '2026-11-04'],
     ['Upcoming dates', '2026-11-05', ''],
     ['Next 7 days', '2026-11-05', '2026-11-11'],
+    ['Last week', '2026-10-26', '2026-11-01'],
     ['This week', '2026-11-02', '2026-11-08'],
     ['Next week', '2026-11-09', '2026-11-15'],
     ['Last month', '2026-10-01', '2026-10-31'],
@@ -147,9 +148,9 @@ describe('Board timing quick filters', () => {
     ['Next month', '2026-12-01', '2026-12-31'],
   ])('applies %s to seven lanes, preserving other applied criteria and unsent drafts', async (name, from, to) => {
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
-    for (const label of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'Last month', 'This month', 'Next month', 'Clear timing filter']) expect(screen.getByRole('button', { name: label })).toHaveAttribute('type', 'button');
+    for (const label of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'Last week', 'This week', 'Next week', 'Last month', 'This month', 'Next month', 'Clear timing filter']) expect(screen.getByRole('button', { name: label })).toHaveAttribute('type', 'button');
     const timingGroup = within(screen.getByRole('group', { name: 'Board follow-up timing quick filters' }));
-    expect(timingGroup.getAllByRole('button').map((button) => button.textContent)).toEqual(['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'Last month', 'This month', 'Next month', 'Clear timing filter']);
+    expect(timingGroup.getAllByRole('button').map((button) => button.textContent)).toEqual(['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'Last week', 'This week', 'Next week', 'Last month', 'This month', 'Next month', 'Clear timing filter']);
     searchBoard('Engineer'); applyScoreFilters('0', '0'); applyAiFilter('no'); applySort();
     fireEvent.change(searchInput(), { target: { value: 'Designer' } }); draftScoreFilters('10', '20'); draftAiFilter('yes'); draftSort('created_desc');
     draftFollowUpFilters('no', '2026-12-01', '2026-01-01');
@@ -177,9 +178,16 @@ describe('Board timing quick filters', () => {
     expect(update).not.toHaveBeenCalled(); expect(updateAnalysisFollowUp).not.toHaveBeenCalled(); expect(clearAnalysisFollowUp).not.toHaveBeenCalled(); expect(updateAnalysisNote).not.toHaveBeenCalled();
   });
 
-  it.each([['This week', 7, '2026-11-09', '2026-11-15'], ['Next week', 14, '2026-11-23', '2026-11-29'], ['Last month', 29, '2026-11-01', '2026-11-30'], ['This month', 29, '2026-12-01', '2026-12-31'], ['Next month', 29, '2027-01-01', '2027-01-31']] as const)('keeps %s pages until the range changes and captures calendar rollover on reapply', async (preset, day, from, to) => {
+  it.each([
+    ['Last week', 28, '2026-11-23', '2026-11-29', '2026-11-19'],
+    ['This week', 7, '2026-11-09', '2026-11-15', null],
+    ['Next week', 14, '2026-11-23', '2026-11-29', null],
+    ['Last month', 29, '2026-11-01', '2026-11-30', '2026-10-15'],
+    ['This month', 29, '2026-12-01', '2026-12-31', null],
+    ['Next month', 29, '2027-01-01', '2027-01-31', '2026-12-15'],
+  ] as const)('keeps %s pages until the range changes and captures calendar rollover on reapply', async (preset, day, from, to, saved) => {
     vi.setSystemTime(new Date(2026, 10, day, 12));
-    supply([record(), ...Array.from({ length: 23 }, (_, i) => record(String(i)))].map((item) => ({ ...item, follow_up_on: preset === 'Last month' ? '2026-10-15' : preset === 'Next month' ? '2026-12-15' : item.follow_up_on })));
+    supply([record(), ...Array.from({ length: 23 }, (_, i) => record(String(i)))].map((item) => ({ ...item, follow_up_on: saved ?? item.follow_up_on })));
     const view = render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record'); click(preset);
     searchBoard('Engineer'); applyScoreFilters('0'); applyAiFilter('no'); applySort();
     expect(feedback()).toHaveTextContent(`${preset}. As of: 2026-11-${String(day).padStart(2, '0')}.`);
@@ -231,7 +239,7 @@ describe('Board timing quick filters', () => {
     await act(async () => {});
   });
 
-  it.each(['Today', 'Next week', 'Last month', 'This month', 'Next month'])('synchronizes native date editors and clears only stale follow-up validation (%s)', async (preset) => {
+  it.each(['Today', 'Last week', 'Next week', 'Last month', 'This month', 'Next month'])('synchronizes native date editors and clears only stale follow-up validation (%s)', async (preset) => {
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
     applyScoreFilters('90', '10'); applyFollowUpFilters('yes', '2026-12-01', '2026-01-01');
     expect(screen.getByText('Follow-up from must be on or before Follow-up to.')).toBeVisible();
@@ -263,10 +271,10 @@ describe('Board timing quick filters', () => {
     [1, 0, 1, 'Past dates'], [9999, 11, 31, 'Upcoming dates'], [9999, 11, 31, 'Next 7 days'],
     [0, 0, 1, 'Next 7 days'], [10000, 0, 1, 'Next 7 days'],
     [0, 0, 1, 'Today'], [10000, 0, 1, 'Today'],
-    [0, 0, 1, 'This week'], [10000, 0, 1, 'This week'],
+    ...[1, 2, 3, 4, 5, 6, 7].map((day) => [1, 0, day, 'Last week'] as const), [0, 0, 1, 'Last week'], [10000, 0, 1, 'Last week'], [0, 0, 1, 'This week'], [10000, 0, 1, 'This week'],
     [0, 0, 1, 'Next week'], [10000, 0, 1, 'Next week'], [9999, 11, 27, 'Next week'],
     [0, 0, 1, 'This month'], [10000, 0, 1, 'This month'], [0, 0, 1, 'Last month'], [10000, 0, 1, 'Last month'], [1, 0, 1, 'Last month'], [1, 0, 15, 'Last month'], [1, 0, 31, 'Last month'], [0, 0, 1, 'Next month'], [10000, 0, 1, 'Next month'], [9999, 11, 1, 'Next month'], [9999, 11, 15, 'Next month'], [9999, 11, 31, 'Next month'],
-  ])('disables impossible ranges at year %s and guards a changed click-time date', async (year, month, day, disabled) => {
+  ] as const)('disables impossible ranges at year %s and guards a changed click-time date', async (year, month, day, disabled) => {
     const date = new Date(2026, month, day, 12); date.setFullYear(year); vi.setSystemTime(date);
     const view = render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
     expect(screen.getByRole('button', { name: disabled })).toBeDisabled();
@@ -280,6 +288,7 @@ describe('Board timing quick filters', () => {
 
   it.each([
     ['Upcoming dates', '2024-03-01', ''],
+    ['Last week', '2024-02-19', '2024-02-25'],
     ['Next week', '2024-03-04', '2024-03-10'],
     ['Last month', '2024-01-01', '2024-01-31'],
     ['This month', '2024-02-01', '2024-02-29'],
@@ -292,7 +301,7 @@ describe('Board timing quick filters', () => {
     expect(feedback()).toHaveTextContent('As of: 2024-02-29.'); await act(async () => {});
   });
 
-  it.each([['follow-up', 'Today'], ['note', 'Today'], ['follow-up', 'Next 7 days'], ['note', 'Next 7 days'], ['follow-up', 'This week'], ['note', 'This week'], ['follow-up', 'Next week'], ['note', 'Next week'], ['follow-up', 'This month'], ['note', 'This month'], ['follow-up', 'Last month'], ['note', 'Last month'], ['follow-up', 'Next month'], ['note', 'Next month']] as const)('blocks preset actions during same-tick %s editor opening and pending writes (%s)', async (mode, preset) => {
+  it.each([['follow-up', 'Today'], ['note', 'Today'], ['follow-up', 'Next 7 days'], ['note', 'Next 7 days'], ['follow-up', 'Last week'], ['note', 'Last week'], ['follow-up', 'This week'], ['note', 'This week'], ['follow-up', 'Next week'], ['note', 'Next week'], ['follow-up', 'This month'], ['note', 'This month'], ['follow-up', 'Last month'], ['note', 'Last month'], ['follow-up', 'Next month'], ['note', 'Next month']] as const)('blocks preset actions during same-tick %s editor opening and pending writes (%s)', async (mode, preset) => {
     const pending = deferred<AnalysisFollowUp & AnalysisNote>();
     vi.mocked(updateAnalysisFollowUp).mockReturnValue(pending.promise); vi.mocked(updateAnalysisNote).mockReturnValue(pending.promise);
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
@@ -311,7 +320,7 @@ describe('Board timing quick filters', () => {
     click('Close editing'); click(preset); await waitFor(() => expect(history).toHaveBeenCalledTimes(14));
   });
 
-  it.each(['Today', 'Next 7 days', 'This week', 'Next week', 'Last month', 'This month', 'Next month'])('guards same-tick confirmation, pending status changes, and detail opening (%s)', async (preset) => {
+  it.each(['Today', 'Next 7 days', 'Last week', 'This week', 'Next week', 'Last month', 'This month', 'Next month'])('guards same-tick confirmation, pending status changes, and detail opening (%s)', async (preset) => {
     const pending = deferred<AnalysisTracking>(); tracking.mockReturnValue(pending.promise);
     const view = render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
     fireEvent.change(screen.getByLabelText('New status for Fictional Engineer record'), { target: { value: 'applied' } });
@@ -325,13 +334,14 @@ describe('Board timing quick filters', () => {
   it('disables all presets for invalid local calendar components', async () => {
     vi.spyOn(Date.prototype, 'getDate').mockReturnValue(NaN);
     render(<ApplicationPipelineBoard {...props} />); await screen.findByText('Fictional Engineer record');
-    for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'This week', 'Next week', 'Last month', 'This month', 'Next month']) { expect(screen.getByText(name)).toBeDisabled(); click(name); }
+    for (const name of ['Past dates', 'Today', 'Upcoming dates', 'Next 7 days', 'Last week', 'This week', 'Next week', 'Last month', 'This month', 'Next month']) { expect(screen.getByText(name)).toBeDisabled(); click(name); }
     expect(history).toHaveBeenCalledTimes(7); expect(feedback()).toBeNull();
   });
 
   it.each([
     ['Past dates', null, '', '2026-11-03'],
     ['Next 7 days', null, '2026-11-05', '2026-11-11'],
+    ['Last week', '2026-10-29', '2026-10-26', '2026-11-01'],
     ['This week', null, '2026-11-02', '2026-11-08'],
     ['Next week', null, '2026-11-09', '2026-11-15'],
     ['Last month', '2026-10-15', '2026-10-01', '2026-10-31'],
@@ -364,6 +374,7 @@ describe('Board timing quick filters', () => {
   it.each([
     { preset: 'Today', saved: '2026-11-04', outside: '2026-11-12', cue: 'Follow-up today' },
     { preset: 'Next 7 days', saved: '2026-11-05', outside: '2026-11-12', cue: 'Upcoming follow-up' },
+    { preset: 'Last week', saved: '2026-10-29', outside: '2026-11-02', cue: 'Past follow-up date' },
     { preset: 'This week', saved: '2026-11-05', outside: '2026-11-12', cue: 'Upcoming follow-up' },
     { preset: 'Next week', saved: '2026-11-09', outside: '2026-11-16', cue: 'Upcoming follow-up' },
     { preset: 'Last month', saved: '2026-10-15', outside: '2026-11-01', cue: 'Past follow-up date' },

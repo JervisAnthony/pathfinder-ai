@@ -2,10 +2,11 @@ import type { AnalysisHistoryFilters } from '../../api/pathfinder';
 import { isCalendarDate } from './boardFollowUpFilters';
 import type { FollowUpTiming } from './followUpTiming';
 
-export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'this_week' | 'next_week' | 'last_month' | 'this_month' | 'next_month';
+export type FollowUpFilterPreset = FollowUpTiming | 'next_7_days' | 'last_week' | 'this_week' | 'next_week' | 'last_month' | 'this_month' | 'next_month';
 
 export const timingPresetLabels: Record<FollowUpFilterPreset, string> = {
   past: 'Past dates', today: 'Today', upcoming: 'Upcoming dates', next_7_days: 'Next 7 days',
+  last_week: 'Last week',
   this_week: 'This week',
   next_week: 'Next week',
   last_month: 'Last month',
@@ -57,7 +58,7 @@ export function historyTimingCriteria(preset: FollowUpFilterPreset, today: strin
     while (!isCalendarDate(calendarDay(year, month, lastDay))) lastDay -= 1;
     return { has_follow_up: true, follow_up_from: calendarDay(year, month, 1), follow_up_to: calendarDay(year, month, lastDay) };
   }
-  if (preset === 'this_week' || preset === 'next_week') {
+  if (preset === 'last_week' || preset === 'this_week' || preset === 'next_week') {
     const [year, month, day] = today.split('-').map(Number);
     const precedingYears = year - 1;
     let elapsed = 365 * precedingYears + Math.floor(precedingYears / 4)
@@ -76,6 +77,12 @@ export function historyTimingCriteria(preset: FollowUpFilterPreset, today: strin
         const next = adjacentCalendarDay(monday, 1);
         if (next === null) return null; // A following supported Monday must exist.
         monday = next;
+      }
+    } else if (preset === 'last_week') {
+      for (let offset = 0; offset < weekday + 7; offset += 1) {
+        const previous = adjacentCalendarDay(monday, -1);
+        if (previous === null) return null; // The entire preceding week must exist.
+        monday = previous;
       }
     } else {
       for (let offset = 0; offset < weekday; offset += 1) {
