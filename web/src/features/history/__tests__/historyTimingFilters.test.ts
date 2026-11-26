@@ -3,6 +3,111 @@ import { adjacentCalendarDay, historyTimingCriteria, replaceHistoryTiming } from
 import { classifyFollowUpDate, followUpTimingLabels, localCalendarDay } from '../followUpTiming';
 
 describe('date-only timing ranges', () => {
+  it('retains filter identity when backward windows coincide near the minimum', () => {
+    const current = Object.freeze({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-07', ai_enriched: false, min_score: 0 });
+    for (const preset of ['last_7_days', 'last_30_days'] as const) {
+      expect(historyTimingCriteria(preset, '0001-01-08')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-07' });
+      expect(replaceHistoryTiming(current, historyTimingCriteria(preset, '0001-01-08')!)).toBe(current);
+    }
+  });
+
+  it.each([
+    ['2026-11-23', '2026-10-24', '2026-11-22'],
+    ['2026-11-24', '2026-10-25', '2026-11-23'],
+    ['2026-11-25', '2026-10-26', '2026-11-24'],
+    ['2026-11-26', '2026-10-27', '2026-11-25'],
+    ['2026-11-27', '2026-10-28', '2026-11-26'],
+    ['2026-11-28', '2026-10-29', '2026-11-27'],
+    ['2026-11-29', '2026-10-30', '2026-11-28'],
+    ['2026-11-30', '2026-10-31', '2026-11-29'],
+    ['2026-12-01', '2026-11-01', '2026-11-30'],
+    ['2026-12-27', '2026-11-27', '2026-12-26'],
+    ['2026-12-31', '2026-12-01', '2026-12-30'],
+    ['2027-01-01', '2026-12-02', '2026-12-31'],
+    ['2026-01-31', '2026-01-01', '2026-01-30'],
+    ['2026-02-01', '2026-01-02', '2026-01-31'],
+    ['2024-03-01', '2024-01-31', '2024-02-29'],
+    ['2026-03-01', '2026-01-30', '2026-02-28'],
+    ['1900-03-01', '1900-01-30', '1900-02-28'],
+    ['2000-03-01', '2000-01-31', '2000-02-29'],
+    ['2100-03-01', '2100-01-30', '2100-02-28'],
+    ['2026-03-31', '2026-03-01', '2026-03-30'],
+    ['2026-05-01', '2026-04-01', '2026-04-30'],
+    ['2026-03-09', '2026-02-07', '2026-03-08'],
+    ['2026-11-02', '2026-10-03', '2026-11-01'],
+    ['0001-01-02', '0001-01-01', '0001-01-01'],
+    ['0001-01-08', '0001-01-01', '0001-01-07'],
+    ['0001-01-15', '0001-01-01', '0001-01-14'],
+    ['0001-01-30', '0001-01-01', '0001-01-29'],
+    ['0001-01-31', '0001-01-01', '0001-01-30'],
+    ['0001-02-01', '0001-01-02', '0001-01-31'],
+    ['0099-01-01', '0098-12-02', '0098-12-31'],
+    ['0099-01-15', '0098-12-16', '0099-01-14'],
+    ['9999-12-31', '9999-12-01', '9999-12-30'],
+  ])('selects the preceding thirty calendar dates from %s, truncating only at the minimum', (today, from, to) => {
+    expect(historyTimingCriteria('last_30_days', today)).toEqual({ has_follow_up: true, follow_up_from: from, follow_up_to: to });
+  });
+
+  it.each([
+    ['0001-01-02', '0001-01-01'],
+    ['0001-01-03', '0001-01-02'],
+    ['0001-01-04', '0001-01-03'],
+    ['0001-01-05', '0001-01-04'],
+    ['0001-01-06', '0001-01-05'],
+    ['0001-01-07', '0001-01-06'],
+    ['0001-01-08', '0001-01-07'],
+    ['0001-01-09', '0001-01-08'],
+    ['0001-01-10', '0001-01-09'],
+    ['0001-01-11', '0001-01-10'],
+    ['0001-01-12', '0001-01-11'],
+    ['0001-01-13', '0001-01-12'],
+    ['0001-01-14', '0001-01-13'],
+    ['0001-01-15', '0001-01-14'],
+    ['0001-01-16', '0001-01-15'],
+    ['0001-01-17', '0001-01-16'],
+    ['0001-01-18', '0001-01-17'],
+    ['0001-01-19', '0001-01-18'],
+    ['0001-01-20', '0001-01-19'],
+    ['0001-01-21', '0001-01-20'],
+    ['0001-01-22', '0001-01-21'],
+    ['0001-01-23', '0001-01-22'],
+    ['0001-01-24', '0001-01-23'],
+    ['0001-01-25', '0001-01-24'],
+    ['0001-01-26', '0001-01-25'],
+    ['0001-01-27', '0001-01-26'],
+    ['0001-01-28', '0001-01-27'],
+    ['0001-01-29', '0001-01-28'],
+    ['0001-01-30', '0001-01-29'],
+  ])('includes every supported preceding date for the partial first-month window at %s', (today, to) => {
+    expect(historyTimingCriteria('last_30_days', today)).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: to });
+  });
+
+  it('requires supported yesterday and preserves available minimum-day presets', () => {
+    expect(historyTimingCriteria('last_30_days', '0001-01-01')).toBeNull();
+    expect(historyTimingCriteria('this_week', '0001-01-01')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-07' });
+    expect(historyTimingCriteria('this_month', '0001-01-01')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-31' });
+  });
+
+  it('includes day minus thirty, an interior date and yesterday with factual past cues', () => {
+    const timing = historyTimingCriteria('last_30_days', '2026-11-27')!;
+    const dates = [null, '2026-10-27', '2026-10-28', '2026-11-10', '2026-11-26', '2026-11-27', '2026-11-28', '2026-12-01'];
+    expect(dates.filter((date) => date !== null && date >= timing.follow_up_from! && date <= timing.follow_up_to!))
+      .toEqual(['2026-10-28', '2026-11-10', '2026-11-26']);
+    for (const date of ['2026-10-28', '2026-11-10', '2026-11-26']) expect(classifyFollowUpDate(date, '2026-11-27')).toBe('past');
+    expect(Object.keys(followUpTimingLabels)).toEqual(['past', 'today', 'upcoming']);
+    expect(historyTimingCriteria('last_month', '2026-11-27')).toEqual({ has_follow_up: true, follow_up_from: '2026-10-01', follow_up_to: '2026-10-31' });
+  });
+
+  it.each([
+    [1, 0, 2, '0001-01-02', '0001-01-01', '0001-01-01'],
+    [99, 0, 1, '0099-01-01', '0098-12-02', '0098-12-31'],
+    [99, 0, 15, '0099-01-15', '0098-12-16', '0099-01-14'],
+  ] as const)('captures browser-local early year %s for preceding thirty-date ranges', (year, month, day, today, from, to) => {
+    const date = new Date(2026, month, day, 12); date.setFullYear(year);
+    expect(localCalendarDay(date)).toBe(today);
+    expect(historyTimingCriteria('last_30_days', localCalendarDay(date))).toEqual({ has_follow_up: true, follow_up_from: from, follow_up_to: to });
+  });
+
   it.each([
     ['2026-11-23', '2026-11-24', '2026-12-23'],
     ['2026-11-24', '2026-11-25', '2026-12-24'],
@@ -438,7 +543,7 @@ describe('date-only timing ranges', () => {
     '2026-11-02T00:00:00Z', ' 2026-11-02', '2026-11-02 ', '2026-011-02', '2100-02-29'])('rejects invalid reference %s', (value) => {
     expect(adjacentCalendarDay(value, -1)).toBeNull();
     expect(adjacentCalendarDay(value, 1)).toBeNull();
-    for (const preset of ['past', 'today', 'upcoming', 'last_7_days', 'next_7_days', 'next_30_days', 'last_week', 'this_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
+    for (const preset of ['past', 'today', 'upcoming', 'last_7_days', 'next_7_days', 'last_30_days', 'next_30_days', 'last_week', 'this_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const) expect(historyTimingCriteria(preset, value)).toBeNull();
   });
 
   it('needs no timestamps or UTC conversion', () => {
@@ -447,6 +552,10 @@ describe('date-only timing ranges', () => {
     const parse = vi.spyOn(Date, 'parse').mockImplementation(() => { throw Error('parse'); });
     const utc = (['getUTCFullYear', 'getUTCMonth', 'getUTCDate'] as const).map((method) => vi.spyOn(Date.prototype, method).mockImplementation(() => { throw Error('UTC getter'); }));
     try {
+      expect(historyTimingCriteria('last_30_days', '0001-01-01')).toBeNull();
+      expect(historyTimingCriteria('last_30_days', '0001-01-02')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-01', follow_up_to: '0001-01-01' });
+      expect(historyTimingCriteria('last_30_days', '2027-01-01')).toEqual({ has_follow_up: true, follow_up_from: '2026-12-02', follow_up_to: '2026-12-31' });
+      expect(historyTimingCriteria('last_30_days', '9999-12-31')).toEqual({ has_follow_up: true, follow_up_from: '9999-12-01', follow_up_to: '9999-12-30' });
       expect(historyTimingCriteria('next_30_days', '0001-01-01')).toEqual({ has_follow_up: true, follow_up_from: '0001-01-02', follow_up_to: '0001-01-31' });
       expect(historyTimingCriteria('next_30_days', '2026-12-31')).toEqual({ has_follow_up: true, follow_up_from: '2027-01-01', follow_up_to: '2027-01-30' });
       expect(historyTimingCriteria('next_30_days', '9999-12-30')).toEqual({ has_follow_up: true, follow_up_from: '9999-12-31', follow_up_to: '9999-12-31' });
@@ -481,13 +590,14 @@ describe('date-only timing ranges', () => {
     expect(historyTimingCriteria('next_week', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('last_week', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('last_7_days', localCalendarDay(date))).toBeNull();
+    expect(historyTimingCriteria('last_30_days', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('next_30_days', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('this_month', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('next_month', localCalendarDay(date))).toBeNull();
     expect(historyTimingCriteria('last_month', localCalendarDay(date))).toBeNull();
   });
 
-  it.each(['today', 'next_30_days', 'last_7_days', 'last_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const)('replaces only timing and retains identity for equivalent parameters (%s)', (preset) => {
+  it.each(['today', 'last_30_days', 'next_30_days', 'last_7_days', 'last_week', 'next_week', 'last_month', 'this_month', 'next_month'] as const)('replaces only timing and retains identity for equivalent parameters (%s)', (preset) => {
     const unrelated = { query: 'Engineer', ai_enriched: false, min_score: 0, max_score: 0, application_status: 'applied' as const, sort: 'follow_up_asc' as const };
     const current = Object.freeze({ ...unrelated, has_follow_up: false, follow_up_from: '2026-01-01' });
     const today = historyTimingCriteria(preset, '2026-11-02')!;
